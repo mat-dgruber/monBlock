@@ -1,0 +1,90 @@
+# Domínio de Bloqueio Web em 3 Camadas (`web_blocking`): Design Técnico (Tech Design)
+
+---
+
+## 1. Camada Frontend
+
+*   **Superfícies de UI do Domínio:**
+    1. **Tela Local de Bloqueio (`docs/design/blocked-page.html` servida em `http://127.0.0.1:49152/blocked`):** Página estática ultra-rápida estilizada exclusivamente com tokens do Design System Oficial CCAT (`docs/design/tokens.css`, tema padrão *Capycro Warm Ivory* `#F6F4EE` e suporte a 4 temas sem roxo). Exibe o domínio interceptado, a regra acionada (`ruleLabel`), explicação da Catraca Unidirecional e formulário para acionar o Ajudante ou inserir código `UNLOCK-<DURATION>-<MAC10>`.
+    2. **Painel de Categorias e Regras no App Desktop Electron:** Exibe os switches das 11 categorias de `PREDEFINED_CATEGORIES` (com ícone de cadeado nas categorias ativas indicando que a desativação requer o Ajudante), campo de inserção em lote (`MAX_BATCH_DOMAINS = 100`) e lista de palavras-chave simples/combinadas.
+*   **Invariantes de Validação e Feedback ao Usuário:**
+    *   Erros de validação de lote ou bloqueios da Catraca `Append-Only` são apresentados em banners semânticos (`role="alert"`, `aria-live="polite"`) formatados a partir do payload `RFC 9457 Problem Details`.
+    *   Todos os botões e switches respeitam área mínima de clique de `44x44px` (`2.75rem`) e foco visível `:focus-visible`.
+
+---
+
+## 2. Camada Backend
+
+A arquitetura interna do domínio segue separação estrita entre **Núcleo de Domínio Puro (Zero I/O)** e **Enforcers de Infraestrutura**:
+
+*   **Camada de Domínio (`src/domain/categories.ts`, `src/domain/rule-engine.ts`):**
+    *   Funções 100% puras, síncronas e determinísticas (`sanitizeAndNormalizeUrl`, `validateBatchDomains`, `evaluateUrlAndTitle`). Não realizam chamadas de rede nem acesso a disco, permitindo execução em $< 1\text{ms}$ por avaliação de aba.
+*   **Camada de Aplicação / Enforcers (`src/enforcers/hosts-enforcer.ts`, `src/enforcers/browser-policy-enforcer.ts`):**
+    *   `applyAtomicHostsBlock(hostsFilePath, blockedDomains)` e `rollbackHostsFromBackup(hostsFilePath)`: gerenciam a escrita atômica POSIX e restauração do `/etc/hosts`.
+    *   `buildBrowserPolicies(params: BrowserPolicyParams)`: transforma o estado de domínio nos contratos exatos exigidos pelo Google Chrome/Brave/Edge/Arc (`URLBlocklist`, `URLAllowlist`, `DnsOverHttpsMode`, `IncognitoModeAvailability`) e pelo Mozilla Firefox (`policies.WebsiteFilter`, `policies.DNSOverHTTPS`, `policies.DisablePrivateBrowsing`).
+*   **Camada de Borda HTTP Local (`scripts/test-block-server.mjs`):**
+    *   Servidor HTTP nativo (`node:http`) vinculado estritamente ao loopback `127.0.0.1:49152` (`createMonBlockHttpServer()`), servindo `/blocked`, `/tokens.css`, `/showcase`, `/api/health` e `/api/unblock-requests`.
+
+---
+
+## 3. Acesso a Dados, Persistência e Transacionalidade
+
+*   **Transacionalidade em Sistema de Arquivos (`/etc/hosts`):**
+    *   Para evitar corrupção do arquivo `/etc/hosts` em caso de queda de energia ou `SIGKILL`, `applyAtomicHostsBlock()` jamais edita o arquivo in-place. O algoritmo lê o conteúdo atual, cria `/etc/hosts.monblock.bak` (se ainda não existir), escreve o novo conteúdo completo em `/etc/hosts.monblock.tmp` e invoca `fs.renameSync(tmpPath, hostsFilePath)` (operação atômica no nível do inode POSIX).
+    *   De forma análoga, `rollbackHostsFromBackup()` copia `.monblock.bak` para `.monblock.rollback.tmp` e executa `fs.renameSync` sobre o arquivo alvo.
+*   **Persistência do Estado de Regras (`RuleEngineState`):**
+    *   As listas `enabledCategories`, `blockedDomains`, `allowlistDomains`, `keywords` e a flag `lockIncognito` são persistidas pelo `StateStore` do daemon privilegiado em SQLite `STRICT` (`0600`) com verificação de integridade.
+
+---
+
+## 4. Assinatura de Endpoints
+
+### 4.1. `GET /blocked` (e `GET /`)
+*   **Caminho:** `GET http://127.0.0.1:49152/blocked`
+*   **Autenticação / Autorização:** Loopback local público (`127.0.0.1`)
+*   **Payload de Saída (Output):** Documento HTML (`text/html; charset=utf-8`) da Tela de Bloqueio CCAT com cabeçalhos `X-Content-Type-Options: nosniff` e `X-Frame-Options: DENY`.
+*   **Códigos de Resposta HTTP Mapeados:** `200 OK`.
+
+### 4.2. `GET /api/health`
+*   **Caminho:** `GET http://127.0.0.1:49152/api/health`
+*   **Payload de Saída (Output):**
+    ```json
+    {
+      "status": "ok",
+      "service": "monblock-preview-server",
+      "routes": ["/blocked", "/showcase", "/api/health", "/api/unblock-requests"]
+    }
+    ```
+*   **Códigos de Resposta HTTP Mapeados:** `200 OK`.
+
+### 4.3. `POST /api/unblock-requests`
+*   **Caminho:** `POST http://127.0.0.1:49152/api/unblock-requests`
+*   **Autenticação / Cabeçalhos:** Header `Idempotency-Key: <uuid>` para deduplicação de submissões.
+*   **Payload de Entrada (Input):**
+    ```json
+    {
+      "domain": "bet365.com",
+      "reason": "Preciso acessar para encerrar conta antiga"
+    }
+    ```
+*   **Payload de Saída (Output — `202 Accepted`):**
+    ```json
+    {
+      "status": "accepted",
+      "requestId": "req_a1b2c3d4e5f6",
+      "domain": "bet365.com",
+      "deduplicated": false
+    }
+    ```
+*   **Códigos de Resposta HTTP Mapeados:**
+    *   HTTP 202 (`Accepted`): Solicitação registrada (ou deduplicada com `"deduplicated": true` quando `Idempotency-Key` já foi processada).
+    *   HTTP 400 (`Bad Request` — `application/problem+json` RFC 9457): Quando o corpo da requisição contém JSON malformado (`title: "Payload JSON inválido"`).
+    *   HTTP 404 (`Not Found` — `application/problem+json` RFC 9457): Rota inexistente (`type: "https://monblock.ccat.local/problems/404"`).
+
+---
+
+## 5. Resiliência, Filas e Eventos Assíncronos
+
+*   **Idempotência de Submissão (`idempotencyStore`):** Cliques múltiplos no botão "Pedir Desbloqueio ao Ajudante" com a mesma `Idempotency-Key` retornam imediatamente o registro em cache com `"deduplicated": true`, prevenindo flood de notificações no Telegram do Ajudante.
+*   **Isolamento de Falhas do Watcher de Navegadores:** No macOS, a inspeção de abas via AppleEvents/`osascript` aplica timeout rígido de `1500ms` por processo para impedir que uma janela travada do navegador congele o loop de fiscalização do daemon.
+*   **Defesa em Profundidade Independente:** Caso o Watcher de abas sofra atraso ou falta de permissão de Acessibilidade, as Camadas 1 (`/etc/hosts`) e 2 (`BrowserPolicies` com DoH desativado) continuam bloqueando a resolução e o carregamento dos domínios das 11 categorias e da blocklist sem qualquer degradação.
