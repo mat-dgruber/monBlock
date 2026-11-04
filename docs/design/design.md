@@ -1,0 +1,59 @@
+# 🎨 Especificação Técnica de Design System — monBlock (Branding CCAT)
+
+> **Status:** 🟢 Homologado (100% Readiness)  
+> **Assinatura Visual:** CCAT — *Organic Elegance, Leveza Premium & Mindful Security*  
+> **Arquitetura de Temas:** 4 Temas Nativos (`Capycro Wellness` [Padrão Diurno], `Escuro Tech` [Padrão Noturno], `Claro Fintech`, `Alto Contraste WCAG AAA`)  
+> **Artefatos Canônicos:** Spec (`docs/ai/specs/2026-11-04-monblock-mvp-design.md`) e Plano (`docs/ai/plans/2026-11-04-monblock-mvp-plan.md`)
+
+---
+
+## 1. Resumo Executivo de UI/UX
+
+O `monBlock` aplica a linguagem visual da holding **CCAT** a um contexto de **proteção comportamental e responsabilidade compartilhada (*Accountability Partner*)**. Em vez de interfaces agressivas de antivírus com sirenes vermelhas que geram ansiedade, o `monBlock` opera sob o **Protocolo Anti-Pânico CCAT**:
+
+1. **Padrão Diurno Capycro (`#faf9f6` / `#5d8a8c` / `#d8704c`):** Superfície acolhedora em bege pergaminho e azul-petróleo que reduz a tensão cognitiva quando uma página é interceptada.
+2. **Padrão Noturno Tech (`#0f172a` / `#1e293b` / `#60a5fa` / `#f97316`):** Ativado automaticamente via `prefers-color-scheme: dark` ou seletor manual, oferecendo elevação por luminosidade sem cansaço ocular.
+3. **Proibição Absoluta do Roxo (*Purple Ban*):** Nenhum componente utiliza tons de roxo, violeta ou índigo.
+4. **Catraca Visual Clara:** Itens protegidos pelo Ajudante exibem um selo de cadeado orgânico (`Locked by Partner`), diferenciando claramente ações livres do usuário (`+ Adicionar Bloqueio`, `Ativar Categoria`) de ações que dependem do Ajudante (`Solicitar Desbloqueio`).
+
+---
+
+## 2. Mapeamento dos 4 Temas Oficiais
+
+| Token Semântico | 1. Capycro (Padrão Claro) | 2. Escuro Tech (Padrão Noite) | 3. Claro Fintech | 4. Alto Contraste AAA |
+| :--- | :---: | :---: | :---: | :---: |
+| `--surface-ground` | `#faf9f6` | `#0f172a` | `#f8fafc` | `#000000` |
+| `--surface-card` | `#ffffff` | `#1e293b` | `#ffffff` | `#121212` |
+| `--surface-border` | `#ebdcc5` | `#334155` | `#e2e8f0` | `#ffffff` (2px) |
+| `--text-color` | `#3e3a35` | `#f8fafc` | `#1e293b` | `#ffffff` |
+| `--text-color-secondary` | `#7a6b5d` | `#94a3b8` | `#64748b` | `#e5e5e5` |
+| `--primary-color` | `#5d8a8c` | `#60a5fa` | `#2563eb` | `#ffff00` |
+| `--accent-color` | `#d8704c` | `#f97316` | `#0284c7` | `#00ffff` |
+| `--success-color` | `#5a9261` | `#4ade80` | `#15803d` | `#4ade80` |
+
+---
+
+## 3. Superfícies do Produto (`monBlock`)
+
+### 3.1 Dashboard Principal (Electron Window `1120x740`)
+- **Sidebar Retrátil (`240px` / `64px`):**
+  1. **Escudo & Status (`Overview`):** Status do daemon `monblockd`, navegadores protegidos (Chrome, Safari, Brave, Arc, Edge, Firefox), status do DNS Familiar e da Flag de Modo Anônimo.
+  2. **Categorias & Tópicos (11 Categorias):** Cards com toggle unidirecional (*Conteúdo Adulto*, *Apostas e Cassinos*, *Jogos*, *Relacionamento*, *Proxies/VPN*, *Redes Sociais*, *Vídeo*, etc.).
+  3. **Lista de Sites & Palavras-Chave (`Append-Only`):** Input rápido para adicionar domínios (até 100 em lote — `RN-WEB-04`) e palavras-chave combinadas por vírgula (`RN-WEB-06`), mais aba de Exceções (`Always Allow`).
+  4. **Ajudante (`Accountability Partner`):** Configuração do Bot Telegram, teste de notificação, validação de Token `HMAC` / Senha Mestra e histórico de solicitações.
+
+### 3.2 Tela de Bloqueio & Solicitação ao Ajudante (`127.0.0.1:49152/blocked`)
+- Exibida automaticamente quando qualquer navegador tenta acessar um domínio ou palavra-chave bloqueada:
+  - **Cabeçalho Sereno (Playfair Display):** *"Acesso pausado para proteger seu foco."*
+  - **Card de Diagnóstico (Raio-X):** Exibe a URL higienizada, o título extraído da página e a **causa exata do bloqueio** (ex: `Categoria: Apostas e Cassinos` ou `Palavra-chave: cassino,bonus`).
+  - **Preview Visual Seguro (Print Offscreen com Blur):** Miniatura borrada (`filter: blur(18px)`) com aviso de que o Ajudante poderá inspecionar ou revelar a imagem.
+  - **Ação 1 — Enviar Pedido ao Ajudante (Telegram / Card HTML):** Campo de justificativa + botão de envio instantâneo.
+  - **Ação 2 — Desbloqueio Presencial / Código Token:** Campo para inserir o código `HMAC` enviado pelo Ajudante ou a Senha Mestra presencial, escolhendo a janela (`15 min`, `1 hora`, `Permanente`).
+
+---
+
+## 4. Acessibilidade WCAG 2.2 AAA & Ergonomia
+
+- **Touch Targets:** Todos os botões, toggles de categoria e controles possuem altura mínima de `44px` (`2.75rem`).
+- **Numerais Tabulares:** Contadores de domínios bloqueados, cronômetros de liberação temporária (`14:59`) e códigos de desafio usam `.tabular-nums`.
+- **Estados Visuais Obrigatórios:** Todos os controles implementam os 6 estados (`Default`, `Hover`, `Active`, `Focus-Visible`, `Disabled/Locked by Partner` e `Loading Anti-CLS`).
