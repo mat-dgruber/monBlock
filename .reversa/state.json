@@ -1,0 +1,108 @@
+{
+  "version": "1.0.0",
+  "project": "Cisdem AppCrypt v7.11.0 (monBlock Reference)",
+  "user_name": "Matheus",
+  "chat_language": "pt-br",
+  "doc_language": "Português",
+  "answer_mode": "file",
+  "doc_level": "detalhado",
+  "specs_choice": "module",
+  "output_folder": "_reversa_sdd",
+  "phase": "concluido",
+  "completed": ["reconhecimento", "escavacao", "interpretacao", "geracao", "revisao"],
+  "pending": [],
+  "engines": ["claude-code"],
+  "agents": [
+    "reversa",
+    "reversa-scout",
+    "reversa-archaeologist",
+    "reversa-detective",
+    "reversa-architect",
+    "reversa-writer",
+    "reversa-reviewer"
+  ],
+  "checkpoints": {
+    "scout": {
+      "completed_at": "2026-11-03T16:35:00Z",
+      "files": [
+        "_reversa_sdd/inventory.md",
+        "_reversa_sdd/dependencies.md",
+        ".reversa/context/surface.json"
+      ]
+    },
+    "archaeologist": {
+      "completed_at": "2026-11-03T16:50:00Z",
+      "files": [
+        ".reversa/context/modules.json",
+        "_reversa_sdd/code-analysis.md",
+        "_reversa_sdd/data-dictionary.md",
+        "_reversa_sdd/flowcharts/app-lock-engine.md",
+        "_reversa_sdd/flowcharts/web-block-engine.md",
+        "_reversa_sdd/flowcharts/schedule-engine.md",
+        "_reversa_sdd/flowcharts/security-and-persistence.md",
+        "_reversa_sdd/flowcharts/self-defense-and-lifecycle.md"
+      ]
+    },
+    "detective": {
+      "completed_at": "2026-11-03T17:00:00Z",
+      "files": [
+        "_reversa_sdd/domain.md",
+        "_reversa_sdd/state-machines.md",
+        "_reversa_sdd/permissions.md",
+        "_reversa_sdd/adrs/001-apple-events-polling-web-block.md",
+        "_reversa_sdd/adrs/002-window-masking-and-kvo-app-lock.md",
+        "_reversa_sdd/adrs/003-obfuscated-nskeyedarchiver-persistence.md",
+        "_reversa_sdd/adrs/004-fsevents-tar-self-healing-bundle.md"
+      ]
+    },
+    "architect": {
+      "completed_at": "2026-11-03T17:08:00Z",
+      "files": [
+        "_reversa_sdd/architecture.md",
+        "_reversa_sdd/c4-context.md",
+        "_reversa_sdd/c4-containers.md",
+        "_reversa_sdd/c4-components.md",
+        "_reversa_sdd/erd-complete.md",
+        "_reversa_sdd/deployment.md",
+        "_reversa_sdd/traceability/spec-impact-matrix.md"
+      ]
+    },
+    "writer": {
+      "completed_at": "2026-11-03T17:20:00Z",
+      "files": [
+        "_reversa_sdd/app-lock-engine/requirements.md",
+        "_reversa_sdd/app-lock-engine/design.md",
+        "_reversa_sdd/app-lock-engine/tasks.md",
+        "_reversa_sdd/app-lock-engine/edge-cases.md",
+        "_reversa_sdd/web-block-engine/requirements.md",
+        "_reversa_sdd/web-block-engine/design.md",
+        "_reversa_sdd/web-block-engine/tasks.md",
+        "_reversa_sdd/web-block-engine/contracts.md",
+        "_reversa_sdd/web-block-engine/edge-cases.md",
+        "_reversa_sdd/schedule-engine/requirements.md",
+        "_reversa_sdd/schedule-engine/design.md",
+        "_reversa_sdd/schedule-engine/tasks.md",
+        "_reversa_sdd/schedule-engine/edge-cases.md",
+        "_reversa_sdd/security-and-persistence/requirements.md",
+        "_reversa_sdd/security-and-persistence/design.md",
+        "_reversa_sdd/security-and-persistence/tasks.md",
+        "_reversa_sdd/security-and-persistence/edge-cases.md",
+        "_reversa_sdd/self-defense-and-lifecycle/requirements.md",
+        "_reversa_sdd/self-defense-and-lifecycle/design.md",
+        "_reversa_sdd/self-defense-and-lifecycle/tasks.md",
+        "_reversa_sdd/self-defense-and-lifecycle/edge-cases.md",
+        "_reversa_sdd/user-stories/fluxos-principais.md",
+        "_reversa_sdd/traceability/code-spec-matrix.md"
+      ]
+    },
+    "reviewer": {
+      "completed_at": "2026-11-03T17:25:00Z",
+      "files": [
+        "_reversa_sdd/confidence-report.md",
+        "_reversa_sdd/questions.md",
+        "_reversa_sdd/gaps.md",
+        "_reversa_sdd/rea-evidence-dossier.md"
+      ]
+    }
+  }
+}

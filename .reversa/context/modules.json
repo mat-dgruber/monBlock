@@ -1,0 +1,364 @@
+{
+  "generated_at": "2026-11-03T16:40:00Z",
+  "modules": [
+    {
+      "name": "app-lock-engine",
+      "path": "Contents/MacOS/Cisdem AppCrypt (ACMonitorTask, ACRunningAppsMgr, ACRunningApp, ACWindowServer, ACMaskWndControl)",
+      "purpose": "Interceptação de inicialização e foco de aplicativos macOS, mascaramento visual de janelas via CoreGraphics/CoreImage (CIGaussianBlur), ocultamento/encerramento de processos não autorizados e auto-lock por ociosidade ou perda de foco.",
+      "primary_files": [
+        "Contents/MacOS/Cisdem AppCrypt",
+        "Contents/Resources/ACMaskWndControl.nib",
+        "Contents/Resources/ACScreenMskWndCtrl.nib",
+        "Contents/Resources/ACPWDInputWndCtrl.nib"
+      ],
+      "functions": [
+        {
+          "name": "-[ACMonitorTask appIsBlock:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x100009b04",
+          "params": ["app: ACRunningApp *"],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACMonitorTask appItemBlock:isBlackMode:app:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x1000097d4",
+          "params": ["item: ACMonitorItem *", "isBlackMode: BOOL", "app: ACRunningApp *"],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACMonitorTask requireActiveApp:withTimeInterval:launched:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10000a900",
+          "params": ["app: ACRunningApp *", "interval: NSTimeInterval", "launched: BOOL"],
+          "returns": "void",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACRunningApp maskAllWindows:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x100002bd0",
+          "params": ["windows: NSArray<ACWindowInfo *> *"],
+          "returns": "void",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACRunningApp terminateWithoutNotification]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x100003a68",
+          "params": [],
+          "returns": "void",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACWindowServer windowOnScreenForProccessorWithID:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x100019e34",
+          "params": ["pid: pid_t"],
+          "returns": "NSArray<ACWindowInfo *> *",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "ACRunningApp",
+          "fields": [
+            { "name": "_runningApplication", "type": "NSRunningApplication *", "required": true },
+            { "name": "granted", "type": "BOOL", "required": true },
+            { "name": "_mskWndCtrls", "type": "NSMutableArray *", "required": true },
+            { "name": "_resignTimer", "type": "NSTimer *", "required": false },
+            { "name": "_hiddenTimer", "type": "NSTimer *", "required": false },
+            { "name": "_terminateTimer", "type": "NSTimer *", "required": false }
+          ],
+          "confidence": "confirmed"
+        },
+        {
+          "name": "ACWindowInfo",
+          "fields": [
+            { "name": "_ownerProcessID", "type": "int32_t", "required": true },
+            { "name": "_frameOnScreen", "type": "CGRect", "required": true },
+            { "name": "_wndID", "type": "uint32_t", "required": true },
+            { "name": "_windowName", "type": "NSString *", "required": false }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Processos com bundleIdentifier 'com.apple.finder' ou executável 'loginwindow' nunca são gerenciados/bloqueados.",
+          "location": "Contents/MacOS/Cisdem AppCrypt:0x100004a58",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Quando o Mac entra em sleep (NSWorkspaceWillSleepNotification), todos os aplicativos desbloqueados (granted=YES) têm sua autorização revogada imediatamente.",
+          "location": "Contents/MacOS/Cisdem AppCrypt:0x100009250",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": ["schedule-engine", "security-and-persistence"],
+      "algorithms": [
+        "Detecção de janelas sem ícone no Dock via cruzamento de CGWindowListCopyWindowInfo e NSRunningApplication.activationPolicy",
+        "Captura de janela e borramento via CoreImage CIGaussianBlur",
+        "Monitoramento de ociosidade física via IOKit IOHIDSystem HIDIdleTime"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "web-block-engine",
+      "path": "Contents/MacOS/Cisdem AppCrypt (ACMonitorBrowser, ACScriptHelper, ACBrowserAuthManager, ACPopularURLs)",
+      "purpose": "Monitoramento de abas ativas/abertas em 10 navegadores via AppleEvents/NSAppleScript, avaliação de regras de URL/domínio/keywords combinadas e redirecionamento para https://www.cisdem.com/blocked-website.html.",
+      "primary_files": [
+        "Contents/MacOS/Cisdem AppCrypt",
+        "Contents/Resources/Assets.car",
+        "Contents/Resources/ACWebManagerViewCtr.nib",
+        "Contents/Resources/ACWebsiteWndCtrl.nib"
+      ],
+      "functions": [
+        {
+          "name": "+[ACMonitorBrowser monitorBrowserWithIdentifier:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x1000392d0",
+          "params": ["bundleIdentifier: NSString *"],
+          "returns": "ACMonitorBrowser *",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACMonitorBrowser redirectURL:toURL:withCompleteHandler:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10003a564",
+          "params": ["sourceURL: NSURL *", "targetURL: NSURL *", "handler: void(^)(BOOL)"],
+          "returns": "void",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACMonitorTask websiteIsBlock:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x1000098d0",
+          "params": ["url: NSURL *"],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACMonitorItemsMgr matchKeywordItem:withURL:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10000d868",
+          "params": ["item: ACMonitorItem *", "url: NSURL *"],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACBrowserAuthManager queryAuthStatusForBundleID:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10003bfbc",
+          "params": ["bundleID: NSString *"],
+          "returns": "int",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "ACBrowserAuthInfo",
+          "fields": [
+            { "name": "_bundleID", "type": "NSString *", "required": true },
+            { "name": "_browserName", "type": "NSString *", "required": true },
+            { "name": "_state", "type": "int64_t", "required": true },
+            { "name": "_isRunning", "type": "BOOL", "required": true },
+            { "name": "_isDefault", "type": "BOOL", "required": true }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Redirecionamento padrão aponta para https://www.cisdem.com/blocked-website.html, exceto quando customRedirection está ativo e possui URL iniciada por http:// ou https://.",
+          "location": "Contents/MacOS/Cisdem AppCrypt:0x100011ed0",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Palavras-chave separadas por vírgula exigem correspondência simultânea (AND) de todos os termos na URL.",
+          "location": "Contents/MacOS/Cisdem AppCrypt:0x10000d868",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": ["schedule-engine", "security-and-persistence"],
+      "algorithms": [
+        "Serialização de AppleScripts em fila GCD dedicada (queueForScriptExcute)",
+        "Adaptação polimórfica de AppleScript por dialeto de navegador (Chromium vs Safari vs Arc/Dia)",
+        "Polling TCC Automation em duas velocidades (Global Heartbeat + High-Frequency Tick)"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "schedule-engine",
+      "path": "Contents/MacOS/Cisdem AppCrypt (ACScheduleGroup, ACScheduleUnit, ACScheduleMgrWndControl, ACScheduleViewCtrl)",
+      "purpose": "Avaliação de janelas de horário por máscara de dias da semana (repeatMask) com suporte a agendamento global (scheduleGroupToAll) e sobrescrita por app/site (useSelfSchedule).",
+      "primary_files": [
+        "Contents/MacOS/Cisdem AppCrypt",
+        "Contents/Resources/ACScheduleMgrWndControl.nib",
+        "Contents/Resources/ACScheduleViewCtrl.nib",
+        "Contents/Resources/ACScheduleUnitViewItem.nib"
+      ],
+      "functions": [
+        {
+          "name": "-[ACScheduleGroup nowInSchedule]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10001241c",
+          "params": [],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACScheduleUnit nowInSchedule]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10001bf10",
+          "params": [],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "ACScheduleUnit",
+          "fields": [
+            { "name": "_startTimer", "type": "NSDate *", "required": true },
+            { "name": "_endTimer", "type": "NSDate *", "required": true },
+            { "name": "_repeatMask", "type": "uint64_t", "required": true },
+            { "name": "_profile", "type": "int32_t", "required": true }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Quando monitorItem.useSelfSchedule é YES, o agendamento individual do item substitui o agendamento global scheduleGroupToAll.",
+          "location": "Contents/MacOS/Cisdem AppCrypt:0x100009730",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [],
+      "algorithms": [
+        "Avaliação de bitmask de dias da semana (repeatMask) e normalização de componentes de hora/minuto"
+      ],
+      "complexity": "medium"
+    },
+    {
+      "name": "security-and-persistence",
+      "path": "Contents/MacOS/Cisdem AppCrypt (ACPreferences, ACMonitorItemsMgr, ACMonitorItem, ACKeychain, ACPasswordMgr, ACLogRecordMgr, ACCapturePhoto)",
+      "purpose": "Armazenamento do hash MD5 da senha no Keychain, serialização redundante camuflada em com.apple.sdev/csdv.dsc e com.app.cadlvq/dgh.xvc, e captura de foto pela webcam em falhas de autenticação.",
+      "primary_files": [
+        "Contents/MacOS/Cisdem AppCrypt",
+        "~/Library/Application Support/com.apple.sdev/csdv.dsc",
+        "~/Library/Application Support/com.app.cadlvq/dgh.xvc",
+        "~/Library/Application Support/Cisdem AppCrypt/appcrypt.aclog"
+      ],
+      "functions": [
+        {
+          "name": "+[ACPreferences preferencesPathFileURL]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10000f11c",
+          "params": [],
+          "returns": "NSURL *",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "+[ACPreferences backupFilePreferencesURL]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10000f3a4",
+          "params": [],
+          "returns": "NSURL *",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACPasswordMgr passwordValidate:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x1000375b0",
+          "params": ["inputPassword: NSString *"],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACCapturePhoto captureImageWithCompleteHandler:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x100045b94",
+          "params": ["handler: void(^)(NSData *)"],
+          "returns": "void",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "ACPreferences",
+          "fields": [
+            { "name": "_enableWebBlock", "type": "BOOL", "required": true },
+            { "name": "_enableAppBlock", "type": "BOOL", "required": true },
+            { "name": "_enableSchedule", "type": "BOOL", "required": true },
+            { "name": "_monitorItemsMgr", "type": "ACMonitorItemsMgr *", "required": true },
+            { "name": "_scheduleGroupToAll", "type": "ACScheduleGroup *", "required": true }
+          ],
+          "confidence": "confirmed"
+        },
+        {
+          "name": "ACLogRecord",
+          "fields": [
+            { "name": "_title", "type": "NSString *", "required": true },
+            { "name": "_message", "type": "NSString *", "required": true },
+            { "name": "_imageData", "type": "NSData *", "required": false },
+            { "name": "_creationDate", "type": "NSDate *", "required": true }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Configurações serializadas são salvas de forma redundante em ~/Library/Application Support/com.apple.sdev/csdv.dsc e espelhadas em ~/Library/Application Support/com.app.cadlvq/dgh.xvc.",
+          "location": "Contents/MacOS/Cisdem AppCrypt:0x10000f11c",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": ["schedule-engine"],
+      "algorithms": [
+        "Espelhamento atômico e auto-restauração de NSKeyedArchiver (csdv.dsc <-> dgh.xvc)",
+        "Captura assíncrona de frame de vídeo via AVCaptureStillImageOutput"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "self-defense-and-lifecycle",
+      "path": "Contents/MacOS/Cisdem AppCrypt (ACMonitorAppSelf, ACFileSystemEventMonitor, ACAppStateMgr, ACLoginStart) & ASBaseServiceHelper",
+      "purpose": "Autoproteção contra remoção do bundle via FSEvents e arquivo tar.gz, exigência de execução em /Applications, proteção default de Activity Monitor/Terminal/System Settings e inicialização via LaunchAgents.",
+      "primary_files": [
+        "Contents/MacOS/Cisdem AppCrypt",
+        "Contents/Frameworks/ASBaseService.framework/Versions/A/ASBaseServiceHelper",
+        "~/Library/LaunchAgents/com.cisdem.appencrypt.plist"
+      ],
+      "functions": [
+        {
+          "name": "-[ACMonitorAppSelf backupAppSelf]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10002d6b4",
+          "params": [],
+          "returns": "void",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACMonitorAppSelf restoreAppSelf]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10002e028",
+          "params": [],
+          "returns": "BOOL",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "-[ACFileSystemEventMonitor eventSystemCallback:eventPaths:eventFlags:eventId:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10004563c",
+          "params": ["numEvents: size_t", "eventPaths: void *", "eventFlags: const FSEventStreamEventFlags *", "eventIds: const FSEventStreamEventId *"],
+          "returns": "void",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "+[ACLoginStart setLaunchInLogin:]",
+          "file": "Contents/MacOS/Cisdem AppCrypt:0x10002fd48",
+          "params": ["enabled: BOOL"],
+          "returns": "void",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [],
+      "business_rules": [
+        {
+          "description": "O aplicativo exige estar instalado dentro de /Applications; caso contrário, exibe alerta AC_O_InstallError e encerra.",
+          "location": "Contents/MacOS/Cisdem AppCrypt:0x100047fe4",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": ["security-and-persistence"],
+      "algorithms": [
+        "Watchdog de sistema de arquivos FSEventStream sobre o próprio bundle com restauração via /usr/bin/tar"
+      ],
+      "complexity": "medium"
+    }
+  ]
+}

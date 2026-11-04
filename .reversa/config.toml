@@ -1,0 +1,13 @@
+[project]
+name = "Cisdem AppCrypt v7.11.0 (monBlock Reference)"
+target_bundle = "/Applications/Cisdem AppCrypt.app"
+bundle_identifier = "com.cisdem.appencrypt"
+version = "7.11.0"
+build = "7110"
+
+[specs]
+layout = "feature-folder"
+granularity = "module"
+custom_folders = []
+scout_suggestion = "module"
+decided_at = "2026-11-03T16:35:00Z"

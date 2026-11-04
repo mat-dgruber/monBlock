@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-11-03T16:35:00Z",
+  "project_root": "/Applications/Cisdem AppCrypt.app",
+  "languages": [
+    { "name": "Objective-C / Objective-C++", "extensions": [".m", ".mm", ".h"], "file_count": 78 },
+    { "name": "C++", "extensions": [".cpp", ".inl"], "file_count": 12 },
+    { "name": "AppleScript (Runtime Templates)", "extensions": [".scpt"], "file_count": 8 },
+    { "name": "Interface Builder NIBs / Storyboards", "extensions": [".nib"], "file_count": 39 }
+  ],
+  "primary_language": "Objective-C / Objective-C++",
+  "frameworks": [
+    { "name": "AppKit / Foundation / CoreGraphics / CoreImage / AVFoundation / Security / IOKit / CoreServices", "version": "macOS SDK 26.4 (min 10.15)", "source": "Contents/Info.plist & Mach-O LC_LOAD_DYLIB" },
+    { "name": "ASFoundation2.framework", "version": "1.0 (com.aneesoft.ASFoundation)", "source": "Contents/Frameworks/ASFoundation2.framework" },
+    { "name": "ASBaseService.framework", "version": "1.0 (com.cisdem.ASBaseService)", "source": "Contents/Frameworks/ASBaseService.framework" },
+    { "name": "MASShortcut.framework", "version": "2.4.0", "source": "Contents/Frameworks/MASShortcut.framework" },
+    { "name": "ASIAPHelper.framework", "version": "1.0", "source": "Contents/Frameworks/ASIAPHelper.framework" },
+    { "name": "Sentry.framework", "version": "8.x (Cocoa/Swift)", "source": "Contents/Frameworks/Sentry.framework" }
+  ],
+  "entry_points": [
+    { "path": "Contents/MacOS/Cisdem AppCrypt", "type": "app_entry" },
+    { "path": "Contents/Frameworks/ASBaseService.framework/Versions/A/ASBaseServiceHelper", "type": "updater_helper_entry" },
+    { "path": "~/Library/LaunchAgents/com.cisdem.appencrypt.plist", "type": "launch_agent_entry" }
+  ],
+  "config_files": [
+    "Contents/Info.plist",
+    "Contents/Resources/Assets.car (NSDataAsset: popularURLs)",
+    "~/Library/LaunchAgents/com.cisdem.appencrypt.plist",
+    "~/Library/Preferences/com.cisdem.appencrypt.plist",
+    "~/Library/Application Support/Cisdem AppCrypt/configure.ascfg",
+    "~/Library/Application Support/com.apple.sdev/csdv.dsc",
+    "~/Library/Application Support/com.app.cadlvq/dgh.xvc",
+    "~/Library/Application Support/Cisdem AppCrypt/appcrypt.aclog"
+  ],
+  "database_hints": [
+    { "path": "~/Library/Application Support/com.apple.sdev/csdv.dsc", "type": "NSKeyedArchiver_binary_plist_primary" },
+    { "path": "~/Library/Application Support/com.app.cadlvq/dgh.xvc", "type": "NSKeyedArchiver_binary_plist_backup" },
+    { "path": "~/Library/Application Support/Cisdem AppCrypt/appcrypt.aclog", "type": "NSKeyedArchiver_intruder_logs" },
+    { "path": "com.cisdem.keychain (macOS Keychain)", "type": "SecItem_GenericPassword" }
+  ],
+  "modules": [
+    "app-lock-engine",
+    "web-block-engine",
+    "schedule-engine",
+    "security-and-persistence",
+    "self-defense-and-lifecycle"
+  ],
+  "total_files": 97,
+  "organization_suggestion": {
+    "granularity": "module",
+    "rationale": "O binário principal organiza suas 78 classes Objective-C em 5 subsistemas coesos com prefixo AC*: bloqueio de apps, bloqueio web via AppleEvents, agendamento temporal, persistência/segurança e autodefesa/ciclo de vida.",
+    "signals": [
+      {
+        "type": "objc_class_subsystem_clusters",
+        "evidence": [
+          "ACMonitorTask / ACRunningAppsMgr / ACRunningApp / ACWindowServer / ACMaskWndControl",
+          "ACMonitorBrowser / ACScriptHelper / ACBrowserAuthManager / ACPopularURLs",
+          "ACScheduleGroup / ACScheduleUnit / ACScheduleViewCtrl",
+          "ACPreferences / ACMonitorItemsMgr / ACKeychain / ACPasswordMgr / ACLogRecordMgr",
+          "ACMonitorAppSelf / ACFileSystemEventMonitor / ACAppStateMgr / ACLoginStart"
+        ]
+      }
+    ],
+    "features": []
+  }
+}
