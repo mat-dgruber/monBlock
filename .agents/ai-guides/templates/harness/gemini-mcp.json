@@ -1,0 +1,8 @@
+{
+  "general": { "enableNotifications": true, "plan": { "directory": "docs/ai/plans/*" } },
+  "experimental": { "worktrees": true, "modelSteering": true, "contextManagement": true, "generalistProfile": true, "autoMemory": true },
+  "mcpServers": {
+    "sequential_thinking": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"] },
+    "context7": { "command": "npx", "args": ["-y", "@upstash/context7-mcp"] }
+  }
+}

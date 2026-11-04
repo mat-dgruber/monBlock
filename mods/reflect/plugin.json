@@ -1,0 +1,24 @@
+{
+  "name": "reflect",
+  "version": "1.2.0",
+  "description": "Detecta correções e preferências expressadas no chat e sugere salvá-las automaticamente como regras permanentes em CLAUDE.md ou AGENTS.md.",
+  "author": {
+    "name": "BayramAnnakov & Antigravity"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/reflect.js\"",
+            "statusMessage": "Analisando possíveis convenções no prompt..."
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    "./commands/reflect-status.md"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "cache-tax",
+  "version": "1.3.0",
+  "description": "Alerta sobre expiração de cache de prompt e fornece utilitários keep-warm para evitar custos desnecessários.",
+  "author": "karanb192 & Antigravity Engineering",
+  "type": "mod",
+  "commands": [
+    {
+      "name": "keepwarm",
+      "description": "Mantém o cache de prompt aquecido durante intervalos de trabalho",
+      "source": "./commands/keepwarm.md"
+    }
+  ],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./bin/cache-check.js"
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "band": {
+      "enabled": true,
+      "handler": "renderCacheBand"
+    }
+  }
+}

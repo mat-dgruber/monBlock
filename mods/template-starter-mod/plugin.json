@@ -1,0 +1,33 @@
+{
+  "name": "template-starter-mod",
+  "version": "1.2.0",
+  "description": "Boilerplate canônico para criação de novos plugins e mods para Claude Code e OpenClaude.",
+  "author": {
+    "name": "Antigravity Engineering"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/mod-hook.js\" --event PreToolUse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/mod-hook.js\" --event PostToolUse"
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    "./commands/mod-status.md"
+  ]
+}

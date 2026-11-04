@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estúdio de Contraste WCAG 2.2 AAA · Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* =====================================================================
+   Estúdio de Contraste WCAG 2.2 AAA (Moxen Inspired)
+   Componente autônomo sem dependências externas (Vanilla JS + CSS puro).
+   Física de molas, odômetro analógico contínuo e auto-ajuste de luminosidade.
+   ===================================================================== */
+:root {
+  --ct-surface: var(--surface-card, #ffffff);
+  --ct-canvas: var(--surface-canvas, #f8fafc);
+  --ct-subtle: var(--surface-subtle, #f1f5f9);
+  --ct-ink: var(--text-primary, #0f172a);
+  --ct-muted: var(--text-secondary, #475569);
+  --ct-faint: var(--text-muted, #94a3b8);
+  --ct-border: var(--border-default, #e2e8f0);
+  --ct-border-subtle: var(--border-subtle, #cbd5e1);
+  --ct-ok: #16a34a;
+  --ct-ok-text: #15803d;
+  --ct-ok-bg: rgba(22, 163, 74, 0.12);
+  --ct-fail: #dc2626;
+  --ct-fail-text: #b91c1c;
+  --ct-fail-bg: rgba(220, 38, 38, 0.12);
+  --ct-warn: #d97706;
+  --ct-warn-text: #b45309;
+  --ct-warn-bg: rgba(217, 119, 6, 0.12);
+
+  /* Faixas da régua de luminosidade */
+  --ct-m0: rgba(220, 38, 38, 0.35);    /* < 3:1 (Reprovado) */
+  --ct-m1: rgba(217, 119, 6, 0.45);    /* 3:1 a 4.5:1 (AA Grande) */
+  --ct-m2: rgba(22, 163, 74, 0.65);    /* 4.5:1 a 7:1 (AA Texto) */
+  --ct-m3: #15803d;                     /* >= 7:1 (AAA Reforçado) */
+
+  --ct-shadow-color: 15, 23, 42;
+  --ct-text-sample: #0f172a;
+  --ct-bg-sample: #f8fafc;
+  --ct-h: 215;
+  --ct-s: 85%;
+  --ct-l: 15%;
+
+  --ct-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ct-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ct-font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --ct-font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+
+[data-theme="dark"] {
+  --ct-surface: #1e293b;
+  --ct-canvas: #0f172a;
+  --ct-subtle: #334155;
+  --ct-ink: #f8fafc;
+  --ct-muted: #94a3b8;
+  --ct-faint: #64748b;
+  --ct-border: #334155;
+  --ct-border-subtle: #1e293b;
+  --ct-ok: #4ade80;
+  --ct-ok-text: #86efac;
+  --ct-ok-bg: rgba(74, 222, 128, 0.15);
+  --ct-fail: #f87171;
+  --ct-fail-text: #fca5a5;
+  --ct-fail-bg: rgba(248, 113, 113, 0.15);
+  --ct-warn: #fbbf24;
+  --ct-warn-text: #fde68a;
+  --ct-warn-bg: rgba(251, 191, 36, 0.15);
+  --ct-m0: rgba(248, 113, 113, 0.4);
+  --ct-m1: rgba(251, 191, 36, 0.45);
+  --ct-m2: rgba(74, 222, 128, 0.65);
+  --ct-m3: #4ade80;
+  --ct-shadow-color: 0, 0, 0;
+}
+
+[data-theme="high-contrast"] {
+  --ct-surface: #000000;
+  --ct-canvas: #000000;
+  --ct-subtle: #18181b;
+  --ct-ink: #ffffff;
+  --ct-muted: #e4e4e7;
+  --ct-faint: #a1a1aa;
+  --ct-border: #ffffff;
+  --ct-border-subtle: #ffffff;
+  --ct-ok: #00ff66;
+  --ct-ok-text: #00ff66;
+  --ct-ok-bg: #000000;
+  --ct-fail: #ff3333;
+  --ct-fail-text: #ff3333;
+  --ct-fail-bg: #000000;
+  --ct-warn: #ffff00;
+  --ct-warn-text: #ffff00;
+  --ct-warn-bg: #000000;
+}
+
+/* Escopo do Componente */
+.ct-widget-wrapper {
+  font-family: var(--ct-font-sans);
+  color: var(--ct-ink);
+  box-sizing: border-box;
+  width: 100%;
+}
+.ct-widget-wrapper * {
+  box-sizing: border-box;
+}
+
+.ct-studio-card {
+  display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 2.25rem;
+  background-color: var(--ct-surface);
+  border: 1px solid var(--ct-border);
+  border-radius: 1.5rem;
+  padding: 2rem;
+  box-shadow: 0 10px 25px -5px rgba(var(--ct-shadow-color), 0.1), 0 8px 10px -6px rgba(var(--ct-shadow-color), 0.1);
+  position: relative;
+}
+
+.ct-panel-header {
+  margin-bottom: 1.25rem;
+}
+.ct-panel-header h3 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.ct-panel-header p {
+  font-size: 0.875rem;
+  color: var(--ct-muted);
+  margin: 0;
+}
+
+/* Abas de Seleção de Cor */
+.ct-tabs-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.ct-tab-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.875rem;
+  border: 1.5px solid var(--ct-border);
+  background: var(--ct-subtle);
+  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+}
+.ct-tab-item.is-active {
+  border-color: var(--ct-ink);
+  background-color: var(--ct-surface);
+  box-shadow: 0 4px 12px -2px rgba(var(--ct-shadow-color), 0.12);
+}
+.ct-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ct-ink);
+  text-align: left;
+}
+.ct-tab-chip {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+}
+.ct-tab-item[data-channel="t"] .ct-tab-chip {
+  background-color: var(--ct-text-sample);
+}
+.ct-tab-item[data-channel="f"] .ct-tab-chip {
+  background-color: var(--ct-bg-sample);
+}
+.ct-hex-field {
+  width: 100%;
+  height: 2.125rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--ct-border);
+  border-radius: 0.5rem;
+  font-family: var(--ct-font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ct-ink);
+  background-color: var(--ct-surface);
+  text-transform: uppercase;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ct-hex-field:focus {
+  border-color: var(--ct-ink);
+  box-shadow: 0 0 0 2px rgba(var(--ct-shadow-color), 0.15);
+}
+.ct-hex-field.is-invalid {
+  animation: ct-shake 0.35s ease-in-out;
+  border-color: var(--ct-fail);
+}
+@keyframes ct-shake {
+  20%, 60% { transform: translateX(-4px); }
+  40%, 80% { transform: translateX(4px); }
+}
+
+/* Seletor 2D HSL (Saturação x Luminosidade) e Régua de Luminosidade */
+.ct-picker-grid {
+  display: flex;
+  gap: 0.875rem;
+  margin-bottom: 1rem;
+}
+.ct-canvas-square {
+  position: relative;
+  flex: 1;
+  height: 260px;
+  border-radius: 1rem;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  background:
+    linear-gradient(to bottom, #ffffff 0%, rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, 0) 50%, #000000 100%),
+    linear-gradient(to right, hsl(var(--ct-h) 0% 50%), hsl(var(--ct-h) 100% 50%));
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 8px 16px -4px rgba(var(--ct-shadow-color), 0.1);
+  overflow: visible;
+}
+.ct-canvas-pointer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  background-color: var(--ct-current-pick, #0f172a);
+  cursor: grab;
+  outline: none;
+  touch-action: none;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 6px 14px -2px rgba(0, 0, 0, 0.4);
+  transition: transform 0.25s var(--ct-spring);
+}
+.ct-canvas-pointer::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  opacity: 0;
+}
+.ct-canvas-square.is-dragging .ct-canvas-pointer {
+  transform: translate(-50%, -50%) scale(1.15);
+  cursor: grabbing;
+}
+.ct-canvas-pointer.is-tic {
+  animation: ct-bounce 0.5s var(--ct-ease-out);
+}
+.ct-canvas-pointer.is-tic::after {
+  animation: ct-pulse-ring 0.6s var(--ct-ease-out);
+}
+@keyframes ct-bounce {
+  0% { transform: translate(-50%, -50%) scale(1.3); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes ct-pulse-ring {
+  0% { opacity: 0.95; transform: scale(0.6); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+.ct-canvas-pointer.is-fail {
+  animation: ct-shake 0.4s ease-in-out;
+}
+
+/* Régua Lateral de Luminosidade */
+.ct-lightness-ruler {
+  position: relative;
+  flex: none;
+  width: 18px;
+  border-radius: 9px;
+  background-color: var(--ct-subtle);
+  border: 1px solid var(--ct-border);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+.ct-ruler-needle {
+  position: absolute;
+  left: -5px;
+  top: 0;
+  width: 28px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+  background-color: var(--ct-ink);
+  box-shadow: 0 0 0 2px var(--ct-surface), 0 2px 4px rgba(0, 0, 0, 0.2);
+  will-change: transform;
+}
+.ct-lightness-ruler.is-tic .ct-ruler-needle {
+  animation: ct-needle-pulse 0.5s var(--ct-ease-out);
+}
+@keyframes ct-needle-pulse {
+  0% { transform: translateY(var(--curr-y)) scale(1.3, 2.5); }
+  100% { transform: translateY(var(--curr-y)) scale(1, 1); }
+}
+
+/* Slider de Matiz / Hue */
+.ct-hue-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+.ct-hue-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ct-faint);
+}
+.ct-hue-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  border-radius: 10px;
+  outline: none;
+  cursor: pointer;
+  background: transparent;
+  --hue-track: linear-gradient(90deg,
+    hsl(0 var(--ct-s) var(--ct-l)),
+    hsl(60 var(--ct-s) var(--ct-l)),
+    hsl(120 var(--ct-s) var(--ct-l)),
+    hsl(180 var(--ct-s) var(--ct-l)),
+    hsl(240 var(--ct-s) var(--ct-l)),
+    hsl(300 var(--ct-s) var(--ct-l)),
+    hsl(360 var(--ct-s) var(--ct-l)));
+}
+.ct-hue-slider::-webkit-slider-runnable-track {
+  height: 20px;
+  border-radius: 10px;
+  background: var(--hue-track);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+.ct-hue-slider::-moz-range-track {
+  height: 20px;
+  border-radius: 10px;
+  background: var(--hue-track);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+.ct-hue-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -3px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  background: hsl(var(--ct-h) var(--ct-s) var(--ct-l));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.35);
+}
+.ct-hue-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  background: hsl(var(--ct-h) var(--ct-s) var(--ct-l));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.35);
+}
+
+.ct-keyboard-hints {
+  font-size: 0.75rem;
+  color: var(--ct-faint);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+.ct-keyboard-hints kbd {
+  font-family: var(--ct-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.375rem;
+  background-color: var(--ct-subtle);
+  border: 1px solid var(--ct-border);
+}
+
+/* Painel da Direita: Card de Amostra Real */
+.ct-right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  justify-content: space-between;
+}
+.ct-preview-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.75rem;
+  border-radius: 1.25rem;
+  color: var(--ct-text-sample);
+  background-color: var(--ct-bg-sample);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 30px -10px color-mix(in srgb, var(--ct-text-sample) 20%, transparent), 0 8px 16px -4px rgba(var(--ct-shadow-color), 0.08);
+  transition: color 0.15s ease-out, background-color 0.15s ease-out;
+}
+.ct-preview-tag {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.85;
+}
+.ct-preview-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+.ct-preview-body {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 48ch;
+  opacity: 0.95;
+}
+.ct-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.25rem;
+}
+.ct-preview-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  padding: 0 1.25rem;
+  border-radius: 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ct-bg-sample);
+  background-color: var(--ct-text-sample);
+  border: none;
+  cursor: default;
+}
+.ct-preview-link {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: default;
+}
+.ct-preview-footnote {
+  font-size: 0.6875rem;
+  opacity: 0.75;
+  margin: 0.25rem 0 0 0;
+}
+
+/* Medidor com Odômetro Mecânico Contínuo */
+.ct-meter-section {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-end;
+  gap: 2rem;
+}
+.ct-odometer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.ct-meter-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ct-faint);
+}
+.ct-odometer {
+  display: flex;
+  align-items: baseline;
+  height: 1.15em;
+  font-family: var(--ct-font-mono);
+  font-size: 3.25rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+  color: var(--ct-ink);
+}
+.ct-rueda {
+  display: inline-block;
+  height: 1.15em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 15%, #000 85%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 15%, #000 85%, transparent 100%);
+}
+.ct-tira {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+.ct-tira > b {
+  display: block;
+  height: 1.15em;
+  line-height: 1.15;
+  font-weight: 700;
+  text-align: center;
+}
+.ct-comma {
+  display: inline-block;
+  margin: 0 -0.1em;
+}
+.ct-suffix {
+  margin-left: 0.25em;
+  font-size: 0.45em;
+  font-weight: 500;
+  color: var(--ct-faint);
+}
+
+/* Escala Logarítmica e Agulha */
+.ct-scale-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 0.25rem;
+}
+.ct-verdict {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+.ct-verdict-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--ct-fail);
+  box-shadow: 0 0 0 4px var(--ct-fail-bg);
+  transition: background-color 0.25s, box-shadow 0.25s;
+}
+.ct-verdict[data-status="great"] {
+  color: var(--ct-ok-text);
+}
+.ct-verdict[data-status="great"] .ct-verdict-dot {
+  background-color: var(--ct-ok);
+  box-shadow: 0 0 0 4px var(--ct-ok-bg);
+}
+.ct-verdict[data-status="ok"] {
+  color: var(--ct-ok-text);
+}
+.ct-verdict[data-status="ok"] .ct-verdict-dot {
+  background-color: var(--ct-ok);
+  box-shadow: 0 0 0 4px var(--ct-ok-bg);
+}
+.ct-verdict[data-status="large"] {
+  color: var(--ct-warn-text);
+}
+.ct-verdict[data-status="large"] .ct-verdict-dot {
+  background-color: var(--ct-warn);
+  box-shadow: 0 0 0 4px var(--ct-warn-bg);
+}
+.ct-verdict[data-status="fail"] {
+  color: var(--ct-fail-text);
+}
+.ct-verdict[data-status="fail"] .ct-verdict-dot {
+  background-color: var(--ct-fail);
+  box-shadow: 0 0 0 4px var(--ct-fail-bg);
+}
+
+.ct-scale-track {
+  position: relative;
+  height: 10px;
+  margin-bottom: 1.25rem;
+  --track-width: 280px;
+}
+.ct-scale-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+.ct-band-fail {
+  left: 0;
+  width: 36.01%;
+  background: var(--ct-m0);
+  border-radius: 6px 0 0 6px;
+}
+.ct-band-large {
+  left: 36.01%;
+  width: 13.4%;
+  background: var(--ct-m1);
+}
+.ct-band-aa {
+  left: 49.41%;
+  width: 14.51%;
+  background: var(--ct-m2);
+}
+.ct-band-aaa {
+  left: 63.92%;
+  right: 0;
+  background: var(--ct-m3);
+  border-radius: 0 6px 6px 0;
+}
+.ct-gauge-needle {
+  position: absolute;
+  left: -2px;
+  top: -6px;
+  width: 4px;
+  height: 22px;
+  border-radius: 2px;
+  background-color: var(--ct-ink);
+  box-shadow: 0 0 0 2px var(--ct-surface), 0 4px 8px rgba(0, 0, 0, 0.35);
+  transform: translateX(calc(var(--needle-pos, 0) * var(--track-width)));
+  will-change: transform;
+}
+.ct-scale-mark {
+  position: absolute;
+  left: calc(var(--mark-p) * 100%);
+  top: 13px;
+  width: 1px;
+  height: 6px;
+  background-color: var(--ct-border);
+}
+.ct-scale-mark b {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  transform: translateX(-50%);
+  font-family: var(--ct-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--ct-faint);
+}
+
+.ct-apca-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: var(--ct-font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background-color: var(--ct-subtle);
+  color: var(--ct-ink);
+  border: 1px solid var(--ct-border);
+  margin-top: 0.625rem;
+  transition: all 0.25s var(--ct-spring);
+}
+
+/* As Três Insígnias WCAG */
+.ct-badges-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.ct-badge-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.875rem;
+  border: 1.5px solid var(--ct-border);
+  background-color: var(--ct-subtle);
+  transition: border-color 0.25s, background-color 0.25s, transform 0.25s var(--ct-spring);
+}
+.ct-badge-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: var(--ct-fail);
+  background-color: var(--ct-fail-bg);
+  transition: color 0.2s, background-color 0.2s;
+}
+.ct-badge-icon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ct-badge-icon path {
+  stroke-dasharray: 1;
+  transition: stroke-dashoffset 0.35s var(--ct-ease-out), opacity 0.2s;
+}
+.ct-icon-check {
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
+.ct-icon-cross {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+
+.ct-badge-info {
+  display: flex;
+  flex-direction: column;
+}
+.ct-badge-info strong {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.ct-badge-info em {
+  font-style: normal;
+  font-size: 0.6875rem;
+  color: var(--ct-muted);
+}
+
+.ct-badge-card[data-passed="true"] {
+  border-color: var(--ct-ok);
+  background-color: var(--ct-ok-bg);
+}
+.ct-badge-card[data-passed="true"] .ct-badge-icon {
+  color: #ffffff;
+  background-color: var(--ct-ok);
+}
+.ct-badge-card[data-passed="true"] .ct-icon-check {
+  stroke-dashoffset: 0;
+  opacity: 1;
+}
+.ct-badge-card[data-passed="true"] .ct-icon-cross {
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
+
+/* Botões de Ação */
+.ct-action-buttons {
+  display: flex;
+  gap: 0.75rem;
+}
+.ct-btn-primary, .ct-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex: 1;
+  height: 2.875rem;
+  padding: 0 1.25rem;
+  border-radius: 0.75rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.2s var(--ct-spring), background-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.ct-btn-primary:active, .ct-btn-secondary:active {
+  transform: scale(0.97);
+}
+.ct-btn-primary {
+  color: var(--ct-surface);
+  background-color: var(--ct-ink);
+  box-shadow: 0 4px 12px -2px rgba(var(--ct-shadow-color), 0.25);
+}
+.ct-btn-primary:hover:not([disabled]) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+.ct-btn-primary[disabled] {
+  background-color: var(--ct-subtle);
+  color: var(--ct-faint);
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+.ct-btn-secondary {
+  color: var(--ct-ink);
+  background-color: var(--ct-surface);
+  border: 1.5px solid var(--ct-border);
+}
+.ct-btn-secondary:hover {
+  border-color: var(--ct-ink);
+  background-color: var(--ct-subtle);
+}
+.ct-btn-secondary.is-copied {
+  color: var(--ct-ok-text);
+  border-color: var(--ct-ok);
+  background-color: var(--ct-ok-bg);
+}
+
+.ct-btn-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Responsividade */
+@media (max-width: 1024px) {
+  .ct-studio-card {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    padding: 1.5rem;
+  }
+}
+@media (max-width: 640px) {
+  .ct-badges-row {
+    grid-template-columns: 1fr;
+  }
+  .ct-meter-section {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  .ct-odometer {
+    font-size: 2.75rem;
+  }
+  .ct-action-buttons {
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="ct-widget-wrapper">
+  <!-- Componente Estúdio de Contraste WCAG 2.2 -->
+  <section class="ct-studio-card" data-contraste data-texto="#0F172A" data-fondo="#F8FAFC" aria-label="Estúdio de Contraste WCAG 2.2 AAA">
+
+    <!-- Painel Esquerdo: Controles & Seletores -->
+    <div class="ct-left-panel">
+      <header class="ct-panel-header">
+        <h3>
+          <svg class="ct-btn-icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Estúdio de Contraste WCAG 2.2
+        </h3>
+        <p>Ajuste as cores de primeiro plano e fundo com inspeção em tempo real.</p>
+      </header>
+
+      <!-- Alternador de Canal (Texto x Fundo) -->
+      <div class="ct-tabs-nav" role="tablist" aria-label="Canal de cor ativo">
+        <div class="ct-tab-item is-active" data-channel="t">
+          <button class="ct-tab-btn" type="button" role="tab" id="ct-tab-btn-t" aria-selected="true" aria-controls="ct-picker-box">
+            <span class="ct-tab-chip" aria-hidden="true"></span>
+            <span>Texto</span>
+          </button>
+          <input class="ct-hex-field" type="text" data-hex="t" value="#0F172A" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Código hexadecimal da cor do texto">
+        </div>
+        <div class="ct-tab-item" data-channel="f">
+          <button class="ct-tab-btn" type="button" role="tab" id="ct-tab-btn-f" aria-selected="false" aria-controls="ct-picker-box" tabindex="-1">
+            <span class="ct-tab-chip" aria-hidden="true"></span>
+            <span>Fundo</span>
+          </button>
+          <input class="ct-hex-field" type="text" data-hex="f" value="#F8FAFC" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Código hexadecimal da cor do fundo">
+        </div>
+      </div>
+
+      <!-- Seletor 2D e Régua de Luminosidade -->
+      <div class="ct-picker-grid" id="ct-picker-box" role="tabpanel" aria-labelledby="ct-tab-btn-t">
+        <div class="ct-canvas-square" data-canvas>
+          <div class="ct-canvas-pointer" data-pointer role="slider" tabindex="0" aria-label="Saturação e luminosidade" aria-valuemin="0" aria-valuemax="100" aria-valuenow="15"></div>
+        </div>
+        <div class="ct-lightness-ruler" data-ruler title="Espectro de contraste por luminosidade contra a cor oposta">
+          <div class="ct-ruler-needle" data-ruler-needle aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <!-- Slider de Matiz (Hue) -->
+      <div class="ct-hue-container">
+        <span class="ct-hue-label">Matiz (Hue)</span>
+        <input class="ct-hue-slider" type="range" min="0" max="360" step="1" value="215" data-hue-slider aria-label="Matiz da cor ativa">
+      </div>
+
+      <p class="ct-keyboard-hints" aria-hidden="true">
+        <kbd>←</kbd><kbd>→</kbd> saturação · <kbd>↑</kbd><kbd>↓</kbd> luminosidade · <kbd>Shift</kbd> x10
+      </p>
+    </div>
+
+    <!-- Painel Direito: Amostra, Odômetro & Insígnias -->
+    <div class="ct-right-panel">
+      <!-- Card de Amostra Real -->
+      <article class="ct-preview-box" data-preview aria-label="Amostra de interface com as cores escolhidas">
+        <span class="ct-preview-tag">Exemplo Real de Interface</span>
+        <h4 class="ct-preview-title">Tipografia Nítida &amp; Conforto Visual</h4>
+        <p class="ct-preview-body">
+          A razão matemática de luminância garante legibilidade para todas as pessoas, sob qualquer condição de iluminação e dispositivo.
+        </p>
+        <div class="ct-preview-actions">
+          <span class="ct-preview-button">Ação Primária</span>
+          <span class="ct-preview-link">Saiba mais</span>
+        </div>
+        <p class="ct-preview-footnote">Conformidade comprovada segundo as diretrizes W3C WCAG 2.2.</p>
+      </article>
+
+      <!-- Medidor com Odômetro Mecânico -->
+      <div class="ct-meter-section">
+        <div class="ct-odometer-box">
+          <span class="ct-meter-label">Razão de Contraste</span>
+          <div class="ct-odometer" data-odometer role="img" aria-label="Contraste 15.2 a 1"></div>
+        </div>
+
+        <div class="ct-scale-wrapper">
+          <div class="ct-verdict" data-verdict data-status="great">
+            <span class="ct-verdict-dot" aria-hidden="true"></span>
+            <span data-verdict-text>Excelente: cumpre WCAG AAA</span>
+          </div>
+
+          <div class="ct-scale-track" aria-hidden="true">
+            <div class="ct-scale-band ct-band-fail"></div>
+            <div class="ct-scale-band ct-band-large"></div>
+            <div class="ct-scale-band ct-band-aa"></div>
+            <div class="ct-scale-band ct-band-aaa"></div>
+            <div class="ct-gauge-needle" data-gauge-needle></div>
+            <span class="ct-scale-mark" style="--mark-p: 0.3601;"><b>3</b></span>
+            <span class="ct-scale-mark" style="--mark-p: 0.4941;"><b>4,5</b></span>
+            <span class="ct-scale-mark" style="--mark-p: 0.6392;"><b>7</b></span>
+          </div>
+
+          <div id="moxen-apca-badge" class="ct-apca-badge" aria-label="Contraste Perceptual APCA">
+            APCA Lc 84.2 · Body OK
+          </div>
+        </div>
+      </div>
+
+      <!-- Insígnias AA Grande, AA e AAA -->
+      <ul class="ct-badges-row" aria-label="Níveis de conformidade WCAG">
+        <li class="ct-badge-card" data-level="large" data-passed="true">
+          <div class="ct-badge-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20">
+              <path class="ct-icon-check" pathLength="1" d="m4.8 10.4 3.4 3.4 7-7.4"/>
+              <path class="ct-icon-cross" pathLength="1" d="m6 6 8 8M14 6l-8 8"/>
+            </svg>
+          </div>
+          <div class="ct-badge-info">
+            <strong>AA Grande</strong>
+            <em>Títulos · 3.0 : 1</em>
+          </div>
+        </li>
+
+        <li class="ct-badge-card" data-level="aa" data-passed="true">
+          <div class="ct-badge-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20">
+              <path class="ct-icon-check" pathLength="1" d="m4.8 10.4 3.4 3.4 7-7.4"/>
+              <path class="ct-icon-cross" pathLength="1" d="m6 6 8 8M14 6l-8 8"/>
+            </svg>
+          </div>
+          <div class="ct-badge-info">
+            <strong>AA Normal</strong>
+            <em>Texto · 4.5 : 1</em>
+          </div>
+        </li>
+
+        <li class="ct-badge-card" data-level="aaa" data-passed="true">
+          <div class="ct-badge-icon" aria-hidden="true">
+            <svg viewBox="0 0 20 20">
+              <path class="ct-icon-check" pathLength="1" d="m4.8 10.4 3.4 3.4 7-7.4"/>
+              <path class="ct-icon-cross" pathLength="1" d="m6 6 8 8M14 6l-8 8"/>
+            </svg>
+          </div>
+          <div class="ct-badge-info">
+            <strong>AAA Máximo</strong>
+            <em>Reforçado · 7.0 : 1</em>
+          </div>
+        </li>
+      </ul>
+
+      <!-- Ações: Ajustar e Copiar Variáveis -->
+      <div class="ct-action-buttons">
+        <button class="ct-btn-primary" type="button" data-btn-adjust>
+          <svg class="ct-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M10 3.4v13.2M6.4 12.8 10 16.4l3.6-3.6M6.4 7.2 10 3.6l3.6 3.6"/>
+          </svg>
+          <span data-btn-adjust-text>Ajustar para AA</span>
+        </button>
+
+        <button class="ct-btn-secondary" type="button" data-btn-copy>
+          <svg class="ct-btn-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <rect x="7" y="7" width="9" height="9" rx="2.2"/>
+            <path d="M13 7V5.6A1.6 1.6 0 0 0 11.4 4H5.6A1.6 1.6 0 0 0 4 5.6v5.8A1.6 1.6 0 0 0 5.6 13H7"/>
+          </svg>
+          <span data-btn-copy-text>Copiar Variáveis CSS</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Região Live ARIA para Anúncios Falados -->
+    <p class="sr-only" data-live-announcer aria-live="polite" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0);"></p>
+  </section>
+</div>
+
+<script>
+/**
+ * Motor de Física e Cálculo de Contraste WCAG 2.2 AAA
+ * Inspirado nas mecânicas de física orgânica de molas e odômetro do Moxen Contraste.
+ */
+(function() {
+  'use strict';
+
+  const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const isReducedMotion = () => prefersReducedMotion.matches;
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+  // Física de Molas (Euler Integrator)
+  const createSpring = (initial, stiffness, damping, precision) => ({
+    x: initial,
+    v: 0,
+    target: initial,
+    k: stiffness,
+    c: damping,
+    precision: precision || 0.001
+  });
+
+  function stepSpring(s, dt) {
+    for (let t = dt; t > 0;) {
+      const step = Math.min(t, 1 / 240);
+      s.v += (s.k * (s.target - s.x) - s.c * s.v) * step;
+      s.x += s.v * step;
+      t -= step;
+    }
+  }
+  const isSpringAtRest = s => Math.abs(s.v) < s.precision * 10 && Math.abs(s.target - s.x) < s.precision;
+  const snapSpring = s => { s.x = s.target; s.v = 0; };
+
+  const SPRINGS = {
+    channel: { k: 95, c: 20 },     // Movimentação suave ao ajustar
+    number:  { k: 230, c: 24 },    // Odômetro numérico
+    gauge:   { k: 260, c: 25 },    // Agulha da escala
+    badge:   { k: 420, c: 22 }     // Micro-saltos de insígnias
+  };
+
+  const THRESHOLDS = { large: 3.0, aa: 4.5, aaa: 7.0 };
+  const MAX_CONTRAST = 21.0;
+
+  // Conversões Cromáticas
+  const wrapHue = h => ((h % 360) + 360) % 360;
+
+  function hslToRgb(h, s, l) {
+    h = wrapHue(h);
+    s = clamp(s, 0, 100) / 100;
+    l = clamp(l, 0, 100) / 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = n => {
+      const k = (n + h / 30) % 12;
+      return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    };
+    return [f(0), f(8), f(4)].map(v => Math.round(v * 255));
+  }
+
+  function rgbToHsl(rgb) {
+    const [r, g, b] = rgb.map(v => v / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, l = (max + min) / 2;
+    let h = 0, s = 0;
+    if (d !== 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h *= 60;
+    }
+    return [wrapHue(h), s * 100, l * 100];
+  }
+
+  const toHex = rgb => '#' + rgb.map(v => clamp(v, 0, 255).toString(16).padStart(2, '0')).join('');
+
+  function parseHex(hex) {
+    hex = String(hex).trim().replace(/^#/, '');
+    if (/^[0-9a-f]{3}$/i.test(hex)) hex = hex.split('').map(c => c + c).join('');
+    if (!/^[0-9a-f]{6}$/i.test(hex)) return null;
+    return [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+  }
+
+  // Luminância Relativa sRGB (WCAG 2.2)
+  const relativeLuminance = rgb => {
+    const f = v => {
+      v /= 255;
+      return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+  };
+
+  const getContrastRatio = (rgbA, rgbB) => {
+    const l1 = relativeLuminance(rgbA);
+    const l2 = relativeLuminance(rgbB);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  };
+
+  // Contraste Perceptual APCA (algoritmo SAPC/APCA 0.0.98G-4g)
+  function computeApcaLc(fgRgb, bgRgb) {
+    const toRgb = v => {
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'string') return parseHex(v) || [0, 0, 0];
+      return [0, 0, 0];
+    };
+    const rgbTxt = toRgb(fgRgb);
+    const rgbBg = toRgb(bgRgb);
+
+    const sRgbToY = rgb => {
+      const r = Math.pow(rgb[0] / 255.0, 2.4);
+      const g = Math.pow(rgb[1] / 255.0, 2.4);
+      const b = Math.pow(rgb[2] / 255.0, 2.4);
+      let y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b;
+      if (y < 0.022) {
+        y += Math.pow(0.022 - y, 1.414);
+      }
+      return y;
+    };
+
+    const yTxt = sRgbToY(rgbTxt);
+    const yBg = sRgbToY(rgbBg);
+
+    if (Math.abs(yBg - yTxt) < 0.0005) return 0.0;
+
+    let sapc = 0.0;
+    let lc = 0.0;
+    if (yBg > yTxt) {
+      // Polaridade normal (texto escuro em fundo claro)
+      sapc = (Math.pow(yBg, 0.56) - Math.pow(yTxt, 0.57)) * 1.14;
+      lc = sapc < 0.1 ? 0.0 : (sapc - 0.027) * 100.0;
+    } else {
+      // Polaridade reversa (texto claro em fundo escuro)
+      sapc = (Math.pow(yBg, 0.65) - Math.pow(yTxt, 0.62)) * 1.14;
+      lc = sapc > -0.1 ? 0.0 : (sapc + 0.027) * 100.0;
+    }
+    return Math.round(lc * 10) / 10;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.computeApcaLc = computeApcaLc;
+  }
+
+  // Odômetro Analógico Contínuo
+  function buildOdometer(container) {
+    container.textContent = '';
+    const makeWheel = labels => {
+      const wheel = document.createElement('span'); wheel.className = 'ct-rueda';
+      const strip = document.createElement('span'); strip.className = 'ct-tira';
+      labels.forEach(lbl => {
+        const b = document.createElement('b'); b.textContent = lbl; strip.appendChild(b);
+      });
+      wheel.appendChild(strip); container.appendChild(wheel);
+      return { wheel, strip, len: labels.length };
+    };
+
+    const digits = '01234567890'.split('');
+    const wheelTens = makeWheel([' ', '1', '2']);
+    const wheelUnits = makeWheel(digits);
+    const comma = document.createElement('span'); comma.className = 'ct-comma'; comma.textContent = ','; container.appendChild(comma);
+    const wheelTenths = makeWheel(digits);
+    const wheelHundredths = makeWheel(digits);
+    const suffix = document.createElement('span'); suffix.className = 'ct-suffix'; suffix.textContent = ': 1'; container.appendChild(suffix);
+
+    const setPosition = (wheelObj, pos) => {
+      const p = ((pos % wheelObj.len) + wheelObj.len) % wheelObj.len;
+      wheelObj.strip.style.transform = `translate3d(0, ${(-p * 1.15).toFixed(4)}em, 0)`;
+    };
+
+    return {
+      render(ratio) {
+        const val = Math.max(0, ratio) * 100;
+        const p0 = val % 10;
+        const p1 = Math.floor(val / 10) % 10 + clamp(p0 - 9, 0, 1);
+        const p2 = Math.floor(val / 100) % 10 + clamp(p1 - 9, 0, 1);
+        const p3 = Math.floor(val / 1000) % 10 + clamp(p2 - 9, 0, 1);
+
+        setPosition(wheelHundredths, p0);
+        setPosition(wheelTenths, p1);
+        setPosition(wheelUnits, p2);
+        setPosition(wheelTens, Math.min(p3, 2.999));
+        wheelTens.wheel.style.display = p3 < 0.001 ? 'none' : '';
+      }
+    };
+  }
+
+  // Componente Principal
+  function InitContrastStudio(root, options) {
+    options = Object.assign({
+      text: root.dataset.texto || '#0F172A',
+      background: root.dataset.fondo || '#F8FAFC',
+      activeChannel: 't'
+    }, options || {});
+
+    const $ = sel => root.querySelector(sel);
+    const canvas = $('[data-canvas]');
+    const pointer = $('[data-pointer]');
+    const ruler = $('[data-ruler]');
+    const rulerNeedle = $('[data-ruler-needle]');
+    const hueSlider = $('[data-hue-slider]');
+    const odometerEl = $('[data-odometer]');
+    const verdictEl = $('[data-verdict]');
+    const verdictTextEl = $('[data-verdict-text]');
+    const gaugeNeedle = $('[data-gauge-needle]');
+    const track = $('.ct-scale-track');
+    const badges = Array.from(root.querySelectorAll('[data-level]'));
+    const btnAdjust = $('[data-btn-adjust]');
+    const btnAdjustText = $('[data-btn-adjust-text]');
+    const btnCopy = $('[data-btn-copy]');
+    const btnCopyText = $('[data-btn-copy-text]');
+    const liveAnnouncer = $('[data-live-announcer]');
+
+    const hexInputs = {
+      t: $('[data-hex="t"]'),
+      f: $('[data-hex="f"]')
+    };
+    const tabItems = {
+      t: $('.ct-tab-item[data-channel="t"]'),
+      f: $('.ct-tab-item[data-channel="f"]')
+    };
+    const tabButtons = {
+      t: $('#ct-tab-btn-t'),
+      f: $('#ct-tab-btn-f')
+    };
+
+    const odometer = buildOdometer(odometerEl);
+
+    // Estado reativo com molas
+    const makeChannelSpring = v => createSpring(v, SPRINGS.channel.k, SPRINGS.channel.c, 0.01);
+    const parseInitColor = hex => {
+      const [h, s, l] = rgbToHsl(parseHex(hex) || [0, 0, 0]);
+      return { h: makeChannelSpring(h), s: makeChannelSpring(s), l: makeChannelSpring(l) };
+    };
+
+    const colors = {
+      t: parseInitColor(options.text),
+      f: parseInitColor(options.background)
+    };
+    let activeChan = options.activeChannel === 'f' ? 'f' : 't';
+    const otherChan = k => (k === 't' ? 'f' : 't');
+
+    const getHslValues = c => [wrapHue(c.h.x), c.s.x, c.l.x];
+    const getRgbCurrent = c => hslToRgb(c.h.x, c.s.x, c.l.x);
+    const getRgbTarget = c => hslToRgb(c.h.target, c.s.target, c.l.target);
+
+    function setChannelTarget(chan, prop, val, snap) {
+      const spr = colors[chan][prop];
+      spr.target = val;
+      if (snap) { spr.x = val; spr.v = 0; }
+    }
+
+    function setHueTarget(chan, h, snap) {
+      const spr = colors[chan].h;
+      const diff = ((h - wrapHue(spr.x) + 540) % 360) - 180;
+      spr.target = spr.x + diff;
+      if (snap) { spr.x = spr.target; spr.v = 0; }
+    }
+
+    const ratioSpring = createSpring(1, SPRINGS.number.k, SPRINGS.number.c, 0.002);
+    const needleSpring = createSpring(0, SPRINGS.gauge.k, SPRINGS.gauge.c, 0.0005);
+
+    let rulerHeight = 260;
+    let trackWidth = 280;
+    let rulerCacheKey = '';
+    let isDragging = false;
+    let awaitingAdjustTick = null;
+    let rafHandle = 0;
+    let lastTime = 0;
+    let announceTimer = 0;
+
+    function updateContrastStudio(isInitial) {
+      const rgbT = getRgbCurrent(colors.t);
+      const rgbF = getRgbCurrent(colors.f);
+      const hexT = toHex(rgbT);
+      const hexF = toHex(rgbF);
+
+      root.style.setProperty('--ct-text-sample', hexT);
+      root.style.setProperty('--ct-bg-sample', hexF);
+
+      const activeColor = colors[activeChan];
+      const [h, s, l] = getHslValues(activeColor);
+
+      root.style.setProperty('--ct-h', h.toFixed(1));
+      root.style.setProperty('--ct-s', s.toFixed(1) + '%');
+      root.style.setProperty('--ct-l', l.toFixed(1) + '%');
+      pointer.style.setProperty('--ct-current-pick', activeChan === 't' ? hexT : hexF);
+
+      pointer.style.left = s.toFixed(2) + '%';
+      pointer.style.top = (100 - l).toFixed(2) + '%';
+      pointer.setAttribute('aria-valuenow', String(Math.round(l)));
+
+      const rulerY = ((100 - l) / 100 * rulerHeight).toFixed(2);
+      rulerNeedle.style.setProperty('--curr-y', `${rulerY}px`);
+      rulerNeedle.style.transform = `translateY(${rulerY}px)`;
+
+      if (document.activeElement !== hueSlider) hueSlider.value = String(Math.round(h));
+      if (document.activeElement !== hexInputs.t) hexInputs.t.value = hexT.toUpperCase();
+      if (document.activeElement !== hexInputs.f) hexInputs.f.value = hexF.toUpperCase();
+
+      // Atualiza gradiente da régua lateral de luminosidade
+      const rgbOther = activeChan === 't' ? rgbF : rgbT;
+      const mapKey = `${Math.round(h)}|${Math.round(s)}|${activeChan === 't' ? hexF : hexT}|${activeChan}`;
+      if (mapKey !== rulerCacheKey) {
+        rulerCacheKey = mapKey;
+        renderRulerGradient(h, s, rgbOther);
+      }
+
+      // Calcula razão de contraste
+      const currentRatio = getContrastRatio(rgbT, rgbF);
+      ratioSpring.target = Math.floor(currentRatio * 100) / 100;
+      needleSpring.target = clamp(Math.log(Math.max(1, currentRatio)) / Math.log(MAX_CONTRAST), 0, 1);
+
+      if (isInitial) {
+        snapSpring(ratioSpring);
+        snapSpring(needleSpring);
+      }
+
+      // Atualiza badge de Contraste Perceptual APCA (Lc)
+      const apcaBadge = $('#moxen-apca-badge') || document.getElementById('moxen-apca-badge');
+      if (apcaBadge) {
+        const apcaLc = computeApcaLc(rgbT, rgbF);
+        const absLc = Math.abs(apcaLc);
+        let statusTag = 'Fail';
+        if (apcaLc < 0) {
+          statusTag = absLc >= 75 ? 'Dark Mode OK' : absLc >= 60 ? 'Dark Mode (Large OK)' : 'Dark Mode (Insufficient)';
+        } else {
+          statusTag = absLc >= 75 ? 'Body OK' : absLc >= 60 ? 'Sub-Body OK' : absLc >= 45 ? 'Large Text OK' : 'Insufficient';
+        }
+        apcaBadge.textContent = `APCA Lc ${apcaLc.toFixed(1)} · ${statusTag}`;
+      }
+
+      const passes = {
+        large: currentRatio >= THRESHOLDS.large,
+        aa:    currentRatio >= THRESHOLDS.aa,
+        aaa:   currentRatio >= THRESHOLDS.aaa
+      };
+
+      badges.forEach(badge => {
+        const lvl = badge.dataset.level;
+        const pass = passes[lvl];
+        badge.dataset.passed = String(pass);
+      });
+
+      const status = passes.aaa ? 'great' : passes.aa ? 'ok' : passes.large ? 'large' : 'fail';
+      const statusText = passes.aaa
+        ? 'Excelente: cumpre WCAG AAA'
+        : passes.aa
+        ? 'Se lê bem: cumpre WCAG AA'
+        : passes.large
+        ? 'Apenas títulos grandes (≥ 3:1)'
+        : 'Contraste insuficiente (< 3:1)';
+
+      verdictEl.dataset.status = status;
+      verdictTextEl.textContent = statusText;
+
+      btnAdjust.disabled = passes.aa;
+      btnAdjustText.textContent = passes.aa ? 'Cumpre WCAG AA ✓' : 'Ajustar para AA';
+      odometerEl.setAttribute('aria-label', `Contraste ${currentRatio.toFixed(2).replace('.', ',')} a 1`);
+    }
+
+    const renderColors = updateContrastStudio;
+    root.updateContrastStudio = updateContrastStudio;
+
+    function renderRulerGradient(h, s, otherRgb) {
+      const steps = 50;
+      const segments = [];
+      for (let i = 0; i < steps; i++) {
+        const testRatio = getContrastRatio(hslToRgb(h, s, 100 - (i + 0.5) * 100 / steps), otherRgb);
+        const colorVar = testRatio >= THRESHOLDS.aaa
+          ? 'var(--ct-m3)'
+          : testRatio >= THRESHOLDS.aa
+          ? 'var(--ct-m2)'
+          : testRatio >= THRESHOLDS.large
+          ? 'var(--ct-m1)'
+          : 'var(--ct-m0)';
+        segments.push(`${colorVar} ${(i * 100 / steps).toFixed(1)}% ${((i + 1) * 100 / steps).toFixed(1)}%`);
+      }
+      ruler.style.background = `linear-gradient(to bottom, ${segments.join(', ')})`;
+    }
+
+    function draw() {
+      odometer.render(ratioSpring.x);
+      track.style.setProperty('--needle-pos', needleSpring.x.toFixed(4));
+    }
+
+    function animationLoop(time) {
+      const dt = Math.min(0.05, Math.max(0, (time - lastTime) / 1000));
+      lastTime = time;
+
+      let isMoving = false;
+      ['t', 'f'].forEach(k => {
+        ['h', 's', 'l'].forEach(prop => {
+          const spr = colors[k][prop];
+          if (isSpringAtRest(spr)) return;
+          stepSpring(spr, dt);
+          isMoving = true;
+          if (isSpringAtRest(spr)) snapSpring(spr);
+        });
+      });
+
+      if (isMoving) renderColors();
+
+      stepSpring(ratioSpring, dt);
+      stepSpring(needleSpring, dt);
+      if (isSpringAtRest(ratioSpring)) snapSpring(ratioSpring);
+      if (isSpringAtRest(needleSpring)) snapSpring(needleSpring);
+
+      draw();
+
+      if (awaitingAdjustTick && Math.abs(colors[awaitingAdjustTick].l.target - colors[awaitingAdjustTick].l.x) < 0.6) {
+        const tickChan = awaitingAdjustTick;
+        awaitingAdjustTick = null;
+        triggerTic(tickChan);
+      }
+
+      const keepRunning = isMoving || !isSpringAtRest(ratioSpring) || !isSpringAtRest(needleSpring) || awaitingAdjustTick;
+      rafHandle = keepRunning ? requestAnimationFrame(animationLoop) : 0;
+    }
+
+    function awakenLoop() {
+      if (isReducedMotion()) {
+        ['t', 'f'].forEach(k => ['h', 's', 'l'].forEach(p => snapSpring(colors[k][p])));
+        renderColors(true);
+        draw();
+        return;
+      }
+      if (!rafHandle) {
+        lastTime = performance.now();
+        rafHandle = requestAnimationFrame(animationLoop);
+      }
+    }
+
+    function triggerTic(chan) {
+      if (chan === activeChan) {
+        pointer.classList.remove('is-tic');
+        void pointer.offsetWidth;
+        pointer.classList.add('is-tic');
+
+        ruler.classList.remove('is-tic');
+        void ruler.offsetWidth;
+        ruler.classList.add('is-tic');
+      }
+      try {
+        if (navigator.vibrate) navigator.vibrate(10);
+      } catch (_) {}
+      announceLive(true);
+    }
+
+    // Interações no Canvas 2D
+    function updateFromPointer(e) {
+      const rect = canvas.getBoundingClientRect();
+      const sat = clamp((e.clientX - rect.left) / rect.width * 100, 0, 100);
+      const light = clamp(100 - (e.clientY - rect.top) / rect.height * 100, 0, 100);
+      setChannelTarget(activeChan, 's', sat, true);
+      setChannelTarget(activeChan, 'l', light, true);
+      awaitingAdjustTick = null;
+      renderColors();
+      awakenLoop();
+    }
+
+    canvas.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      isDragging = true;
+      canvas.classList.add('is-dragging');
+      canvas.setPointerCapture(e.pointerId);
+      updateFromPointer(e);
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!isDragging) return;
+      updateFromPointer(e);
+    });
+    const stopDrag = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      canvas.classList.remove('is-dragging');
+      announceLive();
+    };
+    canvas.addEventListener('pointerup', stopDrag);
+    canvas.addEventListener('pointercancel', stopDrag);
+
+    // Teclado no Seletor 2D
+    pointer.addEventListener('keydown', e => {
+      const c = colors[activeChan];
+      const step = e.shiftKey ? 10 : 1;
+      let sat = c.s.target, light = c.l.target, handled = true;
+
+      if (e.key === 'ArrowLeft') sat = clamp(sat - step, 0, 100);
+      else if (e.key === 'ArrowRight') sat = clamp(sat + step, 0, 100);
+      else if (e.key === 'ArrowUp') light = clamp(light + step, 0, 100);
+      else if (e.key === 'ArrowDown') light = clamp(light - step, 0, 100);
+      else if (e.key === 'Home') light = 100;
+      else if (e.key === 'End') light = 0;
+      else handled = false;
+
+      if (handled) {
+        e.preventDefault();
+        setChannelTarget(activeChan, 's', sat, true);
+        setChannelTarget(activeChan, 'l', light, true);
+        renderColors();
+        awakenLoop();
+        announceLive();
+      }
+    });
+
+    // Slider de Matiz
+    hueSlider.addEventListener('input', () => {
+      setHueTarget(activeChan, parseFloat(hueSlider.value), true);
+      awaitingAdjustTick = null;
+      renderColors();
+      awakenLoop();
+    });
+    hueSlider.addEventListener('change', () => announceLive());
+
+    // Troca de Abas (Texto / Fundo)
+    function switchChannel(chan, focusInput) {
+      if (chan === activeChan) return;
+      activeChan = chan;
+
+      tabItems.t.classList.toggle('is-active', activeChan === 't');
+      tabItems.f.classList.toggle('is-active', activeChan === 'f');
+      tabButtons.t.setAttribute('aria-selected', String(activeChan === 't'));
+      tabButtons.f.setAttribute('aria-selected', String(activeChan === 'f'));
+      tabButtons.t.setAttribute('tabindex', activeChan === 't' ? '0' : '-1');
+      tabButtons.f.setAttribute('tabindex', activeChan === 'f' ? '0' : '-1');
+
+      renderColors();
+      awakenLoop();
+      if (focusInput) tabButtons[activeChan].focus();
+      announceLive();
+    }
+
+    Object.keys(tabButtons).forEach(k => {
+      tabButtons[k].addEventListener('click', () => switchChannel(k, false));
+      tabButtons[k].addEventListener('keydown', e => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          switchChannel(otherChan(k), true);
+        }
+      });
+    });
+
+    // Inputs Hexadecimais
+    Object.keys(hexInputs).forEach(k => {
+      const inp = hexInputs[k];
+      inp.addEventListener('change', () => {
+        const rgb = parseHex(inp.value);
+        if (!rgb) {
+          inp.classList.remove('is-invalid');
+          void inp.offsetWidth;
+          inp.classList.add('is-invalid');
+          inp.value = toHex(getRgbCurrent(colors[k])).toUpperCase();
+          return;
+        }
+        const [h, s, l] = rgbToHsl(rgb);
+        setHueTarget(k, h, false);
+        setChannelTarget(k, 's', s, false);
+        setChannelTarget(k, 'l', l, false);
+        awaitingAdjustTick = null;
+        awakenLoop();
+        announceLive();
+      });
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+          inp.value = toHex(getRgbCurrent(colors[k])).toUpperCase();
+          inp.blur();
+        }
+      });
+    });
+
+    // Algoritmo de Ajuste Automático para WCAG AA
+    function autoAdjust() {
+      if (btnAdjust.disabled) return;
+
+      const activeObj = colors[activeChan];
+      const otherTargetRgb = getRgbTarget(colors[otherChan(activeChan)]);
+      const h = wrapHue(activeObj.h.target);
+      const s = activeObj.s.target;
+      const initialL = clamp(activeObj.l.x, 0, 100);
+
+      const meetsAA = l => getContrastRatio(hslToRgb(h, s, l), otherTargetRgb) >= THRESHOLDS.aa;
+
+      let bestLightness = null;
+      for (let delta = 0.25; delta <= 100 && bestLightness === null; delta += 0.25) {
+        const down = initialL - delta;
+        const up = initialL + delta;
+        // Prioridade: texto escurece primeiro, fundo clareia primeiro
+        const checkOrder = activeChan === 't' ? [down, up] : [up, down];
+        for (const candidate of checkOrder) {
+          if (candidate >= 0 && candidate <= 100 && meetsAA(candidate)) {
+            bestLightness = candidate;
+            break;
+          }
+        }
+      }
+
+      if (bestLightness === null) {
+        pointer.classList.remove('is-fail');
+        void pointer.offsetWidth;
+        pointer.classList.add('is-fail');
+        liveAnnouncer.textContent = 'Não foi possível atingir AA com este matiz. Tente ajustar o matiz.';
+        return;
+      }
+
+      // Refinamento por bisseção
+      let passVal = bestLightness;
+      let failVal = clamp(bestLightness + (bestLightness < initialL ? 0.25 : -0.25), 0, 100);
+      for (let i = 0; i < 8; i++) {
+        const mid = (passVal + failVal) / 2;
+        if (meetsAA(mid)) passVal = mid;
+        else failVal = mid;
+      }
+
+      const finalLightness = clamp(passVal + (passVal < initialL ? -0.8 : 0.8), 0, 100);
+      setChannelTarget(activeChan, 'l', meetsAA(finalLightness) ? finalLightness : passVal, false);
+      awaitingAdjustTick = activeChan;
+      awakenLoop();
+    }
+    btnAdjust.addEventListener('click', autoAdjust);
+
+    // Copiar Variáveis CSS
+    btnCopy.addEventListener('click', () => {
+      const hexT = toHex(getRgbCurrent(colors.t)).toUpperCase();
+      const hexF = toHex(getRgbCurrent(colors.f)).toUpperCase();
+      const cssVars = `--color-text: ${hexT};\n--color-surface: ${hexF};`;
+
+      try {
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(cssVars).catch(() => {});
+        }
+      } catch (_) {}
+
+      btnCopy.classList.add('is-copied');
+      btnCopyText.textContent = 'Copiado para o Clipboard! ✓';
+      liveAnnouncer.textContent = `Copiado: ${cssVars.replace(/\n/g, ' ')}`;
+
+      setTimeout(() => {
+        btnCopy.classList.remove('is-copied');
+        btnCopyText.textContent = 'Copiar Variáveis CSS';
+      }, 2000);
+    });
+
+    // Anúncio Acessível via ARIA Live
+    function announceLive(immediate) {
+      clearTimeout(announceTimer);
+      const doAnnounce = () => {
+        const ratio = getContrastRatio(getRgbCurrent(colors.t), getRgbCurrent(colors.f));
+        liveAnnouncer.textContent = `Contraste ${ratio.toFixed(2).replace('.', ',')} para 1. ${verdictTextEl.textContent}.`;
+      };
+      if (immediate) doAnnounce();
+      else announceTimer = setTimeout(doAnnounce, 300);
+    }
+
+    // Redimensionamento
+    function measureDimensions() {
+      rulerHeight = ruler.clientHeight || 260;
+      trackWidth = track.clientWidth || 280;
+      track.style.setProperty('--track-width', `${trackWidth}px`);
+      renderColors();
+      draw();
+    }
+
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(measureDimensions);
+      ro.observe(ruler);
+      ro.observe(track);
+    } else {
+      window.addEventListener('resize', measureDimensions);
+    }
+
+    renderColors(true);
+    measureDimensions();
+    draw();
+  }
+
+  // Auto-inicialização em nós [data-contraste]
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-contraste]').forEach(el => InitContrastStudio(el));
+  });
+  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    document.querySelectorAll('[data-contraste]').forEach(el => InitContrastStudio(el));
+  }
+
+  window.InitContrastStudio = InitContrastStudio;
+})();
+</script>
+</body>
+</html>

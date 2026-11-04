@@ -1,0 +1,25 @@
+name: ADR Lint
+
+on:
+  pull_request:
+    paths:
+      - "docs/adrs/**"
+      - "docs/adr/**"
+      - ".agents/scripts/adr/**"
+  push:
+    branches: [main]
+    paths:
+      - "docs/adrs/**"
+      - "docs/adr/**"
+      - ".agents/scripts/adr/**"
+
+jobs:
+  validate-adrs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validar ADRs
+        run: python3 .agents/scripts/adr/validate_adrs.py

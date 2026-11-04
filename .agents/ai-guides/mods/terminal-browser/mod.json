@@ -1,0 +1,20 @@
+{
+  "name": "terminal-browser",
+  "version": "1.2.0",
+  "description": "Navegador web completo integrado ao terminal lado a lado.",
+  "author": "Zenbu Labs & Antigravity Engineering",
+  "type": "mod",
+  "commands": [
+    {
+      "name": "browser",
+      "description": "Abre o navegador web no terminal ou navegador padrão do sistema",
+      "source": "./commands/browser.md"
+    }
+  ],
+  "ui": {
+    "sidePanel": {
+      "enabled": true,
+      "minWidth": 120
+    }
+  }
+}

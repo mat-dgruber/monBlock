@@ -1,0 +1,23 @@
+{
+  "name": "claude-mods-suite",
+  "version": "1.2.0",
+  "description": "Suíte canônica de 8 mods de alta performance para Claude Code e OpenClaude: Blast Radius, Cache Tax, Reflect, Replay Theater, Terminal Browser, You Should Know, Savvy Progress e Next Steps.",
+  "author": {
+    "name": "Casa Publicadora Brasileira",
+    "url": "https://github.com/Casa-Publicadora-Brasileira"
+  },
+  "repository": "https://github.com/Casa-Publicadora-Brasileira/ai-guides",
+  "license": "MIT",
+  "keywords": [
+    "mods",
+    "tui",
+    "blast-radius",
+    "cache-tax",
+    "replay-theater",
+    "reflect",
+    "terminal-browser",
+    "savvy-progress",
+    "you-should-know",
+    "next-steps"
+  ]
+}

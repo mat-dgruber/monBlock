@@ -1,0 +1,26 @@
+{
+  "name": "blast-radius",
+  "version": "1.2.0",
+  "description": "Intercepta comandos destrutivos no terminal (rm -rf, git push --force, etc.) e analisa o raio de impacto antes da execução.",
+  "author": {
+    "name": "Antigravity Engineering"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/blast-radius.js\"",
+            "statusMessage": "Analisando raio de impacto do comando...",
+            "if": "Bash(*)"
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    "./commands/blast-check.md"
+  ]
+}

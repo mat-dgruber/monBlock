@@ -1,0 +1,209 @@
+/* Fonte canônica: templates/design/tokens.css (guia-universal-design-ui-ux-acessibilidade.md §2 z-index, §4 tokens dos 3 temas,
+   §7 safety checks) — instalado por UI-02. Importe este arquivo no entrypoint de estilos antes de qualquer outro CSS. */
+
+/* ==========================================================================
+   ESCALA DE Z-INDEX (§2) — nunca use números literais em z-index
+   ========================================================================== */
+:root {
+  --z-base: 0; /* Conteúdo plano padrão */
+  --z-elevated: 10; /* Cards flutuantes, cabeçalhos de tabela fixos */
+  --z-sticky: 100; /* Headers e sidebars coladas ao scroll */
+  --z-drawer: 200; /* Painéis laterais deslizantes */
+  --z-backdrop: 300; /* Máscara escura/translúcida de fundo de overlay */
+  --z-modal: 400; /* Janelas de diálogo e modais centrais */
+  --z-popover: 500; /* Dropdowns, selects, date pickers, popovers */
+  --z-tooltip: 600; /* Tooltips — sempre acima de popovers */
+  --z-toast: 1000; /* Notificações globais e alertas críticos */
+}
+
+/* ==========================================================================
+   TEMA 1: CLARO (Light Theme - Padrão Corporativo Arejado)
+   ========================================================================== */
+:root,
+.theme-light {
+  /* Superfícies & Fundos */
+  --surface-canvas: #f8fafc;
+  --surface-card: #ffffff;
+  --surface-subtle: #f1f5f9;
+  --surface-overlay: rgba(15, 23, 42, 0.4);
+
+  /* Textos & Conteúdo */
+  --text-primary: #0f172a; /* Contraste ≥ 12:1 */
+  --text-secondary: #475569; /* Contraste ≥ 4.5:1 */
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+  --text-on-primary: #ffffff;
+
+  /* Linhas & Divisores */
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-focus: #3b82f6;
+
+  /* Ações & Semântica */
+  --color-primary: #1e6ef4;
+  --color-primary-hover: #1557c0;
+  --color-primary-subtle: rgba(30, 110, 244, 0.08);
+  --status-success: #10b981;
+  --status-success-subtle: #ecfdf5;
+  --status-warning: #f59e0b;
+  --status-warning-subtle: #fffbeb;
+  --status-danger: #ef4444;
+  --status-danger-subtle: #fef2f2;
+  --status-info: #0284c7;
+  --status-info-subtle: #f0f9ff;
+
+  /* Efeito Glass */
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(226, 232, 240, 0.8);
+  --glass-blur: blur(12px) saturate(160%);
+}
+
+/* ==========================================================================
+   TEMA 2: ESCURO (Dark Mode - Conforto Visual & Profundidade)
+   ========================================================================== */
+@media (prefers-color-scheme: dark), [data-theme="dark"], .theme-dark {
+  :root {
+    /* Superfícies em Camadas — Elevação por Luminosidade, não por sombra */
+    --surface-canvas: #0f172a;
+    --surface-card: #1e293b;
+    --surface-subtle: #334155;
+    --surface-overlay: rgba(0, 0, 0, 0.6);
+
+    --text-primary: #f8fafc; /* Contraste ≥ 13:1 */
+    --text-secondary: #94a3b8; /* Contraste ≥ 5.2:1 */
+    --text-muted: #64748b;
+    --text-inverse: #0f172a;
+    --text-on-primary: #ffffff;
+
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-default: #334155;
+    --border-strong: #475569;
+    --border-focus: #60a5fa;
+
+    --color-primary: #3b82f6;
+    --color-primary-hover: #2563eb;
+    --color-primary-subtle: rgba(59, 130, 246, 0.12);
+    --status-success: #34d399;
+    --status-success-subtle: rgba(52, 211, 153, 0.12);
+    --status-warning: #fbbf24;
+    --status-warning-subtle: rgba(251, 191, 36, 0.12);
+    --status-danger: #f87171;
+    --status-danger-subtle: rgba(248, 113, 113, 0.12);
+    --status-info: #38bdf8;
+    --status-info-subtle: rgba(56, 189, 248, 0.12);
+
+    --glass-bg: rgba(15, 23, 42, 0.82);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-blur: blur(12px) saturate(180%);
+  }
+}
+
+/* ==========================================================================
+   TEMA 3: ALTO CONTRASTE (High Contrast - WCAG AAA & Baixa Visão)
+   ========================================================================== */
+@media (prefers-contrast: more),
+  [data-theme="high-contrast"],
+  .theme-high-contrast {
+  :root {
+    --surface-canvas: #000000;
+    --surface-card: #090d16;
+    --surface-subtle: #172033;
+    --surface-overlay: rgba(0, 0, 0, 0.85);
+
+    --text-primary: #ffffff; /* Contraste ≥ 15:1 */
+    --text-secondary: #facc15; /* Amarelo de altíssima legibilidade */
+    --text-muted: #fef08a;
+    --text-inverse: #000000;
+    --text-on-primary: #000000;
+
+    --border-subtle: #facc15;
+    --border-default: #facc15;
+    --border-strong: #ffffff;
+    --border-focus: #ffffff;
+
+    --color-primary: #facc15;
+    --color-primary-hover: #eab308;
+    --color-primary-subtle: rgba(250, 204, 21, 0.2);
+    --status-success: #4ade80;
+    --status-success-subtle: rgba(74, 222, 128, 0.2);
+    --status-warning: #facc15;
+    --status-warning-subtle: rgba(250, 204, 21, 0.2);
+    --status-danger: #f87171;
+    --status-danger-subtle: rgba(248, 113, 113, 0.2);
+    --status-info: #38bdf8;
+    --status-info-subtle: rgba(56, 189, 248, 0.2);
+
+    /* Glass completamente desabilitado no alto contraste */
+    --glass-bg: var(--surface-card);
+    --glass-border: var(--border-default);
+    --glass-blur: none;
+  }
+}
+
+/* ==========================================================================
+   SUPORTE A CORES FORÇADAS DO SO (Windows High Contrast / macOS Increase Contrast)
+   ========================================================================== */
+@media (forced-colors: active) {
+  :root {
+    --color-primary: ButtonText;
+    --border-focus: Highlight;
+    --text-primary: CanvasText;
+    --surface-canvas: Canvas;
+    --glass-bg: Canvas;
+    --glass-blur: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+  }
+}
+
+/* ==========================================================================
+   SAFETY CHECKS SENSORIAIS (§7) — reduced motion / transparency / contrast
+   ========================================================================== */
+/* ✅ 1. Respeito estrito a prefers-reduced-motion: cross-fades em vez de translações/molas */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Transição de opacidade permitida: não afeta o sistema vestibular */
+  .fade-transition,
+  .sheet-surface,
+  .modal-dialog {
+    transition: opacity 200ms ease !important;
+    transform: none !important;
+  }
+}
+
+/* ✅ 2. Respeito a prefers-reduced-transparency: fundos sólidos e sem blur */
+@media (prefers-reduced-transparency: reduce) {
+  .translucent-chrome,
+  .apple-translucent-toolbar {
+    background-color: var(--surface-card) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ✅ 3. Respeito a prefers-contrast: borda de alto contraste e fundos semitransparentes desativados */
+@media (prefers-contrast: more) {
+  .sheet-surface,
+  .modal-dialog,
+  .apple-translucent-toolbar {
+    background-color: var(--surface-card) !important;
+    border: 2px solid var(--text-primary) !important;
+  }
+}
+
+/* Numerais tabulares para tabelas, KPIs e dados que mudam (guia-componente-tabela §3, guia-dashboard §3) */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}

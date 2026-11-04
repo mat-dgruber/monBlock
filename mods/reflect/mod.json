@@ -1,0 +1,32 @@
+{
+  "name": "reflect",
+  "version": "1.2.0",
+  "description": "Detecta correções e preferências expressadas no chat e sugere salvá-las automaticamente como regras permanentes.",
+  "author": "BayramAnnakov & Antigravity Engineering",
+  "type": "mod",
+  "commands": [
+    {
+      "name": "reflect-status",
+      "description": "Lista as regras detectadas e permite salvá-las no repositório",
+      "source": "./commands/reflect-status.md"
+    }
+  ],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./bin/reflect.js"
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "band": {
+      "enabled": true,
+      "handler": "renderReflectBand"
+    }
+  }
+}

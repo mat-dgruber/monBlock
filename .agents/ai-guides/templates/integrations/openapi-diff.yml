@@ -1,0 +1,19 @@
+# Fonte canônica: templates/integrations/openapi-diff.yml (guia-scalar-openapi-dx.md §8) — instalado por SCALAR-04
+# Compara docs/api/openapi.json da branch base com o da PR e falha em breaking changes.
+name: openapi-diff
+on:
+  pull_request:
+    paths: ["docs/api/openapi.json"]
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: git show "origin/${{ github.base_ref }}:docs/api/openapi.json" > /tmp/openapi.base.json
+      - run: npm install --no-save @scalar/openapi-diff
+      - run: node .agents/scripts/openapi_diff.mjs /tmp/openapi.base.json docs/api/openapi.json

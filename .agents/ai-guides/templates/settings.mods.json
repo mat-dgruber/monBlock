@@ -1,0 +1,65 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/blast-radius/bin/blast-radius.js",
+            "statusMessage": "Auditando blast radius de comandos críticos..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/you-should-know/bin/risk-advisor.js",
+            "statusMessage": "Inspecionando riscos de arquitetura e segredos..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/replay-theater/bin/replay-collector.js",
+            "statusMessage": "Registrando diffs para o Replay Theater..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/cache-tax/bin/cache-check.js",
+            "statusMessage": "Verificando expiração de cache de contexto..."
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/reflect/bin/reflect.js",
+            "statusMessage": "Capturando correções e novas convenções..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/next-steps/bin/next-steps.js",
+            "statusMessage": "Sugerindo próximos passos contextuais..."
+          }
+        ]
+      }
+    ]
+  }
+}

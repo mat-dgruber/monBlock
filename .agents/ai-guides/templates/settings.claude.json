@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          { "type": "command", "command": "PATH=\"$HOME/.local/bin:$PATH\" graphify hook-guard search" }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          { "type": "command", "command": "PATH=\"$HOME/.local/bin:$PATH\" graphify hook-guard read --strict" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.tool_response.filePath // .tool_input.file_path'); if echo \"$FILE\" | grep -q '\\.graphifyignore$'; then PATH=\"$HOME/.local/bin:$PATH\" graphify extract . --force --code-only; elif echo \"$FILE\" | grep -qE '\\.(py|ts|js|go|rs|java|php|cs)$'; then PATH=\"$HOME/.local/bin:$PATH\" graphify update .; fi || true",
+            "statusMessage": "Atualizando Grafo de Conhecimento com Graphify..."
+          }
+        ]
+      }
+    ]
+  }
+}

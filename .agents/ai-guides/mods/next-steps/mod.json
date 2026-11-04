@@ -1,0 +1,43 @@
+{
+  "name": "next-steps",
+  "version": "1.0.0",
+  "description": "Sugere até três próximos prompts contextuais imediatamente acima da caixa de entrada após cada turno.",
+  "author": "Thariq Shihipar & Antigravity Engineering",
+  "type": "mod",
+  "commands": [
+    {
+      "name": "next-steps",
+      "description": "Exibe as sugestões de próximos passos preditas para a sessão ativa",
+      "source": "./commands/next-steps.md"
+    }
+  ],
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/next-steps/bin/next-steps.js"
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "band": {
+      "enabled": true,
+      "handler": "renderNextStepsBand",
+      "component": "AbovePrompt"
+    }
+  },
+  "userConfig": {
+    "minAnswerChars": {
+      "type": "number",
+      "default": 80
+    },
+    "suggestSkills": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "savvy-progress",
+  "version": "1.2.0",
+  "description": "Telemetria de subagentes com progresso visual e estimativa de custos.",
+  "author": "JohnnyVizz & Antigravity Engineering",
+  "type": "mod",
+  "commands": [
+    {
+      "name": "agents-info",
+      "description": "Exibe o painel de telemetria e progresso dos subagentes ativos",
+      "source": "./commands/agents-info.md"
+    }
+  ],
+  "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/savvy-progress/bin/savvy-tracker.js --event SubagentStart"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/savvy-progress/bin/savvy-tracker.js --event SubagentStop"
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "band": {
+      "enabled": true,
+      "handler": "renderProgressBand"
+    },
+    "sidePanel": {
+      "enabled": true,
+      "minWidth": 120
+    }
+  }
+}

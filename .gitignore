@@ -1,0 +1,18 @@
+
+# ai-guides: segredos nunca versionados
+.env
+.env.*
+!.env.example
+
+.cache/
+
+# ai-guides: memória privada local, team/ versionada
+.claude/memory/*
+!.claude/memory/team/
+.gemini/memory/*
+!.gemini/memory/team/
+graphify-out/
+node_modules/
+dist/
+.remember/
+

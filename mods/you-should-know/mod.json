@@ -1,0 +1,27 @@
+{
+  "name": "cc-plugin-you-should-know",
+  "version": "1.2.0",
+  "description": "Agente observador em segundo plano que alerta sobre riscos não óbvios e efeitos colaterais críticos.",
+  "author": "Anthropic & Antigravity Engineering",
+  "type": "mod",
+  "isBuiltin": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./bin/risk-advisor.js"
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "band": {
+      "enabled": true,
+      "handler": "renderRiskBand"
+    }
+  }
+}

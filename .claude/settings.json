@@ -1,0 +1,126 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/blast-radius/bin/blast-radius.js",
+            "statusMessage": "Auditando blast radius de comandos críticos..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/you-should-know/bin/risk-advisor.js",
+            "statusMessage": "Inspecionando riscos de arquitetura e segredos..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PATH=\"$HOME/.local/bin:$PATH\" graphify hook-guard search"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PATH=\"$HOME/.local/bin:$PATH\" graphify hook-guard read --strict"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Write|Edit|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; for d in \"$ROOT/.claude\" . .claude .. ../.claude; do [ -f \"$d/protect-secrets.sh\" ] && exec bash \"$d/protect-secrets.sh\"; done; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; [ -f \"$ROOT/.claude/verify-semver.sh\" ] && exec bash \"$ROOT/.claude/verify-semver.sh\"; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; [ -f \"$ROOT/.claude/verify-docs.sh\" ] && exec bash \"$ROOT/.claude/verify-docs.sh\"; exit 0"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/replay-theater/bin/replay-collector.js",
+            "statusMessage": "Registrando diffs para o Replay Theater..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(jq -r '.tool_response.filePath // .tool_input.file_path'); if echo \"$FILE\" | grep -q '\\.graphifyignore$'; then PATH=\"$HOME/.local/bin:$PATH\" graphify extract . --force --code-only; elif echo \"$FILE\" | grep -qE '\\.(py|ts|js|go|rs|java|php|cs)$'; then PATH=\"$HOME/.local/bin:$PATH\" graphify update .; fi || true",
+            "statusMessage": "Atualizando Grafo de Conhecimento com Graphify..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/cache-tax/bin/cache-check.js",
+            "statusMessage": "Verificando expiração de cache de contexto..."
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/reflect/bin/reflect.js",
+            "statusMessage": "Capturando correções e novas convenções..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/mods/next-steps/bin/next-steps.js",
+            "statusMessage": "Sugerindo próximos passos contextuais..."
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.message // \"OpenClaude requer atenção\"' | terminal-notifier -title 'OpenClaude' -sound default -activate com.google.antigravity-ide"
+          }
+        ]
+      }
+    ]
+  }
+}

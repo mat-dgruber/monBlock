@@ -1,0 +1,11 @@
+{
+  "name": "terminal-browser",
+  "version": "1.2.0",
+  "description": "Navegador web integrado e utilitário de visualização de páginas locais e remotas para testes de frontend.",
+  "author": {
+    "name": "Zenbu Labs & Antigravity"
+  },
+  "commands": [
+    "./commands/browser.md"
+  ]
+}

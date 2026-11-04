@@ -1,0 +1,25 @@
+{
+  "name": "you-should-know",
+  "version": "1.2.0",
+  "description": "Agente observador em segundo plano que alerta sobre riscos não óbvios, efeitos colaterais críticos e boas práticas de arquitetura.",
+  "author": {
+    "name": "Anthropic & Antigravity"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/risk-advisor.js\"",
+            "statusMessage": "Avaliando riscos ocultos e efeitos colaterais..."
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    "./commands/risk-advisor.md"
+  ]
+}

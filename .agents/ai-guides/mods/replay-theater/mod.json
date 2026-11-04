@@ -1,0 +1,33 @@
+{
+  "name": "replay-theater",
+  "version": "1.2.0",
+  "description": "Auditor passo a passo de diffs e modificações de arquivos realizadas durante o turno.",
+  "author": "Anthropic & Antigravity Engineering",
+  "type": "mod",
+  "commands": [
+    {
+      "name": "replay",
+      "description": "Abre o visualizador e auditor de diffs das modificações recentes",
+      "source": "./commands/replay.md"
+    }
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./bin/replay-collector.js"
+          }
+        ]
+      }
+    ]
+  },
+  "ui": {
+    "band": {
+      "enabled": true,
+      "handler": "renderReplayHintBand"
+    }
+  }
+}

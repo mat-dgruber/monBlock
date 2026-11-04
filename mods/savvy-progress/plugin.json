@@ -1,0 +1,43 @@
+{
+  "name": "savvy-progress",
+  "version": "1.2.0",
+  "description": "Telemetria visual em tempo real de subagentes, progresso de tarefas e estimativa de custos de execução.",
+  "author": {
+    "name": "JohnnyVizz & Antigravity"
+  },
+  "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/savvy-tracker.js\" --event SubagentStart"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/savvy-tracker.js\" --event SubagentStop"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/savvy-tracker.js\" --event ToolUse"
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    "./commands/agents-info.md"
+  ]
+}

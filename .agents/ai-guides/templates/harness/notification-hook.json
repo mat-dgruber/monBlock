@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.message // \"OpenClaude requer atenção\"' | terminal-notifier -title 'OpenClaude' -sound default -activate com.microsoft.VSCode"
+          }
+        ]
+      }
+    ]
+  }
+}

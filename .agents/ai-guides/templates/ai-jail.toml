@@ -1,0 +1,16 @@
+# ai-jail sandbox configuration — fonte canônica: templates/ai-jail.toml (guia-ai-jail-sandbox.md §3), instalado como .ai-jail por JAIL-02
+command = ["openclaude"]
+
+# Mapeamentos de Leitura e Escrita (Read-Write): memória, caches e ferramentas dos agentes
+rw_maps = [
+  "~/.gemini",
+  "~/.cache",
+  "~/.local"
+]
+
+# Mapeamentos de Somente Leitura (Read-Only)
+ro_maps = [
+  "~/.openclaude",
+  "~/.claude",
+  "~/.gitconfig"
+]

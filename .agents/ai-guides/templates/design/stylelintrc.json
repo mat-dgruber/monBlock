@@ -1,0 +1,15 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "rules": {
+    "color-no-hex": [true, { "message": "Use tokens semânticos (var(--...)) em vez de hex hardcoded — guia-universal-design-ui-ux-acessibilidade.md §4" }],
+    "declaration-property-unit-disallowed-list": [
+      { "font-size": ["px"], "line-height": ["px"] },
+      { "message": "Tipografia em rem/clamp(), nunca px — §3" }
+    ],
+    "declaration-property-value-disallowed-list": [
+      { "z-index": ["/^[0-9]+$/"] },
+      { "message": "z-index só via tokens --z-* — §2" }
+    ]
+  },
+  "ignoreFiles": ["**/tokens.css", "**/node_modules/**", "**/dist/**"]
+}
