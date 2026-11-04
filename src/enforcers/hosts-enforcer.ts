@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 // MARK: - Constantes e Allowlist de Infraestrutura Crítica
@@ -18,6 +19,8 @@ export const CRITICAL_INFRA_ALLOWLIST: ReadonlySet<string> = new Set([
 
 const START_MARKER = '# >>> MONBLOCK START >>>';
 const END_MARKER = '# <<< MONBLOCK END <<<';
+const HOSTNAME_RE =
+  /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 
 // MARK: - Escrita Atômica e Rollback do /etc/hosts
 
@@ -25,8 +28,9 @@ const END_MARKER = '# <<< MONBLOCK END <<<';
  * Aplica de forma atômica o bloqueio de domínios no arquivo `/etc/hosts` (ou caminho equivalente).
  *
  * Preserva integralmente o conteúdo original fora dos delimitadores do monBlock,
- * cria um backup `.monblock.bak` na primeira execução, filtra domínios da allowlist
- * crítica, grava em arquivo temporário `.monblock.tmp` e executa `fs.renameSync` atômico.
+ * cria um backup `.monblock.bak` na primeira execução (se o arquivo existir), filtra domínios
+ * da allowlist crítica e rejeita entradas com quebras de linha ou sintaxe inválida,
+ * grava em arquivo temporário único e executa `fs.renameSync` atômico.
  *
  * @param hostsFilePath Caminho absoluto do arquivo hosts alvo.
  * @param blockedDomains Lista de domínios a serem redirecionados para `0.0.0.0`.
@@ -37,10 +41,11 @@ export function applyAtomicHostsBlock(
   blockedDomains: string[]
 ): { backupPath: string; writtenCount: number } {
   const backupPath = `${hostsFilePath}.monblock.bak`;
-  const tmpPath = `${hostsFilePath}.monblock.tmp`;
-  const current = fs.existsSync(hostsFilePath) ? fs.readFileSync(hostsFilePath, 'utf8') : '';
+  const tmpPath = `${hostsFilePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const hostsExists = fs.existsSync(hostsFilePath);
+  const current = hostsExists ? fs.readFileSync(hostsFilePath, 'utf8') : '';
 
-  if (!fs.existsSync(backupPath)) {
+  if (hostsExists && !fs.existsSync(backupPath)) {
     fs.writeFileSync(backupPath, current, 'utf8');
   }
 
@@ -51,8 +56,9 @@ export function applyAtomicHostsBlock(
   const safeDomains = Array.from(
     new Set(
       blockedDomains
+        .filter((raw) => typeof raw === 'string' && !/[\r\n]/.test(raw))
         .map((d) => d.trim().toLowerCase().replace(/^www\./, ''))
-        .filter((d) => d && !CRITICAL_INFRA_ALLOWLIST.has(d))
+        .filter((d) => d.length > 0 && HOSTNAME_RE.test(d) && !CRITICAL_INFRA_ALLOWLIST.has(d))
     )
   );
 
@@ -64,8 +70,16 @@ export function applyAtomicHostsBlock(
   lines.push(END_MARKER);
 
   const nextContent = `${baseContent}\n\n${lines.join('\n')}\n`;
-  fs.writeFileSync(tmpPath, nextContent, 'utf8');
-  fs.renameSync(tmpPath, hostsFilePath);
+  try {
+    fs.writeFileSync(tmpPath, nextContent, 'utf8');
+    fs.renameSync(tmpPath, hostsFilePath);
+  } finally {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      // Ignora erro residual de limpeza
+    }
+  }
 
   return { backupPath, writtenCount: safeDomains.length };
 }
@@ -79,8 +93,16 @@ export function applyAtomicHostsBlock(
 export function rollbackHostsFromBackup(hostsFilePath: string): boolean {
   const backupPath = `${hostsFilePath}.monblock.bak`;
   if (!fs.existsSync(backupPath)) return false;
-  const tmpPath = `${hostsFilePath}.monblock.rollback.tmp`;
-  fs.copyFileSync(backupPath, tmpPath);
-  fs.renameSync(tmpPath, hostsFilePath);
-  return true;
+  const tmpPath = `${hostsFilePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.copyFileSync(backupPath, tmpPath);
+    fs.renameSync(tmpPath, hostsFilePath);
+    return true;
+  } finally {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      // Ignora erro residual de limpeza
+    }
+  }
 }

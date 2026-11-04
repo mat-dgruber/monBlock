@@ -1,7 +1,8 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   TripleStateStore,
   createDefaultPersistentState,
@@ -170,5 +171,97 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
     expect(reconciled.state.rules.lockIncognito).toBe(true);
     expect(reconciled.alert).toMatch(/Fail-Closed|adulteração/i);
     expect(reconciled.healedVaults).toEqual(['primary', 'keychain', 'seal']);
+  });
+
+  it('deve assinar o HMAC exclusivamente com integrityKey sem depender de campos internos do JSON não verificado', () => {
+    const pairedState: MonBlockPersistentState = {
+      ...createDefaultPersistentState(1_700_000_000_000),
+      version: 2,
+      paired: true,
+      partnerCredentials: {
+        passwordHash: 'scrypt$00112233445566778899aabbccddeeff$' + 'a'.repeat(128),
+        salt: '00112233445566778899aabbccddeeff',
+        hmacSecret: 'secret-inside-json',
+        recoveryCodeHashes: [],
+        usedTokens: [],
+      },
+      updatedAtMs: 1_700_000_030_000,
+    };
+
+    store.save(pairedState);
+
+    const rawEnvelope = JSON.parse(fs.readFileSync(primaryPath, 'utf8'));
+    const expectedPureHmac = crypto
+      .createHmac('sha256', 'test-system-integrity-key-01')
+      .update(JSON.stringify(pairedState))
+      .digest('hex');
+
+    expect(rawEnvelope.hmac).toBe(expectedPureHmac);
+  });
+
+  it('não deve sobrescrever cofres legítimos em disco quando ocorrer erro transitório de I/O (ex: EACCES/EMFILE)', () => {
+    const pairedState: MonBlockPersistentState = {
+      ...createDefaultPersistentState(1_700_000_000_000),
+      version: 5,
+      paired: true,
+      rules: {
+        enabledCategories: ['adult', 'gambling'],
+        blockedDomains: ['preserve-me.com'],
+        allowlistDomains: [],
+        keywords: [],
+        lockIncognito: true,
+      },
+      updatedAtMs: 1_700_000_050_000,
+    };
+    store.save(pairedState);
+    const originalPrimaryContent = fs.readFileSync(primaryPath, 'utf8');
+
+    const readSpy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      const err = new Error('Permission denied') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      throw err;
+    });
+
+    try {
+      const reconciled = store.loadAndReconcile({ expectPaired: true });
+      expect(reconciled.state.tamperLockdown).toBe(true);
+      expect(reconciled.healedVaults).toEqual([]);
+    } finally {
+      readSpy.mockRestore();
+    }
+
+    // Os cofres em disco não podem ter sido destruídos pelo estado Fail-Closed
+    expect(fs.readFileSync(primaryPath, 'utf8')).toBe(originalPrimaryContent);
+    const afterRecovery = store.loadAndReconcile({ expectPaired: true });
+    expect(afterRecovery.state.version).toBe(5);
+    expect(afterRecovery.state.rules.blockedDomains).toEqual(['preserve-me.com']);
+  });
+
+  it('save() deve tolerar falha de escrita em 1 cofre (quórum 2 de 3) e lançar erro se menos de 2 cofres tiverem sucesso', () => {
+    const state = createDefaultPersistentState(1_700_000_000_000);
+    let callCount = 0;
+    const renameSpy = vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error('Falha simulada em 1 cofre');
+      }
+      return fs.copyFileSync(oldPath, newPath);
+    });
+
+    try {
+      expect(() => store.save(state)).not.toThrow();
+    } finally {
+      renameSpy.mockRestore();
+    }
+
+    const failTwoSpy = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw new Error('Falha simultânea nos cofres');
+    });
+
+    try {
+      expect(() => store.save(state)).toThrow(/Falha simultânea/);
+    } finally {
+      failTwoSpy.mockRestore();
+    }
   });
 });

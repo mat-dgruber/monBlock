@@ -16,8 +16,10 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
   let store: TripleStateStore;
   let enforcer: MacOSPlatformEnforcer;
   let daemon: MonBlockDaemon;
+  let currentNow: number;
 
   beforeEach(() => {
+    currentNow = 1_700_000_000_000;
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-daemon-'));
     hostsPath = path.join(tmpDir, 'hosts');
     chromiumPlistPath = path.join(tmpDir, 'com.google.Chrome.plist');
@@ -41,7 +43,7 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
       },
     });
 
-    daemon = new MonBlockDaemon({ store, enforcer });
+    daemon = new MonBlockDaemon({ store, enforcer, nowFn: () => currentNow });
   });
 
   afterEach(() => {
@@ -70,6 +72,7 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
     if (response.status === 200 && 'state' in response) {
       expect(response.state.paired).toBe(true);
       expect(response.state.rules.enabledCategories).toContain('adult');
+      expect(response.state.partner.telegramChatId).toBe('*****6789');
     }
   });
 
@@ -176,12 +179,12 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
     const token15m = generateChallengeToken(secret, challengeCode, '15m');
 
     // Act 1 — Consumo inédito do token
+    currentNow = 1_700_000_000_000;
     const verifyOk = await daemon.handleCommand({
       type: 'VERIFY_OFFLINE_TOKEN',
       challengeCode,
       token: token15m,
       target: 'instagram.com',
-      nowMs: 1_700_000_000_000,
     });
 
     // Assert 1
@@ -192,12 +195,12 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
     }
 
     // Act 2 — Tentativa de Replay com o mesmo token
+    currentNow = 1_700_000_010_000;
     const replayAttempt = await daemon.handleCommand({
       type: 'VERIFY_OFFLINE_TOKEN',
       challengeCode,
       token: token15m,
       target: 'instagram.com',
-      nowMs: 1_700_000_010_000,
     });
 
     // Assert 2
@@ -228,10 +231,10 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
     const firstCode = codes[0]!;
 
     // Act 1 — Usa o primeiro código de recuperação
+    currentNow = 1_700_000_000_000;
     const firstUse = await daemon.handleCommand({
       type: 'VERIFY_RECOVERY_CODE',
       code: firstCode,
-      nowMs: 1_700_000_000_000,
     });
 
     // Assert 1
@@ -241,10 +244,10 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
     }
 
     // Act 2 — Tenta reutilizar o mesmo código já consumido
+    currentNow = 1_700_000_005_000;
     const secondUse = await daemon.handleCommand({
       type: 'VERIFY_RECOVERY_CODE',
       code: firstCode,
-      nowMs: 1_700_000_005_000,
     });
 
     // Assert 2
@@ -283,21 +286,21 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
 
     // Act 2 — Inicia Cooldown de 72h, verifica bloqueio em 71h e aprova desinstalação após 72h
     const startMs = 1_700_000_000_000;
+    currentNow = startMs;
     const cooldownStart = await daemon.handleCommand({
       type: 'TRIGGER_EMERGENCY_COOLDOWN',
-      nowMs: startMs,
     });
     expect(cooldownStart.status).toBe(200);
 
+    currentNow = startMs + 71 * 3600 * 1000;
     const before72h = await daemon.handleCommand({
       type: 'UNINSTALL_AUTHORIZED',
-      nowMs: startMs + 71 * 3600 * 1000,
     });
     expect(before72h.status).toBe(403);
 
+    currentNow = startMs + 72 * 3600 * 1000;
     const after72h = await daemon.handleCommand({
       type: 'UNINSTALL_AUTHORIZED',
-      nowMs: startMs + 72 * 3600 * 1000,
     });
 
     // Assert 2
@@ -367,5 +370,173 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
       token: tokenPerm,
     });
     expect(uninstallWithPerm.status).toBe(200);
+  });
+
+  it('deve acionar Fail-Closed (tamperLockdown) no MonBlockDaemon quando todos os 3 cofres são deletados após pareamento', async () => {
+    await daemon.handleCommand({
+      type: 'PAIR_PARTNER',
+      password: 'PartnerPassword#2026',
+      hmacSecret: 'hmac-tamper-test',
+    });
+
+    // Deleta os 3 cofres do disco após pareamento ativo
+    fs.unlinkSync(path.join(tmpDir, 'vault-a.json'));
+    fs.unlinkSync(path.join(tmpDir, 'vault-b.json'));
+    fs.unlinkSync(path.join(tmpDir, 'vault-c.seal'));
+
+    const res = await daemon.handleCommand({ type: 'GET_STATE' });
+    expect(res.status).toBe(200);
+    if (res.status === 200 && 'state' in res) {
+      expect(res.state.paired).toBe(true);
+      expect(res.state.tamperLockdown).toBe(true);
+      expect(res.state.rules.enabledCategories).toContain('adult');
+      expect(res.state.rules.lockIncognito).toBe(true);
+    }
+  });
+
+  it('MUTATE_RULES deve rejeitar token temporário UNLOCK-15M-* ao tentar remover regra permanente (403) e aceitar UNLOCK-PERMANENT-*', async () => {
+    const secret = 'mutate-perm-secret';
+    await daemon.handleCommand({
+      type: 'PAIR_PARTNER',
+      password: 'PartnerPassword#2026',
+      hmacSecret: secret,
+    });
+    await daemon.handleCommand({
+      type: 'MUTATE_RULES',
+      rules: {
+        enabledCategories: ['adult', 'gambling'],
+        blockedDomains: ['bet-custom.com'],
+        allowlistDomains: [],
+        keywords: [],
+        lockIncognito: true,
+      },
+    });
+
+    const challenge15m = 'MB-1500-A1';
+    const token15m = generateChallengeToken(secret, challenge15m, '15m');
+
+    // Tentativa de remover gambling e bet-custom.com usando token temporário de 15m -> deve ser 403
+    const reject15m = await daemon.handleCommand({
+      type: 'MUTATE_RULES',
+      challengeCode: challenge15m,
+      token: token15m,
+      rules: {
+        enabledCategories: ['adult'],
+        blockedDomains: [],
+        allowlistDomains: [],
+        keywords: [],
+        lockIncognito: true,
+      },
+    });
+    expect(reject15m.status).toBe(403);
+
+    // Usando token UNLOCK-PERMANENT-* -> deve ser 200
+    const challengePerm = 'MB-9999-P1';
+    const tokenPerm = generateChallengeToken(secret, challengePerm, 'permanent');
+    const acceptPerm = await daemon.handleCommand({
+      type: 'MUTATE_RULES',
+      challengeCode: challengePerm,
+      token: tokenPerm,
+      rules: {
+        enabledCategories: ['adult'],
+        blockedDomains: [],
+        allowlistDomains: [],
+        keywords: [],
+        lockIncognito: true,
+      },
+    });
+    expect(acceptPerm.status).toBe(200);
+  });
+
+  it('deve liberar efetivamente o domínio no /etc/hosts durante TemporaryGrant e rebloquear automaticamente após expiração via nowFn', async () => {
+    const secret = 'grant-ttl-secret';
+    await daemon.handleCommand({
+      type: 'PAIR_PARTNER',
+      password: 'PartnerPassword#2026',
+      hmacSecret: secret,
+    });
+    await daemon.handleCommand({
+      type: 'MUTATE_RULES',
+      rules: {
+        enabledCategories: ['adult'],
+        blockedDomains: ['instagram.com', 'tiktok.com'],
+        allowlistDomains: [],
+        keywords: [],
+        lockIncognito: true,
+      },
+    });
+
+    expect(fs.readFileSync(hostsPath, 'utf8')).toContain('0.0.0.0 instagram.com');
+    expect(fs.readFileSync(hostsPath, 'utf8')).toContain('0.0.0.0 tiktok.com');
+
+    // Concede 15m para instagram.com
+    const challenge = 'MB-3333-G1';
+    const token15m = generateChallengeToken(secret, challenge, '15m');
+    const grantRes = await daemon.handleCommand({
+      type: 'VERIFY_OFFLINE_TOKEN',
+      challengeCode: challenge,
+      token: token15m,
+      target: 'instagram.com',
+    });
+    expect(grantRes.status).toBe(200);
+
+    // Durante o grant, instagram.com deve ter saído do /etc/hosts, mas tiktok.com continua bloqueado
+    const hostsDuringGrant = fs.readFileSync(hostsPath, 'utf8');
+    expect(hostsDuringGrant).not.toContain('0.0.0.0 instagram.com');
+    expect(hostsDuringGrant).toContain('0.0.0.0 tiktok.com');
+
+    // Avança o relógio além dos 15 minutos e executa um comando
+    currentNow += 16 * 60_000;
+    const stateAfterExpiry = await daemon.handleCommand({ type: 'GET_STATE' });
+    expect(stateAfterExpiry.status).toBe(200);
+    if (stateAfterExpiry.status === 200 && 'state' in stateAfterExpiry) {
+      expect(stateAfterExpiry.state.temporaryGrants).toEqual([]);
+    }
+
+    // instagram.com deve voltar a ser bloqueado automaticamente no /etc/hosts
+    const hostsAfterExpiry = fs.readFileSync(hostsPath, 'utf8');
+    expect(hostsAfterExpiry).toContain('0.0.0.0 instagram.com');
+  });
+
+  it('PAIR_PARTNER gera hmacSecret seguro quando omitido e MUTATE_RULES permite crescer acima de 100 domínios em múltiplos lotes e normaliza allowlistDomains', async () => {
+    const pairRes = await daemon.handleCommand({
+      type: 'PAIR_PARTNER',
+      password: 'PartnerPassword#2026',
+    });
+    expect(pairRes.status).toBe(200);
+
+    const batch1 = Array.from({ length: 60 }, (_, i) => `https://www.lote1-${i}.com/path`);
+    const res1 = await daemon.handleCommand({
+      type: 'MUTATE_RULES',
+      rules: {
+        enabledCategories: ['adult'],
+        blockedDomains: batch1,
+        allowlistDomains: [],
+        keywords: [],
+        lockIncognito: true,
+      },
+    });
+    expect(res1.status).toBe(200);
+
+    const batch2 = [
+      ...Array.from({ length: 60 }, (_, i) => `lote1-${i}.com`),
+      ...Array.from({ length: 60 }, (_, i) => `lote2-${i}.com`),
+    ];
+    const res2 = await daemon.handleCommand({
+      type: 'MUTATE_RULES',
+      partnerPassword: 'PartnerPassword#2026',
+      rules: {
+        enabledCategories: ['adult'],
+        blockedDomains: batch2,
+        allowlistDomains: ['https://www.PortalEducativo.org.br/cursos'],
+        keywords: [],
+        lockIncognito: true,
+      },
+    });
+    expect(res2.status).toBe(200);
+    if (res2.status === 200 && 'rules' in res2) {
+      expect(res2.rules.blockedDomains).toHaveLength(120);
+      expect(res2.rules.allowlistDomains).toEqual(['portaleducativo.org.br']);
+    }
   });
 });

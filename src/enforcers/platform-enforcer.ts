@@ -7,9 +7,13 @@
  * arquivos críticos (`chmod 0600` / `chflags uchg`) via executor injetável.
  */
 
+import { execFile } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { PREDEFINED_CATEGORIES } from '../domain/categories.js';
+import { sanitizeAndNormalizeUrl } from '../domain/rule-engine.js';
 import type { ProtectionRuleset } from '../storage/state-store.js';
 import {
   buildBrowserPolicies,
@@ -21,7 +25,36 @@ import {
   rollbackHostsFromBackup,
 } from './hosts-enforcer.js';
 
+const execFileAsync = promisify(execFile);
+
 // MARK: - Funções Utilitárias de Serialização de Políticas e Restauração
+
+/**
+ * Escapa caracteres especiais XML para prevenir injeção de tags em manifestos `.plist`.
+ */
+export function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function writeFileAtomically(filePath: string, content: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, content, 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } finally {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      // Ignora erro residual de limpeza
+    }
+  }
+}
 
 /**
  * Restaura o arquivo `/etc/hosts` a partir do backup `.monblock.bak`.
@@ -36,10 +69,10 @@ export function restoreHostsFromBackup(hostsFilePath: string): boolean {
 export function generateChromiumAndSafariPlist(params: BrowserPolicyParams): string {
   const { chromiumPolicy } = buildBrowserPolicies(params);
   const blockItems = (chromiumPolicy.URLBlocklist as string[])
-    .map((d) => `      <string>${d}</string>`)
+    .map((d) => `      <string>${escapeXml(d)}</string>`)
     .join('\n');
   const allowItems = (chromiumPolicy.URLAllowlist as string[])
-    .map((d) => `      <string>${d}</string>`)
+    .map((d) => `      <string>${escapeXml(d)}</string>`)
     .join('\n');
   const incognitoVal = chromiumPolicy.IncognitoModeAvailability as number;
 
@@ -76,7 +109,10 @@ export function generateFirefoxPoliciesJson(params: BrowserPolicyParams): string
 // MARK: - Contrato PlatformEnforcer
 
 export interface PlatformEnforcer {
-  applyWebRules(rules: ProtectionRuleset): Promise<{
+  applyWebRules(
+    rules: ProtectionRuleset,
+    activeGrants?: Array<{ target: string; expiresAtMs: number }>
+  ): Promise<{
     hostsPath: string;
     chromiumPlist: string;
     firefoxJson: string;
@@ -107,46 +143,98 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     this.firefoxPoliciesPath = options.firefoxPoliciesPath;
     this.commandExecutor =
       options.commandExecutor ??
-      (async () => {
-        // Executor no-op padrão para ambientes sem privilégio root
+      (async (cmd: string, args: string[]) => {
+        const targetPath = args[args.length - 1] ?? '';
+        const isSystemPath =
+          targetPath.startsWith('/etc/') || targetPath.startsWith('/Library/');
+        if (!isSystemPath && cmd === 'chflags') {
+          return;
+        }
+        try {
+          await execFileAsync(cmd, args);
+        } catch {
+          // Degrada graciosamente quando executado em userland sem privilégio root
+        }
       });
+  }
+
+  private normalizeDomainList(entries: string[]): string[] {
+    const result: string[] = [];
+    for (const raw of entries) {
+      if (typeof raw !== 'string' || /[\r\n]/.test(raw)) continue;
+      const parsed = sanitizeAndNormalizeUrl(raw);
+      if (parsed?.domain) {
+        result.push(parsed.domain.toLowerCase().replace(/^www\./, ''));
+      }
+    }
+    return Array.from(new Set(result));
   }
 
   /**
    * Consolida todos os domínios bloqueados (categorias ativas + customizados),
-   * respeitando a precedência da `allowlistDomains` e `CRITICAL_INFRA_ALLOWLIST`.
+   * respeitando a precedência da `allowlistDomains`, `activeGrants` e `CRITICAL_INFRA_ALLOWLIST`.
    */
-  private resolveEffectiveBlockedDomains(rules: ProtectionRuleset): string[] {
-    const allowSet = new Set(
-      rules.allowlistDomains.map((d) => d.trim().toLowerCase().replace(/^www\./, ''))
+  private resolveEffectiveBlockedDomains(
+    rules: ProtectionRuleset,
+    activeGrants: Array<{ target: string; expiresAtMs: number }> = []
+  ): { effectiveBlockedDomains: string[]; effectiveAllowlistDomains: string[] } {
+    const normalizedAllowlist = this.normalizeDomainList(rules.allowlistDomains);
+    const hasWildcardGrant = activeGrants.some(
+      (g) => g.target.trim() === '*' && g.expiresAtMs > 0
     );
+    if (hasWildcardGrant) {
+      return {
+        effectiveBlockedDomains: [],
+        effectiveAllowlistDomains: normalizedAllowlist,
+      };
+    }
+
+    const grantDomains = this.normalizeDomainList(
+      activeGrants
+        .filter((g) => g.target.trim() !== '*' && g.expiresAtMs > 0)
+        .map((g) => g.target)
+    );
+    const allAllowed = Array.from(new Set([...normalizedAllowlist, ...grantDomains]));
+
     const categoryDomains = rules.enabledCategories.flatMap(
       (catId) => PREDEFINED_CATEGORIES.find((c) => c.id === catId)?.domains ?? []
     );
-    const combined = [...categoryDomains, ...rules.blockedDomains];
-    return Array.from(
-      new Set(
-        combined
-          .map((d) => d.trim().toLowerCase().replace(/^www\./, ''))
-          .filter((d) => d && !allowSet.has(d) && !CRITICAL_INFRA_ALLOWLIST.has(d))
-      )
+    const normalizedBlocked = this.normalizeDomainList([
+      ...categoryDomains,
+      ...rules.blockedDomains,
+    ]);
+
+    const effectiveBlockedDomains = normalizedBlocked.filter(
+      (d) =>
+        Boolean(d) &&
+        !CRITICAL_INFRA_ALLOWLIST.has(d) &&
+        !allAllowed.some((allowed) => d === allowed || d.endsWith(`.${allowed}`))
     );
+
+    return {
+      effectiveBlockedDomains,
+      effectiveAllowlistDomains: allAllowed,
+    };
   }
 
   /**
    * Aplica as regras de bloqueio web em `/etc/hosts` e gera/persiste as Browser Policies.
    */
-  public async applyWebRules(rules: ProtectionRuleset): Promise<{
+  public async applyWebRules(
+    rules: ProtectionRuleset,
+    activeGrants: Array<{ target: string; expiresAtMs: number }> = []
+  ): Promise<{
     hostsPath: string;
     chromiumPlist: string;
     firefoxJson: string;
   }> {
-    const effectiveBlockedDomains = this.resolveEffectiveBlockedDomains(rules);
+    const { effectiveBlockedDomains, effectiveAllowlistDomains } =
+      this.resolveEffectiveBlockedDomains(rules, activeGrants);
     applyAtomicHostsBlock(this.hostsPath, effectiveBlockedDomains);
 
     const policyParams: BrowserPolicyParams = {
       blockedDomains: effectiveBlockedDomains,
-      allowlistDomains: rules.allowlistDomains,
+      allowlistDomains: effectiveAllowlistDomains,
       lockIncognito: rules.lockIncognito,
     };
 
@@ -154,13 +242,11 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     const firefoxJson = generateFirefoxPoliciesJson(policyParams);
 
     if (this.chromiumPlistPath) {
-      fs.mkdirSync(path.dirname(this.chromiumPlistPath), { recursive: true });
-      fs.writeFileSync(this.chromiumPlistPath, chromiumPlist, 'utf8');
+      writeFileAtomically(this.chromiumPlistPath, chromiumPlist);
     }
 
     if (this.firefoxPoliciesPath) {
-      fs.mkdirSync(path.dirname(this.firefoxPoliciesPath), { recursive: true });
-      fs.writeFileSync(this.firefoxPoliciesPath, firefoxJson, 'utf8');
+      writeFileAtomically(this.firefoxPoliciesPath, firefoxJson);
     }
 
     return {
@@ -188,7 +274,14 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
    */
   public async restoreSystemCleanState(): Promise<void> {
     await this.commandExecutor('chflags', ['nouchg', this.hostsPath]);
-    restoreHostsFromBackup(this.hostsPath);
+    const restored = restoreHostsFromBackup(this.hostsPath);
+    if (!restored && fs.existsSync(this.hostsPath)) {
+      const current = fs.readFileSync(this.hostsPath, 'utf8');
+      const cleaned = current
+        .replace(/# >>> MONBLOCK START >>>[\s\S]*?# <<< MONBLOCK END <<<\n?/g, '')
+        .trimEnd();
+      writeFileAtomically(this.hostsPath, cleaned ? `${cleaned}\n` : '');
+    }
 
     if (this.chromiumPlistPath && fs.existsSync(this.chromiumPlistPath)) {
       fs.unlinkSync(this.chromiumPlistPath);

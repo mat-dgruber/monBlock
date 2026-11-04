@@ -123,13 +123,12 @@ export class TripleStateStore {
   }
 
   /**
-   * Calcula o HMAC-SHA256 determinístico sobre o estado serializado.
+   * Calcula o HMAC-SHA256 determinístico sobre o estado serializado usando exclusivamente `this.integrityKey`.
    */
   private computeHmac(state: MonBlockPersistentState): string {
-    const partnerSecret = state.partnerCredentials?.hmacSecret ?? '';
     const payload = JSON.stringify(state);
     return crypto
-      .createHmac('sha256', `${this.integrityKey}:${partnerSecret}`)
+      .createHmac('sha256', this.integrityKey)
       .update(payload)
       .digest('hex');
   }
@@ -151,54 +150,82 @@ export class TripleStateStore {
   }
 
   /**
-   * Escreve atomicamente um envelope assinado em um único cofre via `.tmp` + `renameSync`.
+   * Escreve atomicamente um envelope assinado em um único cofre via `.tmp` único + `renameSync`.
    */
   private writeVaultAtomically(filePath: string, envelope: SignedVaultEnvelope): void {
     const dir = path.dirname(filePath);
     fs.mkdirSync(dir, { recursive: true });
-    const tmpPath = `${filePath}.tmp`;
+    const tmpPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
     const serialized = JSON.stringify(envelope, null, 2);
-    fs.writeFileSync(tmpPath, serialized, { encoding: 'utf8', mode: 0o600 });
-    fs.renameSync(tmpPath, filePath);
+    try {
+      fs.writeFileSync(tmpPath, serialized, { encoding: 'utf8', mode: 0o600 });
+      fs.renameSync(tmpPath, filePath);
+    } finally {
+      try {
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      } catch {
+        // Ignora erro de limpeza residual
+      }
+    }
   }
 
   /**
-   * Grava atomicamente o estado assinado nos 3 cofres (`primary`, `keychain`, `seal`).
+   * Grava atomicamente o estado assinado nos 3 cofres (`primary`, `keychain`, `seal`),
+   * exigindo sucesso em pelo menos 2 de 3 cofres (quórum).
    */
   public save(state: MonBlockPersistentState): void {
     const hmac = this.computeHmac(state);
     const envelope: SignedVaultEnvelope = { state, hmac };
+    const errors: unknown[] = [];
+    let successCount = 0;
     for (const vault of this.vaults) {
-      this.writeVaultAtomically(vault.filePath, envelope);
+      try {
+        this.writeVaultAtomically(vault.filePath, envelope);
+        successCount++;
+      } catch (err) {
+        errors.push(err);
+      }
+    }
+    if (successCount < 2) {
+      throw errors[0] ?? new Error('Falha ao persistir quórum mínimo nos cofres.');
     }
   }
 
   /**
-   * Lê e valida o estado de um cofre individual.
+   * Lê e valida o estado de um cofre individual, diferenciando inexistência (`ENOENT`),
+   * erro de I/O do sistema operacional e adulteração/corrupção de conteúdo.
    */
   private readVault(filePath: string): {
     exists: boolean;
     valid: boolean;
+    ioError?: boolean;
     state?: MonBlockPersistentState;
     hmac?: string;
   } {
-    if (!fs.existsSync(filePath)) {
-      return { exists: false, valid: false };
+    let raw: string;
+    try {
+      raw = fs.readFileSync(filePath, 'utf8');
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code;
+      if (code === 'ENOENT' || !fs.existsSync(filePath)) {
+        return { exists: false, valid: false, ioError: false };
+      }
+      return { exists: true, valid: false, ioError: true };
     }
     try {
-      const raw = fs.readFileSync(filePath, 'utf8');
       const parsed = JSON.parse(raw) as SignedVaultEnvelope;
       if (!this.verifyEnvelope(parsed)) {
-        return { exists: true, valid: false };
+        return { exists: true, valid: false, ioError: false };
       }
       return {
         exists: true,
         valid: true,
+        ioError: false,
         state: parsed.state,
         hmac: parsed.hmac,
       };
     } catch {
-      return { exists: true, valid: false };
+      return { exists: true, valid: false, ioError: false };
     }
   }
 
@@ -229,8 +256,9 @@ export class TripleStateStore {
       };
     }
 
-    // Sabotagem total (0 cofres íntegros após pareamento ou arquivos corrompidos) -> Fail-Closed
+    // Sabotagem total ou falha de leitura (0 cofres íntegros lidos) -> Fail-Closed
     if (validReadings.length === 0) {
+      const hasIoError = readings.some((r) => r.ioError);
       const failClosedState: MonBlockPersistentState = {
         ...createDefaultPersistentState(),
         paired: Boolean(options?.expectPaired),
@@ -243,10 +271,12 @@ export class TripleStateStore {
           lockIncognito: true,
         },
       };
-      this.save(failClosedState);
+      if (!hasIoError) {
+        this.save(failClosedState);
+      }
       return {
         state: failClosedState,
-        healedVaults: ['primary', 'keychain', 'seal'],
+        healedVaults: hasIoError ? [] : ['primary', 'keychain', 'seal'],
         tamperDetected: true,
         alert:
           'ALERTA CRÍTICO: Adulteração detectada nos 3 cofres de persistência. Modo Fail-Closed ativado (adult + lockIncognito mantidos).',
@@ -275,8 +305,12 @@ export class TripleStateStore {
 
     for (const r of readings) {
       if (!r.valid || r.hmac !== winner.hmac) {
-        this.writeVaultAtomically(r.filePath, winnerEnvelope);
-        healedVaults.push(r.id);
+        try {
+          this.writeVaultAtomically(r.filePath, winnerEnvelope);
+          healedVaults.push(r.id);
+        } catch {
+          // Ignora falha transitória individual se quórum já está assegurado
+        }
       }
     }
 

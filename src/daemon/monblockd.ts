@@ -7,6 +7,7 @@
  * compatíveis com a RFC 9457 (`Problem Details for HTTP/IPC APIs`).
  */
 
+import crypto from 'node:crypto';
 import {
   canMutateProtectionRule,
   evaluateEmergencyCooldown,
@@ -16,7 +17,10 @@ import {
   verifyPartnerPassword,
   type UnlockDuration,
 } from '../domain/partner-guard.js';
-import { validateBatchDomains } from '../domain/rule-engine.js';
+import {
+  sanitizeAndNormalizeUrl,
+  validateBatchDomains,
+} from '../domain/rule-engine.js';
 import type { PlatformEnforcer } from '../enforcers/platform-enforcer.js';
 import type {
   CooldownState,
@@ -59,7 +63,7 @@ export type DaemonCommand =
   | {
       type: 'PAIR_PARTNER';
       password: string;
-      hmacSecret: string;
+      hmacSecret?: string;
       telegramChatId?: string;
       currentPartnerPassword?: string;
     }
@@ -75,17 +79,14 @@ export type DaemonCommand =
       challengeCode: string;
       token: string;
       target?: string;
-      nowMs?: number;
     }
   | {
       type: 'VERIFY_RECOVERY_CODE';
       code: string;
       target?: string;
-      nowMs?: number;
     }
   | {
       type: 'TRIGGER_EMERGENCY_COOLDOWN';
-      nowMs?: number;
     }
   | {
       type: 'REVOKE_GRANTS_ON_SLEEP';
@@ -95,7 +96,6 @@ export type DaemonCommand =
       password?: string;
       challengeCode?: string;
       token?: string;
-      nowMs?: number;
     };
 
 /** Respostas tipadas de sucesso dos comandos IPC. */
@@ -150,20 +150,32 @@ function buildProblem(
   };
 }
 
+function maskTelegramChatId(chatId?: string): string | undefined {
+  if (!chatId) return undefined;
+  const trimmed = chatId.trim();
+  if (trimmed.length <= 4) return '****';
+  return `${'*'.repeat(trimmed.length - 4)}${trimmed.slice(-4)}`;
+}
+
 // MARK: - Implementação MonBlockDaemon
 
 export interface MonBlockDaemonOptions {
   store: TripleStateStore;
   enforcer: PlatformEnforcer;
+  nowFn?: () => number;
 }
 
 export class MonBlockDaemon {
   private readonly store: TripleStateStore;
   private readonly enforcer: PlatformEnforcer;
+  private readonly nowFn: () => number;
+  private wasPaired = false;
+  private commandQueue: Promise<unknown> = Promise.resolve();
 
   constructor(options: MonBlockDaemonOptions) {
     this.store = options.store;
     this.enforcer = options.enforcer;
+    this.nowFn = options.nowFn ?? (() => Date.now());
   }
 
   /**
@@ -181,7 +193,7 @@ export class MonBlockDaemon {
       tamperLockdown: Boolean(state.tamperLockdown),
       partner: {
         paired: state.paired,
-        telegramChatId: state.partnerCredentials?.telegramChatId,
+        telegramChatId: maskTelegramChatId(state.partnerCredentials?.telegramChatId),
         remainingRecoveryCodes: state.partnerCredentials?.recoveryCodeHashes.length ?? 0,
       },
     };
@@ -223,10 +235,39 @@ export class MonBlockDaemon {
   }
 
   /**
+   * Enfileira e serializa a execução dos comandos IPC para evitar race conditions em disco.
+   */
+  public handleCommand(cmd: DaemonCommand): Promise<DaemonResponse> {
+    const next = this.commandQueue.then(
+      () => this.processCommand(cmd),
+      () => this.processCommand(cmd)
+    );
+    this.commandQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
    * Processa de forma determinística um comando IPC recebido pelo daemon.
    */
-  public async handleCommand(cmd: DaemonCommand): Promise<DaemonResponse> {
-    const { state } = this.store.loadAndReconcile();
+  private async processCommand(cmd: DaemonCommand): Promise<DaemonResponse> {
+    const now = this.nowFn();
+    const reconciled = this.store.loadAndReconcile({ expectPaired: this.wasPaired });
+    const { state } = reconciled;
+
+    if (state.paired) {
+      this.wasPaired = true;
+    }
+
+    const activeGrants = state.temporaryGrants.filter((g) => g.expiresAtMs > now);
+    const grantsExpired = activeGrants.length !== state.temporaryGrants.length;
+    if (grantsExpired) {
+      state.temporaryGrants = activeGrants;
+      state.updatedAtMs = now;
+      this.store.save(state);
+    }
+    if (grantsExpired || reconciled.tamperDetected) {
+      await this.enforcer.applyWebRules(state.rules, state.temporaryGrants);
+    }
 
     switch (cmd.type) {
       case 'GET_STATE': {
@@ -237,11 +278,11 @@ export class MonBlockDaemon {
       }
 
       case 'PAIR_PARTNER': {
-        if (!cmd.password || cmd.password.trim().length < 6 || !cmd.hmacSecret) {
+        if (!cmd.password || cmd.password.trim().length < 6) {
           return buildProblem(
             400,
             'Credenciais de Pareamento Inválidas',
-            'A senha do Ajudante (mínimo 6 caracteres) e o segredo HMAC são obrigatórios.',
+            'A senha do Ajudante deve possuir no mínimo 6 caracteres.',
             '/ipc/monblockd/pair-partner'
           );
         }
@@ -263,6 +304,10 @@ export class MonBlockDaemon {
           }
         }
 
+        const hmacSecret =
+          cmd.hmacSecret && cmd.hmacSecret.trim().length > 0
+            ? cmd.hmacSecret.trim()
+            : crypto.randomBytes(32).toString('hex');
         const passwordHash = hashPartnerPassword(cmd.password);
         const salt = passwordHash.split('$')[1] ?? '';
         const kit = generateRecoveryKit();
@@ -274,16 +319,17 @@ export class MonBlockDaemon {
           partnerCredentials: {
             passwordHash,
             salt,
-            hmacSecret: cmd.hmacSecret,
+            hmacSecret,
             recoveryCodeHashes: kit.hashedCodes,
             usedTokens: state.partnerCredentials?.usedTokens ?? [],
             telegramChatId: cmd.telegramChatId,
           },
-          updatedAtMs: Date.now(),
+          updatedAtMs: now,
         };
 
+        this.wasPaired = true;
         this.store.save(nextState);
-        await this.enforcer.applyWebRules(nextState.rules);
+        await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
           status: 200,
@@ -293,26 +339,58 @@ export class MonBlockDaemon {
       }
 
       case 'MUTATE_RULES': {
-        const batchValidation = validateBatchDomains(cmd.rules.blockedDomains);
-        if (!batchValidation.valid) {
+        const existingBlockedSet = new Set(
+          state.rules.blockedDomains.map(
+            (d) => sanitizeAndNormalizeUrl(d)?.domain ?? d.trim().toLowerCase()
+          )
+        );
+        const newBlockedCandidates = cmd.rules.blockedDomains.filter((raw) => {
+          const norm = sanitizeAndNormalizeUrl(raw)?.domain;
+          return !norm || !existingBlockedSet.has(norm);
+        });
+        const deltaValidation = validateBatchDomains(newBlockedCandidates);
+        if (!deltaValidation.valid) {
           return buildProblem(
             400,
             'Limite de Lote de Domínios Excedido (RN-WEB-04)',
-            batchValidation.error ?? 'Lote de domínios inválido.',
+            deltaValidation.error ?? 'Lote de domínios inválido.',
             '/ipc/monblockd/mutate-rules'
           );
+        }
+
+        const normalizedBlockedDomains = Array.from(
+          new Set(
+            cmd.rules.blockedDomains
+              .map((raw) => sanitizeAndNormalizeUrl(raw)?.domain)
+              .filter((d): d is string => Boolean(d))
+          )
+        );
+
+        const normalizedAllowlist: string[] = [];
+        for (const rawAllow of cmd.rules.allowlistDomains) {
+          const parsed = sanitizeAndNormalizeUrl(rawAllow);
+          if (!parsed) {
+            return buildProblem(
+              400,
+              'Domínio de Allowlist Inválido',
+              `Domínio inválido na allowlist: "${rawAllow}".`,
+              '/ipc/monblockd/mutate-rules'
+            );
+          }
+          normalizedAllowlist.push(parsed.domain);
         }
 
         const partnerAuthorized = this.checkPartnerAuth(state, {
           password: cmd.partnerPassword,
           challengeCode: cmd.challengeCode,
           token: cmd.token,
+          requirePermanentToken: true,
         });
 
         const normalizedNextRules: ProtectionRuleset = {
           enabledCategories: Array.from(new Set(cmd.rules.enabledCategories)),
-          blockedDomains: batchValidation.domains,
-          allowlistDomains: Array.from(new Set(cmd.rules.allowlistDomains)),
+          blockedDomains: normalizedBlockedDomains,
+          allowlistDomains: Array.from(new Set(normalizedAllowlist)),
           keywords: Array.from(new Set(cmd.rules.keywords)),
           lockIncognito: cmd.rules.lockIncognito,
         };
@@ -336,11 +414,11 @@ export class MonBlockDaemon {
           ...state,
           version: state.version + 1,
           rules: normalizedNextRules,
-          updatedAtMs: Date.now(),
+          updatedAtMs: now,
         };
 
         this.store.save(nextState);
-        await this.enforcer.applyWebRules(nextState.rules);
+        await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
           status: 200,
@@ -375,7 +453,6 @@ export class MonBlockDaemon {
           );
         }
 
-        const nowMs = cmd.nowMs ?? Date.now();
         const durationMs =
           verification.duration === '15m'
             ? 15 * 60_000
@@ -383,9 +460,14 @@ export class MonBlockDaemon {
               ? 60 * 60_000
               : 365 * 24 * 3600 * 1000;
 
+        const normalizedTarget =
+          !cmd.target || cmd.target.trim() === '*'
+            ? '*'
+            : (sanitizeAndNormalizeUrl(cmd.target)?.domain ?? cmd.target.trim().toLowerCase());
+
         const grant: TemporaryGrant = {
-          target: cmd.target ?? '*',
-          expiresAtMs: nowMs + durationMs,
+          target: normalizedTarget,
+          expiresAtMs: now + durationMs,
         };
 
         const nextState: MonBlockPersistentState = {
@@ -396,10 +478,11 @@ export class MonBlockDaemon {
             usedTokens: Array.from(usedSet),
           },
           temporaryGrants: [...state.temporaryGrants, grant],
-          updatedAtMs: nowMs,
+          updatedAtMs: now,
         };
 
         this.store.save(nextState);
+        await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
           status: 200,
@@ -421,7 +504,13 @@ export class MonBlockDaemon {
 
         const candidate = cmd.code.trim().toUpperCase();
         const hashes = state.partnerCredentials.recoveryCodeHashes;
-        const matchIndex = hashes.findIndex((h) => verifyPartnerPassword(candidate, h));
+        let matchIndex = -1;
+        for (let i = 0; i < hashes.length; i++) {
+          const matched = verifyPartnerPassword(candidate, hashes[i]!);
+          if (matched && matchIndex === -1) {
+            matchIndex = i;
+          }
+        }
 
         if (matchIndex === -1) {
           return buildProblem(
@@ -433,10 +522,14 @@ export class MonBlockDaemon {
         }
 
         const remainingHashes = hashes.filter((_, idx) => idx !== matchIndex);
-        const nowMs = cmd.nowMs ?? Date.now();
+        const normalizedTarget =
+          !cmd.target || cmd.target.trim() === '*'
+            ? '*'
+            : (sanitizeAndNormalizeUrl(cmd.target)?.domain ?? cmd.target.trim().toLowerCase());
+
         const grant: TemporaryGrant = {
-          target: cmd.target ?? '*',
-          expiresAtMs: nowMs + 60 * 60_000,
+          target: normalizedTarget,
+          expiresAtMs: now + 60 * 60_000,
         };
 
         const nextState: MonBlockPersistentState = {
@@ -447,10 +540,11 @@ export class MonBlockDaemon {
             recoveryCodeHashes: remainingHashes,
           },
           temporaryGrants: [...state.temporaryGrants, grant],
-          updatedAtMs: nowMs,
+          updatedAtMs: now,
         };
 
         this.store.save(nextState);
+        await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
           status: 200,
@@ -461,18 +555,17 @@ export class MonBlockDaemon {
       }
 
       case 'TRIGGER_EMERGENCY_COOLDOWN': {
-        const nowMs = cmd.nowMs ?? Date.now();
-        const startedAtMs = state.cooldown.startedAtMs ?? nowMs;
+        const startedAtMs = state.cooldown.startedAtMs ?? now;
         const cooldownEval = evaluateEmergencyCooldown(
           new Date(startedAtMs).toISOString(),
-          nowMs
+          now
         );
 
         const nextState: MonBlockPersistentState = {
           ...state,
           version: state.version + 1,
           cooldown: { startedAtMs },
-          updatedAtMs: nowMs,
+          updatedAtMs: now,
         };
 
         this.store.save(nextState);
@@ -491,11 +584,11 @@ export class MonBlockDaemon {
           ...state,
           version: state.version + 1,
           temporaryGrants: [],
-          updatedAtMs: Date.now(),
+          updatedAtMs: now,
         };
 
         this.store.save(nextState);
-        await this.enforcer.applyWebRules(nextState.rules);
+        await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
           status: 200,
@@ -505,7 +598,6 @@ export class MonBlockDaemon {
       }
 
       case 'UNINSTALL_AUTHORIZED': {
-        const nowMs = cmd.nowMs ?? Date.now();
         const authorizedByPartner = this.checkPartnerAuth(state, {
           password: cmd.password,
           challengeCode: cmd.challengeCode,
@@ -517,7 +609,7 @@ export class MonBlockDaemon {
           state.cooldown.startedAtMs !== null &&
           evaluateEmergencyCooldown(
             new Date(state.cooldown.startedAtMs).toISOString(),
-            nowMs
+            now
           ).unlocked;
 
         if (!authorizedByPartner && !authorizedByCooldown) {
@@ -530,11 +622,12 @@ export class MonBlockDaemon {
         }
 
         await this.enforcer.restoreSystemCleanState();
+        this.wasPaired = false;
         this.store.save({
           ...state,
           version: state.version + 1,
           temporaryGrants: [],
-          updatedAtMs: nowMs,
+          updatedAtMs: now,
         });
 
         return {
