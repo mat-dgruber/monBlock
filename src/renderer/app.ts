@@ -332,3 +332,166 @@ export function initRendererDom(doc: DocumentLike): { getState: () => UiControll
     getState: () => state,
   };
 }
+
+// MARK: - Bootstrap Completo do DOM no Runtime Electron (`script-src 'self'`)
+
+interface MonBlockWindowBridge {
+  getState?: () => Promise<unknown>;
+  pairPartner?: (payload: unknown) => Promise<unknown>;
+  enableCategory?: (categoryId: string) => Promise<unknown>;
+  addBatchDomains?: (domains: string[]) => Promise<unknown>;
+  addKeywords?: (keywords: string[]) => Promise<unknown>;
+  requestUnblock?: (payload: unknown) => Promise<unknown>;
+  verifyOfflineToken?: (payload: unknown) => Promise<unknown>;
+  verifyRecoveryCode?: (payload: unknown) => Promise<unknown>;
+  triggerEmergencyCooldown?: (payload?: unknown) => Promise<unknown>;
+  requestAuthorizedUninstall?: (payload: unknown) => Promise<unknown>;
+  onTrayNavigate?: (cb: (viewId: string) => void) => void;
+}
+
+export function bootstrapDesktopRendererDom(): void {
+  if (typeof document === 'undefined') return;
+
+  const htmlEl = document.documentElement;
+  const themeBtns = Array.from(document.querySelectorAll('[data-theme-select]'));
+  const navBtns = Array.from(document.querySelectorAll('[data-nav-target]'));
+  const views = Array.from(document.querySelectorAll('[data-view]'));
+  const dialog = document.getElementById('partnerAuthDialog') as HTMLDialogElement | null;
+  const closeDialogBtn = document.getElementById('closePartnerDialogBtn');
+  const confirmDialogBtn = document.getElementById('confirmPartnerAuthBtn');
+  const bridge = (globalThis as { monblock?: MonBlockWindowBridge }).monblock;
+
+  function switchView(targetView: string): void {
+    htmlEl.setAttribute('data-ui-state', 'active');
+    for (const btn of navBtns) {
+      const isMatch = btn.getAttribute('data-nav-target') === targetView;
+      if (isMatch) {
+        btn.setAttribute('aria-current', 'page');
+        btn.classList.add('ccat-btn-primary');
+      } else {
+        btn.removeAttribute('aria-current');
+        btn.classList.remove('ccat-btn-primary');
+      }
+    }
+    for (const view of views) {
+      if (view.getAttribute('data-view') === targetView) {
+        view.removeAttribute('hidden');
+      } else {
+        view.setAttribute('hidden', 'true');
+      }
+    }
+  }
+
+  switchView('categories');
+
+  for (const btn of themeBtns) {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme-select') || 'capycro-ivory';
+      htmlEl.setAttribute('data-theme', theme);
+      for (const b of themeBtns) {
+        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+      }
+    });
+  }
+
+  for (const btn of navBtns) {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-nav-target') || 'categories';
+      switchView(target);
+    });
+  }
+
+  document.querySelectorAll('[data-category-id]').forEach((card) => {
+    const actionBtn = card.querySelector('[data-action]');
+    if (!actionBtn) return;
+    actionBtn.addEventListener('click', async () => {
+      const action = actionBtn.getAttribute('data-action');
+      const catId = card.getAttribute('data-category-id');
+      if (action === 'request-partner-unlock') {
+        if (dialog && typeof dialog.showModal === 'function') {
+          dialog.showModal();
+        }
+        return;
+      }
+      if (action === 'enable-category' && catId) {
+        if (bridge && typeof bridge.enableCategory === 'function') {
+          await bridge.enableCategory(catId);
+        }
+        card.setAttribute('data-locked', 'true');
+        const badge = card.querySelector('.ccat-badge');
+        if (badge) {
+          badge.className = 'ccat-badge ccat-badge-locked';
+          badge.textContent = '🔒 Ativa e Trancada pelo Ajudante';
+        }
+        actionBtn.setAttribute('data-action', 'request-partner-unlock');
+        actionBtn.className = 'ccat-btn';
+        actionBtn.textContent = 'Solicitar Desbloqueio ao Ajudante';
+      }
+    });
+  });
+
+  if (closeDialogBtn && dialog) {
+    closeDialogBtn.addEventListener('click', () => dialog.close());
+  }
+  if (confirmDialogBtn && dialog) {
+    confirmDialogBtn.addEventListener('click', () => dialog.close());
+  }
+
+  const batchTextarea = document.getElementById('batchDomainsTextarea') as HTMLTextAreaElement | null;
+  const batchCounter = document.getElementById('batchCounter');
+  const submitBatchBtn = document.getElementById('submitBatchBtn');
+  if (batchTextarea && batchCounter) {
+    batchTextarea.addEventListener('input', () => {
+      const parsed = parseAndValidateBatchInput(batchTextarea.value || '');
+      batchCounter.textContent = `${parsed.domains.length} / ${MAX_BATCH_DOMAINS} domínios`;
+    });
+  }
+  if (submitBatchBtn && batchTextarea) {
+    submitBatchBtn.addEventListener('click', async () => {
+      const parsed = parseAndValidateBatchInput(batchTextarea.value || '');
+      if (parsed.ok && parsed.domains.length > 0 && bridge?.addBatchDomains) {
+        await bridge.addBatchDomains(parsed.domains);
+        batchTextarea.value = '';
+        if (batchCounter) batchCounter.textContent = `0 / ${MAX_BATCH_DOMAINS} domínios`;
+      }
+    });
+  }
+
+  const keywordInput = document.getElementById('keywordInput') as HTMLInputElement | null;
+  const submitKeywordBtn = document.getElementById('submitKeywordBtn');
+  if (submitKeywordBtn && keywordInput) {
+    submitKeywordBtn.addEventListener('click', async () => {
+      const kw = keywordInput.value.trim();
+      if (kw && bridge?.addKeywords) {
+        await bridge.addKeywords([kw]);
+        keywordInput.value = '';
+      }
+    });
+  }
+
+  const startCooldownBtn = document.getElementById('startCooldownBtn');
+  const cooldownDisplay = document.getElementById('cooldownTimerDisplay');
+  if (startCooldownBtn && cooldownDisplay) {
+    startCooldownBtn.addEventListener('click', async () => {
+      if (bridge?.triggerEmergencyCooldown) {
+        await bridge.triggerEmergencyCooldown();
+      }
+      startCooldownBtn.textContent = 'Cooldown de 72h em Andamento (Ajudante Notificado)';
+    });
+  }
+
+  if (bridge && typeof bridge.onTrayNavigate === 'function') {
+    bridge.onTrayNavigate((viewId: string) => {
+      if (viewId) switchView(viewId);
+    });
+  }
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => bootstrapDesktopRendererDom());
+  } else {
+    bootstrapDesktopRendererDom();
+  }
+}
+

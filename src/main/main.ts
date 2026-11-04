@@ -330,6 +330,21 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     });
   });
 
+  ipcMain.handle('monblock:request-unblock', async (_event, payload: {
+    targetUrlOrApp?: string;
+    requestedDurationMinutes?: 15 | 60;
+    reason?: string;
+  }) => {
+    const stateRes = await daemon.handleCommand({ type: 'GET_STATE' });
+    return {
+      status: 200,
+      requested: true,
+      targetUrlOrApp: payload?.targetUrlOrApp ?? '',
+      requestedDurationMinutes: payload?.requestedDurationMinutes ?? 15,
+      paired: 'state' in stateRes ? stateRes.state.paired : false,
+    };
+  });
+
   ipcMain.handle('monblock:verify-offline-token', async (_event, payload: {
     challengeCode: string;
     token: string;
