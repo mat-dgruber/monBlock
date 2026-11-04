@@ -1,0 +1,16 @@
+{
+  "name": "monblock",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run tests",
+    "test:unit": "vitest run tests/domain tests/enforcers",
+    "test:integration": "vitest run tests/server",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
