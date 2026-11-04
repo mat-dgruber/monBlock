@@ -180,4 +180,40 @@ describe('PartnerGuard Crypto, Replay Protection & 72h Cooldown', () => {
       })
     ).toEqual({ allowed: true });
   });
+
+  it('rejeita senhas vazias ou maiores que 128 bytes em hashPartnerPassword e verifyPartnerPassword (anti-DoS scrypt)', () => {
+    const validHash = hashPartnerPassword('SenhaValida123!');
+    const overlongPassword = 'a'.repeat(129);
+
+    expect(() => hashPartnerPassword('')).toThrow();
+    expect(() => hashPartnerPassword(overlongPassword)).toThrow();
+    expect(verifyPartnerPassword('', validHash)).toBe(false);
+    expect(verifyPartnerPassword(overlongPassword, validHash)).toBe(false);
+  });
+
+  it('normaliza prefixo www. e URLs em canMutateProtectionRule para evitar falso erro 403', () => {
+    const current: RuleEngineState = {
+      enabledCategories: ['adult'],
+      blockedDomains: ['www.site.com'],
+      allowlistDomains: ['https://www.permitido.com.br/'],
+      keywords: ['cassino'],
+      lockIncognito: false,
+    };
+
+    const next: RuleEngineState = {
+      enabledCategories: ['adult'],
+      blockedDomains: ['site.com', 'novo-bloqueio.org'],
+      allowlistDomains: ['permitido.com.br'],
+      keywords: ['cassino'],
+      lockIncognito: false,
+    };
+
+    expect(
+      canMutateProtectionRule({
+        current,
+        next,
+        partnerAuthorized: false,
+      })
+    ).toEqual({ allowed: true });
+  });
 });

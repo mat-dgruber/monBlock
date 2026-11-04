@@ -7,11 +7,20 @@
  * e validar limites operacionais de lote (RN-WEB-01..06).
  */
 
+import { domainToUnicode } from 'node:url';
 import { PREDEFINED_CATEGORIES, type CategoryDefinition } from './categories.js';
 
 export { PREDEFINED_CATEGORIES, type CategoryDefinition };
 
 // MARK: - Constantes e Contratos de Domínio
+
+/**
+ * Concessão temporária autorizada pelo Ajudante para um domínio específico ou curinga ('*').
+ */
+export interface TemporaryGrant {
+  target: string;
+  expiresAtMs: number;
+}
 
 /**
  * Limite máximo de domínios permitidos em uma única operação em lote (RN-WEB-04).
@@ -67,11 +76,18 @@ export function sanitizeAndNormalizeUrl(
   const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   try {
     const parsed = new URL(withProto);
-    const domain = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    if (!domain || (!domain.includes('.') && domain !== 'localhost' && domain !== '127.0.0.1')) {
+    const rawHost = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const isIpv6 = rawHost.startsWith('[') && rawHost.endsWith(']');
+    const domain = isIpv6 ? rawHost : domainToUnicode(rawHost) || rawHost;
+    if (
+      !domain ||
+      (!domain.includes('.') && domain !== 'localhost' && domain !== '127.0.0.1' && !isIpv6)
+    ) {
       return null;
     }
-    const cleanUrl = `${parsed.protocol}//${domain}${parsed.pathname === '/' ? '' : parsed.pathname}`;
+    const portSuffix = parsed.port ? `:${parsed.port}` : '';
+    const pathname = parsed.pathname === '/' ? '' : parsed.pathname;
+    const cleanUrl = `${parsed.protocol}//${domain}${portSuffix}${pathname}`;
     return { domain, cleanUrl };
   } catch {
     return null;
@@ -121,11 +137,13 @@ function matchesDomain(host: string, ruleDomain: string): boolean {
  * evitando que sequências `%XX` quebrem palavras acentuadas no meio durante a análise de fronteira.
  */
 function safeDecodeUri(text: string): string {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return text;
-  }
+  return text.replace(/(?:%[0-9A-Fa-f]{2})+/g, (m) => {
+    try {
+      return decodeURIComponent(m);
+    } catch {
+      return m;
+    }
+  });
 }
 
 /**
@@ -137,13 +155,19 @@ function safeDecodeUri(text: string): string {
 function sanitizeBenignTitleContexts(rawTitle: string): string {
   return rawTitle
     .toLowerCase()
-    // Abreviações de calendário em pt-BR ("sex.", "seg a sex", "seg. a sex.", "sex, sáb")
-    .replace(/\b(?:seg\.?|ter\.?|qua\.?|qui\.?)\s*(?:a|até|-|–)\s*sex\.?(?![\p{L}\p{N}])/gu, ' ')
+    // Abreviações de calendário em pt-BR ("sex.", "seg a sex", "seg à sex", "seg. a sex.", "sex a dom", "sex, sáb")
+    .replace(/\b(?:seg\.?|ter\.?|qua\.?|qui\.?)\s*(?:[aà]|até|-|–)\s*sex\.?(?![\p{L}\p{N}])/gu, ' ')
+    .replace(/\bsex\.?\s*(?:[aà]|até|-|–)\s*(?:s[aá]b\.?|dom\.?)(?![\p{L}\p{N}])/gu, ' ')
     .replace(/\b(?:sex|tit|art|cap|inc|prof|dr)\.(?=\s|,|;|:|\/|-|\)|\]|$|\d)/gu, ' ')
     .replace(/\bsex\s*,\s*(?:s[aá]b|dom)\b/gu, ' ')
     // Campos demográficos/cadastrais legítimos
-    .replace(/\bsexo\s*:?\s*(?:masculino|feminino|biol[oó]gico|m\/f)\b/gu, ' ');
+    .replace(
+      /\bsexo\s*:?\s*(?:masculino|feminino|biol[oó]gico|m\/f|outro|n[aã]o\s+informado)\b/gu,
+      ' '
+    );
 }
+
+const KEYWORD_REGEX_CACHE = new Map<string, RegExp>();
 
 /**
  * Verifica se um termo de palavra-chave casa por fronteira de palavra inteira Unicode (\p{L}\p{N}),
@@ -152,8 +176,12 @@ function sanitizeBenignTitleContexts(rawTitle: string): string {
  * "sexta-feira", "unissex", "análise", "canal", "assunto" ou "documento" (RN-WEB-07).
  */
 function matchesKeywordWholeWord(haystack: string, term: string): boolean {
-  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
+  let pattern = KEYWORD_REGEX_CACHE.get(term);
+  if (!pattern) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
+    KEYWORD_REGEX_CACHE.set(term, pattern);
+  }
   return pattern.test(haystack);
 }
 
@@ -179,10 +207,21 @@ export function evaluateUrlAndTitle(input: {
   if (!normalized) return { blocked: false };
 
   const { domain, cleanUrl } = normalized;
-  if (CRITICAL_INFRA_ALLOWLIST.has(domain)) {
+  if (
+    cleanUrl.startsWith('http://127.0.0.1:49152/blocked') ||
+    cleanUrl.startsWith('http://localhost:49152/blocked') ||
+    cleanUrl.startsWith('http://127.0.0.1:49152/showcase') ||
+    cleanUrl.startsWith('http://localhost:49152/showcase') ||
+    cleanUrl.startsWith('http://127.0.0.1:49152/tokens.css') ||
+    cleanUrl.startsWith('http://localhost:49152/tokens.css') ||
+    cleanUrl.startsWith('http://127.0.0.1:49152/api/') ||
+    cleanUrl.startsWith('http://localhost:49152/api/')
+  ) {
     return { blocked: false };
   }
-  if (cleanUrl.startsWith('http://127.0.0.1:49152/blocked')) {
+
+  const isLocalLoopback = domain === 'localhost' || domain === '127.0.0.1';
+  if (CRITICAL_INFRA_ALLOWLIST.has(domain) && !isLocalLoopback) {
     return { blocked: false };
   }
 
@@ -193,27 +232,29 @@ export function evaluateUrlAndTitle(input: {
     }
   }
 
-  // Categorias ativas
-  for (const catId of input.state.enabledCategories) {
-    const cat = PREDEFINED_CATEGORIES.find((c) => c.id === catId);
-    if (!cat) continue;
-    if (cat.domains.some((d) => matchesDomain(domain, d))) {
-      return {
-        blocked: true,
-        reason: 'CATEGORY',
-        ruleLabel: `Categoria: ${cat.namePt}`,
-      };
+  if (!isLocalLoopback) {
+    // Categorias ativas
+    for (const catId of input.state.enabledCategories) {
+      const cat = PREDEFINED_CATEGORIES.find((c) => c.id === catId);
+      if (!cat) continue;
+      if (cat.domains.some((d) => matchesDomain(domain, d))) {
+        return {
+          blocked: true,
+          reason: 'CATEGORY',
+          ruleLabel: `Categoria: ${cat.namePt}`,
+        };
+      }
     }
-  }
 
-  // Domínios customizados (blackWebsites)
-  for (const blocked of input.state.blockedDomains) {
-    if (matchesDomain(domain, blocked)) {
-      return {
-        blocked: true,
-        reason: 'CUSTOM_DOMAIN',
-        ruleLabel: `Domínio bloqueado: ${blocked.trim().toLowerCase()}`,
-      };
+    // Domínios customizados (blackWebsites)
+    for (const blocked of input.state.blockedDomains) {
+      if (matchesDomain(domain, blocked)) {
+        return {
+          blocked: true,
+          reason: 'CUSTOM_DOMAIN',
+          ruleLabel: `Domínio bloqueado: ${blocked.trim().toLowerCase()}`,
+        };
+      }
     }
   }
 

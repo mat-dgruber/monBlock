@@ -228,4 +228,56 @@ describe('MOD-01: MacOSBrowserWatcher (Camada 3 - Watcher Universal macOS)', () 
       osAdapter.redirectActiveTab('Safari', 'https://evil.example.com/phishing')
     ).rejects.toThrow('URL de redirecionamento inválida');
   });
+
+  it('suporta grant curinga ("*"), higieniza cacheKey sem PII e avalia abas com título vazio e redirecionamento Firefox no OsascriptBrowserTabAdapter', async () => {
+    // Arrange
+    const { OsascriptBrowserTabAdapter } = await import('../../src/enforcers/macos-watcher.js');
+    const executedCommands: Array<{ file: string; args: readonly string[] }> = [];
+    const customExec = vi.fn(async (file: string, args: readonly string[]) => {
+      executedCommands.push({ file, args });
+      return { stdout: 'Safari\nhttps://www.pornhub.com/watch?token=pii_secret\n' };
+    });
+
+    const osAdapter = new OsascriptBrowserTabAdapter(customExec);
+    const tabWithEmptyTitle = await osAdapter.getActiveTab();
+    expect(tabWithEmptyTitle).toEqual({
+      browser: 'Safari',
+      url: 'https://www.pornhub.com/watch?token=pii_secret',
+      title: '',
+    });
+
+    const firefoxRedirectOk = await osAdapter.redirectActiveTab(
+      'Firefox',
+      'http://127.0.0.1:49152/blocked?domain=pornhub.com'
+    );
+    expect(firefoxRedirectOk).toBe(true);
+    expect(executedCommands[1]?.args[1]).toContain('Firefox');
+    expect(executedCommands[1]?.args[1]).toContain('open location safeRedirectUrl');
+
+    // Wildcard grant '*' libera qualquer domínio enquanto ativo
+    const rules = createBaseRules();
+    const adapter = createMockAdapter({
+      browser: 'Safari',
+      url: 'https://www.pornhub.com/watch?token=pii_secret',
+      title: '',
+    });
+    const watcher = new MacOSBrowserWatcher({
+      adapter,
+      getRules: () => rules,
+      initialGrants: [{ target: '*', expiresAtMs: 50_000 }],
+    });
+
+    const wildcardResult = await watcher.inspectOnce(10_000);
+    expect(wildcardResult.blocked).toBe(false);
+    expect(wildcardResult.grantedTemporary).toBe(true);
+
+    // Debounce por cleanUrl (mudar query string sensível dentro da janela de debounce continua debounced e não retém PII)
+    adapter.setTab({
+      browser: 'Safari',
+      url: 'https://www.pornhub.com/watch?token=other_secret',
+      title: '',
+    });
+    const debouncedCleanUrl = await watcher.inspectOnce(10_050);
+    expect(debouncedCleanUrl.debounced).toBe(true);
+  });
 });

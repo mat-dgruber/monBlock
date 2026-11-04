@@ -229,4 +229,73 @@ describe('MOD-02: TelegramPartnerClient (Bot API, Resiliência, Raio-X e Callbac
       requestId: 'req-004',
     });
   });
+
+  it('gera challengeCode de 6 hex, mascara e-mail e trunca título em 120 chars, faz apenas 1 tentativa em HALF_OPEN e não abre circuito por HTTP 400/401/403', async () => {
+    const capturedRequests: TelegramTransportRequest[] = [];
+    let currentTimeMs = 2_000_000;
+    let nextStatus = 400;
+
+    const transport: TelegramTransportAdapter = {
+      send: vi.fn(async (req: TelegramTransportRequest): Promise<TelegramTransportResponse> => {
+        capturedRequests.push(req);
+        return { ok: nextStatus === 200, status: nextStatus };
+      }),
+    };
+
+    const client = new TelegramPartnerClient({
+      botToken: 'test-token',
+      pairedChatId: '99887766',
+      transport,
+      sleepFn: async () => {},
+      nowFn: () => currentTimeMs,
+    });
+
+    // 1. Erro 400 (cliente) não faz retry nem abre o Circuit Breaker mesmo após 3 chamadas
+    for (let i = 0; i < 3; i++) {
+      const res400 = await client.sendUnblockRequest({
+        requestId: `req-400-${i}`,
+        url: 'https://reddit.com/r/typescript',
+        title: `Contato confidencial joao.silva@empresa.com.br - ${'X'.repeat(150)}`,
+        ruleLabel: 'Categoria: Redes Sociais',
+        userReason: 'Pesquisa.',
+      });
+      expect(res400.delivered).toBe(false);
+      expect(res400.circuitState).toBe('CLOSED');
+      expect(res400.challengeCode).toMatch(/^MB-[0-9A-F]{6}$/);
+    }
+    expect(capturedRequests).toHaveLength(3);
+    const firstText = String(capturedRequests[0]!.payload.text ?? '');
+    expect(firstText).toContain('[EMAIL_REDACTED]');
+    expect(firstText).not.toContain('joao.silva@empresa.com.br');
+
+    const titleLine = firstText.split('\n').find((line) => line.startsWith('• Título da Aba: '))!;
+    const extractedTitle = titleLine.replace('• Título da Aba: ', '');
+    expect(extractedTitle.length).toBeLessThanOrEqual(120);
+
+    // 2. Agora força abertura do circuito com HTTP 503 (3 tentativas em 1 chamada)
+    nextStatus = 503;
+    const res503 = await client.sendUnblockRequest({
+      requestId: 'req-503',
+      url: 'https://reddit.com/r/typescript',
+      title: 'Teste 503',
+      ruleLabel: 'Categoria',
+      userReason: 'Teste',
+    });
+    expect(res503.circuitState).toBe('OPEN');
+    expect(capturedRequests).toHaveLength(6); // 3 anteriores + 3 tentativas do 503
+
+    // 3. Avança 30s para entrar em HALF_OPEN: falha deve executar APENAS 1 tentativa de sondagem
+    currentTimeMs += 30_000;
+    expect(client.getCircuitState()).toBe('HALF_OPEN');
+    const probeFail = await client.sendUnblockRequest({
+      requestId: 'req-half-open-probe',
+      url: 'https://reddit.com/r/typescript',
+      title: 'Sondagem HALF_OPEN',
+      ruleLabel: 'Categoria',
+      userReason: 'Teste probe',
+    });
+    expect(probeFail.delivered).toBe(false);
+    expect(probeFail.circuitState).toBe('OPEN');
+    expect(capturedRequests).toHaveLength(7); // Apenas +1 tentativa em HALF_OPEN!
+  });
 });

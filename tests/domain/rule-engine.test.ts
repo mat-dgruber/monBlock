@@ -210,4 +210,77 @@ describe('RuleEngine & Categories (RN-WEB-01..06)', () => {
       ruleLabel: 'Palavra-chave: tit',
     });
   });
+
+  it('suporta IPv6 [::1], Punycode/IDN e preserva a porta em cleanUrl no sanitizeAndNormalizeUrl', () => {
+    expect(sanitizeAndNormalizeUrl('http://[::1]:8080/painel?token=abc#hash')).toEqual({
+      domain: '[::1]',
+      cleanUrl: 'http://[::1]:8080/painel',
+    });
+
+    expect(sanitizeAndNormalizeUrl('http://localhost:3000/api/status?secret=1')).toEqual({
+      domain: 'localhost',
+      cleanUrl: 'http://localhost:3000/api/status',
+    });
+
+    expect(sanitizeAndNormalizeUrl('https://www.instituição.org.br:8443/curso?id=1')).toEqual({
+      domain: 'instituição.org.br',
+      cleanUrl: 'https://instituição.org.br:8443/curso',
+    });
+  });
+
+  it('decodifica sequências percent-encoded mesmo com % avulso ("50% na institui%C3%A7%C3%A3o") e cobre crase, sex a dom e sexo: outro / não informado', () => {
+    const state: RuleEngineState = {
+      enabledCategories: ['adult'],
+      blockedDomains: [],
+      allowlistDomains: [],
+      keywords: ['sex', 'tit'],
+      lockIncognito: false,
+    };
+
+    expect(
+      evaluateUrlAndTitle({
+        url: 'https://mec.gov.br/desconto-50%-na-institui%C3%A7%C3%A3o',
+        title: 'Desconto de 50% na institui%C3%A7%C3%A3o | seg à sex | sex a dom | Sexo: Outro / Sexo: Não informado',
+        state,
+      }).blocked
+    ).toBe(false);
+  });
+
+  it('permite rotas locais na porta 49152 mas aplica checagem de KEYWORD em localhost/127.0.0.1 em outras portas', () => {
+    const state: RuleEngineState = {
+      enabledCategories: ['adult'],
+      blockedDomains: ['localhost', '127.0.0.1'],
+      allowlistDomains: [],
+      keywords: ['sex'],
+      lockIncognito: false,
+    };
+
+    expect(
+      evaluateUrlAndTitle({
+        url: 'http://localhost:49152/blocked?domain=pornhub.com',
+        title: 'Blocked sex page',
+        state,
+      }).blocked
+    ).toBe(false);
+
+    expect(
+      evaluateUrlAndTitle({
+        url: 'http://127.0.0.1:49152/showcase',
+        title: 'Showcase',
+        state,
+      }).blocked
+    ).toBe(false);
+
+    expect(
+      evaluateUrlAndTitle({
+        url: 'http://localhost:8080/free-sex-videos',
+        title: 'Local Proxy Bypass',
+        state,
+      })
+    ).toEqual({
+      blocked: true,
+      reason: 'KEYWORD',
+      ruleLabel: 'Palavra-chave: sex',
+    });
+  });
 });

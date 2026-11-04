@@ -8,7 +8,7 @@
  */
 
 import crypto from 'node:crypto';
-import type { RuleEngineState } from './rule-engine.js';
+import { sanitizeAndNormalizeUrl, type RuleEngineState } from './rule-engine.js';
 
 // MARK: - Tipos e Constantes de Domínio
 
@@ -39,6 +39,9 @@ export interface ProtectionMutationResult {
  * @returns String formatada `scrypt$<salt_hex>$<derived_hex>`.
  */
 export function hashPartnerPassword(password: string): string {
+  if (!password || Buffer.byteLength(password, 'utf8') > 128) {
+    throw new Error('Senha inválida: deve conter entre 1 e 128 bytes.');
+  }
   const salt = crypto.randomBytes(16).toString('hex');
   const derived = crypto
     .scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 })
@@ -54,6 +57,9 @@ export function hashPartnerPassword(password: string): string {
  * @returns `true` se a senha corresponder exatamente ao hash armazenado.
  */
 export function verifyPartnerPassword(password: string, storedHash: string): boolean {
+  if (!password || Buffer.byteLength(password, 'utf8') > 128) {
+    return false;
+  }
   const parts = storedHash.split('$');
   if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
   const [, salt, expectedHex] = parts;
@@ -181,6 +187,13 @@ export function canMutateProtectionRule(
   const normalizeList = (items: string[]): Set<string> =>
     new Set(items.map((item) => item.trim().toLowerCase()).filter(Boolean));
 
+  const normalizeDomainList = (items: string[]): Set<string> =>
+    new Set(
+      items
+        .map((d) => sanitizeAndNormalizeUrl(d)?.domain ?? d.trim().toLowerCase().replace(/^www\./, ''))
+        .filter(Boolean)
+    );
+
   const currentCategories = normalizeList(params.current.enabledCategories);
   const nextCategories = normalizeList(params.next.enabledCategories);
   for (const cat of currentCategories) {
@@ -192,8 +205,8 @@ export function canMutateProtectionRule(
     }
   }
 
-  const currentDomains = normalizeList(params.current.blockedDomains);
-  const nextDomains = normalizeList(params.next.blockedDomains);
+  const currentDomains = normalizeDomainList(params.current.blockedDomains);
+  const nextDomains = normalizeDomainList(params.next.blockedDomains);
   for (const domain of currentDomains) {
     if (!nextDomains.has(domain)) {
       return {
@@ -214,8 +227,8 @@ export function canMutateProtectionRule(
     }
   }
 
-  const currentAllowlist = normalizeList(params.current.allowlistDomains);
-  const nextAllowlist = normalizeList(params.next.allowlistDomains);
+  const currentAllowlist = normalizeDomainList(params.current.allowlistDomains);
+  const nextAllowlist = normalizeDomainList(params.next.allowlistDomains);
   for (const allowedDomain of nextAllowlist) {
     if (!currentAllowlist.has(allowedDomain)) {
       return {

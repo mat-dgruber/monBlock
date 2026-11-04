@@ -108,11 +108,11 @@ export interface TelegramPartnerClientOptions {
 }
 
 /**
- * Gera um código de desafio curto no formato `MB-XXXX` (4 caracteres alfanuméricos maiúsculos)
- * para uso no fluxo de Desafio-Resposta Offline (`HMAC-SHA256`).
+ * Gera um código de desafio curto no formato `MB-XXXXXX` (6 caracteres hexadecimais maiúsculos)
+ * para uso no fluxo de Desafio-Resposta Offline (`HMAC-SHA256`), compatível com `MB-[0-9A-F]{4,8}`.
  */
 export function generateShortChallengeCode(): string {
-  const randomHex = crypto.randomBytes(2).toString('hex').toUpperCase();
+  const randomHex = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `MB-${randomHex}`;
 }
 
@@ -183,11 +183,16 @@ export class TelegramPartnerClient {
     }
 
     const sanitizedReason = input.userReason.trim().slice(0, 500);
+    const sanitizedTitle =
+      input.title
+        .trim()
+        .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL_REDACTED]')
+        .slice(0, 120) || '(sem título)';
     const xraySummary = [
       '🛡️ [monBlock — Pedido de Desbloqueio Raio-X]',
       `• Domínio: ${normalized.domain}`,
       `• URL Limpa: ${normalized.cleanUrl}`,
-      `• Título da Aba: ${input.title.trim() || '(sem título)'}`,
+      `• Título da Aba: ${sanitizedTitle}`,
       `• Regra Acionada: ${input.ruleLabel}`,
       `• Justificativa: ${sanitizedReason}`,
       `• Código de Desafio Offline: ${challengeCode}`,
@@ -215,8 +220,9 @@ export class TelegramPartnerClient {
 
     const method = input.blurredSnapshotRef ? 'sendPhoto' : 'sendMessage';
     const endpointUrl = `https://api.telegram.org/bot${this.botToken}/${method}`;
+    const effectiveMaxAttempts = currentState === 'HALF_OPEN' ? 1 : this.maxAttempts;
 
-    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+    for (let attempt = 1; attempt <= effectiveMaxAttempts; attempt++) {
       try {
         const response = await this.transport.send({
           endpointUrl,
@@ -237,13 +243,19 @@ export class TelegramPartnerClient {
         }
 
         const isRetryableHttp = response.status === 429 || response.status >= 500;
-        this.recordFailure();
-        if (!isRetryableHttp || attempt === this.maxAttempts || this.getCircuitState() === 'OPEN') {
+        if (isRetryableHttp) {
+          this.recordFailure(this.nowFn());
+        }
+        if (
+          !isRetryableHttp ||
+          attempt === effectiveMaxAttempts ||
+          this.getCircuitState() === 'OPEN'
+        ) {
           break;
         }
       } catch {
-        this.recordFailure();
-        if (attempt === this.maxAttempts || this.getCircuitState() === 'OPEN') {
+        this.recordFailure(this.nowFn());
+        if (attempt === effectiveMaxAttempts || this.getCircuitState() === 'OPEN') {
           break;
         }
       }
@@ -272,7 +284,15 @@ export class TelegramPartnerClient {
     chatId: string;
     callbackData: string;
   }): CallbackVerificationResult {
-    if (!params.chatId || params.chatId.trim() !== this.pairedChatId) {
+    const candidateChatId = params.chatId?.trim() ?? '';
+    const candidateBuf = Buffer.from(candidateChatId, 'utf8');
+    const expectedBuf = Buffer.from(this.pairedChatId, 'utf8');
+    if (
+      !candidateChatId ||
+      !this.pairedChatId ||
+      candidateBuf.length !== expectedBuf.length ||
+      !crypto.timingSafeEqual(candidateBuf, expectedBuf)
+    ) {
       return {
         authorized: false,
         error: 'Remetente não autorizado: chatId diverge do Ajudante pareado.',
@@ -310,10 +330,10 @@ export class TelegramPartnerClient {
     };
   }
 
-  private recordFailure(): void {
+  private recordFailure(now = this.nowFn()): void {
     this.consecutiveFailures += 1;
     if (this.consecutiveFailures >= this.failureThreshold) {
-      this.circuitOpenedAtMs = this.nowFn();
+      this.circuitOpenedAtMs = now;
     }
   }
 }
