@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="capycro-ivory" data-ui-state="active">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:49152; object-src 'none'; base-uri 'self'; frame-ancestors 'none';"
+  />
+  <title>monBlock — Painel de Controle &amp; Compromisso Compartilhado (CCAT)</title>
+  <link rel="stylesheet" href="../../docs/design/tokens.css" />
+  <link rel="stylesheet" href="/tokens.css" />
+  <style>
+    /* Extensão semântica para os 4 identificadores de tema do domínio desktop_ui_ccat (Zero-Roxo Estrito) */
+    :root,
+    [data-theme="capycro-ivory"] {
+      --ccat-bg-canvas: #F6F4EE;
+      --ccat-bg-surface: #FFFFFF;
+      --ccat-bg-elevated: #EFECE4;
+      --ccat-border: #DDD6C7;
+      --ccat-text-primary: #1F2421;
+      --ccat-text-secondary: #525B56;
+      --ccat-brand-primary: #005A64;
+      --ccat-brand-accent: #C84B31;
+      --ccat-focus-ring: #005A64;
+    }
+
+    [data-theme="dark-tech"] {
+      --ccat-bg-canvas: #0B0F17;
+      --ccat-bg-surface: #131B2E;
+      --ccat-bg-elevated: #1E293B;
+      --ccat-border: #334155;
+      --ccat-text-primary: #F8FAFC;
+      --ccat-text-secondary: #94A3B8;
+      --ccat-brand-primary: #22D3EE;
+      --ccat-brand-accent: #F97316;
+      --ccat-focus-ring: #22D3EE;
+    }
+
+    [data-theme="light-fintech"] {
+      --ccat-bg-canvas: #F8FAFC;
+      --ccat-bg-surface: #FFFFFF;
+      --ccat-bg-elevated: #F1F5F9;
+      --ccat-border: #CBD5E1;
+      --ccat-text-primary: #0F172A;
+      --ccat-text-secondary: #475569;
+      --ccat-brand-primary: #0F766E;
+      --ccat-brand-accent: #0284C7;
+      --ccat-focus-ring: #0F766E;
+    }
+
+    [data-theme="high-contrast-aaa"] {
+      --ccat-bg-canvas: #000000;
+      --ccat-bg-surface: #0A0A0A;
+      --ccat-bg-elevated: #171717;
+      --ccat-border: #FFFFFF;
+      --ccat-text-primary: #FFFFFF;
+      --ccat-text-secondary: #E5E5E5;
+      --ccat-brand-primary: #FFD60A;
+      --ccat-brand-accent: #00FFFF;
+      --ccat-focus-ring: #FFD60A;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--ccat-bg-canvas);
+      color: var(--ccat-text-primary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.5;
+    }
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: 'tnum';
+    }
+
+    button,
+    input,
+    select,
+    textarea,
+    .ccat-interactive {
+      min-height: 2.75rem; /* >= 44px WCAG 2.2 AAA */
+      min-width: 2.75rem;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    a:focus-visible {
+      outline: 2px solid var(--ccat-focus-ring);
+      outline-offset: 2px;
+    }
+
+    header.app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      padding: 1rem 1.75rem;
+      background: var(--ccat-bg-surface);
+      border-bottom: 1px solid var(--ccat-border);
+    }
+
+    nav.app-nav {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      padding: 0.75rem 1.75rem;
+      background: var(--ccat-bg-elevated);
+      border-bottom: 1px solid var(--ccat-border);
+    }
+
+    main.app-main {
+      flex: 1;
+      max-width: 1120px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .ccat-card {
+      background: var(--ccat-bg-surface);
+      border: 1px solid var(--ccat-border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .categories-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .ccat-alert-error {
+      border: 2px solid var(--danger-color);
+      background: var(--danger-surface);
+      color: var(--danger-color);
+      padding: 1rem 1.25rem;
+      border-radius: 0.75rem;
+    }
+
+    .ccat-alert-partial {
+      border: 2px solid var(--warning-color);
+      background: var(--warning-surface);
+      color: var(--warning-color);
+      padding: 1rem 1.25rem;
+      border-radius: 0.75rem;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>monBlock — Guardião Desktop CCAT</h1>
+      <p class="tabular-nums">Status: <strong>monBlock Ativo — Proteção 3 Camadas</strong> • Ajudante Pareado</p>
+    </div>
+
+    <!-- Seletor dos 4 Temas CCAT -->
+    <div role="group" aria-label="Seletor de Tema Visual CCAT">
+      <button type="button" class="ccat-btn" data-theme-select="capycro-ivory">Capycro Ivory</button>
+      <button type="button" class="ccat-btn" data-theme-select="dark-tech">Dark Tech</button>
+      <button type="button" class="ccat-btn" data-theme-select="light-fintech">Light Fintech</button>
+      <button type="button" class="ccat-btn" data-theme-select="high-contrast-aaa">High Contrast AAA</button>
+    </div>
+  </header>
+
+  <nav class="app-nav" aria-label="Navegação Principal da Jornada monBlock">
+    <button type="button" class="ccat-btn" data-nav-target="onboarding">1. Onboarding (4 Passos)</button>
+    <button type="button" class="ccat-btn ccat-btn-primary" data-nav-target="categories">2. 11 Categorias (Append-Only)</button>
+    <button type="button" class="ccat-btn" data-nav-target="rules">3. Domínios em Lote &amp; Palavras-Chave</button>
+    <button type="button" class="ccat-btn" data-nav-target="partner">4. Central do Ajudante &amp; Recuperação</button>
+  </nav>
+
+  <main class="app-main" id="main-content">
+    <!-- ==================================================================
+         5 ESTADOS VISUAIS OBRIGATÓRIOS (loading, empty, error, partial, active)
+         ================================================================== -->
+
+    <!-- Estado 1: Loading (Skeleton Shimmer sem layout shift) -->
+    <section data-state-panel="loading" class="ccat-card" aria-busy="true" aria-label="Carregando estado do guardião">
+      <h2>Sincronizando com o daemon monblockd...</h2>
+      <p>Verificando integridade dos 3 Cofres e camadas de bloqueio sem layout shift.</p>
+    </section>
+
+    <!-- Estado 2: Empty (Lista customizada vazia com CTA claro) -->
+    <section data-state-panel="empty" class="ccat-card" aria-label="Lista customizada vazia">
+      <h2>Nenhum domínio ou palavra-chave extra cadastrado ainda</h2>
+      <p>A categoria Conteúdo Adulto já protege você por padrão. Adicione sites ou termos específicos abaixo.</p>
+      <button type="button" class="ccat-btn ccat-btn-primary">Adicionar Primeiro Domínio</button>
+    </section>
+
+    <!-- Estado 3: Error (Banner RFC 9457 Problem Details) -->
+    <section
+      data-state-panel="error"
+      class="ccat-alert-error"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+    >
+      <h2>Erro de Operação (RFC 9457 Problem Details)</h2>
+      <p id="problemDetailsTitle"><strong>403 Forbidden — Catraca Unidirecional Append-Only</strong></p>
+      <p id="problemDetailsDetail">Regras ativas não podem ser removidas sem aprovação do Ajudante.</p>
+    </section>
+
+    <!-- Estado 4: Partial / Degraded (Modo Offline / Desafio-Resposta HMAC-SHA256) -->
+    <section
+      data-state-panel="partial"
+      class="ccat-alert-partial"
+      role="status"
+      aria-live="polite"
+    >
+      <h2>Modo Offline Ativo — Desafio-Resposta HMAC-SHA256</h2>
+      <p>
+        Sem conexão com o Telegram no momento. Utilize o código de desafio local
+        <code class="tabular-nums">MB-8492-X7</code> com seu Ajudante para gerar um token offline <code>HMAC-SHA256</code>.
+      </p>
+    </section>
+
+    <!-- Estado 5: Active (Dashboard Populado com as 4 Views da Jornada) -->
+    <div data-state-panel="active">
+      <!-- VIEW 1: Onboarding Wizard em 4 Passos -->
+      <section data-view="onboarding" class="ccat-card" aria-labelledby="onboarding-heading">
+        <h2 id="onboarding-heading">Onboarding Guiado em 4 Passos</h2>
+        <ol>
+          <li data-onboarding-step="1">
+            <strong>Passo 1 — Boas-vindas &amp; Pacto da Catraca Unidirecional (Append-Only):</strong>
+            Você pode ativar bloqueios a qualquer momento; somente seu Ajudante pode desativar.
+          </li>
+          <li data-onboarding-step="2">
+            <strong>Passo 2 — Verificação do Daemon monblockd &amp; Proteção em 3 Camadas:</strong>
+            Ativação do serviço privilegiado, <code>/etc/hosts</code>, políticas de navegadores e Watcher macOS.
+          </li>
+          <li data-onboarding-step="3">
+            <strong>Passo 3 — Pareamento com Ajudante (Telegram + Senha Mestra scrypt):</strong>
+            Vincule o chat do Ajudante e cadastre a senha mestra derivada com <code>scrypt</code>.
+          </li>
+          <li data-onboarding-step="4">
+            <strong>Passo 4 — Kit de 5 Códigos de Emergência (REC-*) &amp; Ativação Inicial:</strong>
+            Guarde seus 5 códigos de uso único (<code>REC-A1B2C3-D4E5F6</code>) e confirme antes de concluir.
+          </li>
+        </ol>
+      </section>
+
+      <!-- VIEW 2: Dashboard das 11 Categorias (PREDEFINED_CATEGORIES) -->
+      <section data-view="categories" class="ccat-card" aria-labelledby="categories-heading">
+        <h2 id="categories-heading">11 Categorias de Proteção (Catraca Append-Only)</h2>
+        <div class="categories-grid">
+          <article class="ccat-card" data-category-id="adult" data-locked="true">
+            <h3>Conteúdo Adulto & Pornografia</h3>
+            <p class="tabular-nums">Status: <strong>Ativa e Trancada pelo Ajudante</strong></p>
+            <button type="button" class="ccat-btn" data-action="request-partner-unlock" data-category="adult">
+              🔒 Trancada pelo Ajudante (Solicitar Desbloqueio)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="gambling" data-locked="false">
+            <h3>Apostas & Cassinos (Bets)</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="gambling">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="games" data-locked="false">
+            <h3>Jogos Online</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="games">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="proxy" data-locked="false">
+            <h3>Proxies, VPNs & Bypass</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="proxy">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="dating" data-locked="false">
+            <h3>Sites de Relacionamento</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="dating">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="social" data-locked="false">
+            <h3>Redes Sociais</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="social">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="video" data-locked="false">
+            <h3>Streaming & Vídeos</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="video">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="forums" data-locked="false">
+            <h3>Fóruns & Comunidades Mistas</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="forums">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="shopping" data-locked="false">
+            <h3>Compras por Impulso</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="shopping">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="news" data-locked="false">
+            <h3>Notícias & Portais</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="news">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+
+          <article class="ccat-card" data-category-id="search_unsafe" data-locked="false">
+            <h3>Buscadores sem SafeSearch</h3>
+            <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="search_unsafe">
+              Ativar em 1 Clique (Append-Only)
+            </button>
+          </article>
+        </div>
+      </section>
+
+      <!-- VIEW 3: Domínios em Lote (MAX_BATCH_DOMAINS = 100) & Palavras-Chave (RN-WEB-07) -->
+      <section data-view="rules" class="ccat-card" aria-labelledby="rules-heading">
+        <h2 id="rules-heading">Bloqueio de Domínios em Lote &amp; Palavras-Chave</h2>
+
+        <div>
+          <label for="batchDomainsTextarea" class="ccat-field-label">
+            <span>Adicionar Domínios em Lote (até 100 por vez)</span>
+            <span id="batchCounter" class="tabular-nums">0 / 100 domínios</span>
+          </label>
+          <textarea
+            id="batchDomainsTextarea"
+            class="ccat-textarea"
+            rows="5"
+            placeholder="Cole até 100 domínios ou URLs (um por linha)..."
+          ></textarea>
+          <button type="button" id="submitBatchBtn" class="ccat-btn ccat-btn-primary">
+            Trancar Lote de Domínios (Append-Only)
+          </button>
+        </div>
+
+        <div>
+          <label for="keywordInput" class="ccat-field-label">
+            <span>Adicionar Palavra-Chave Simples ou Combinada por Vírgula (AND)</span>
+          </label>
+          <input
+            id="keywordInput"
+            type="text"
+            maxlength="120"
+            class="ccat-input"
+            placeholder="Ex: cassino,online ou roleta,aposta"
+          />
+          <p class="ccat-field-hint">
+            Proteção Inteligente de Fronteira de Palavra Inteira (<strong>RN-WEB-07</strong>): o motor analisa palavras
+            completas Unicode para evitar falsos positivos como <code>"tit"</code> em <code>"instituição"</code> ou
+            <code>"sex"</code> em <code>"sexta-feira"</code>.
+          </p>
+          <button type="button" id="submitKeywordBtn" class="ccat-btn ccat-btn-primary">
+            Adicionar Palavra-Chave
+          </button>
+        </div>
+      </section>
+
+      <!-- VIEW 4: Central do Ajudante, Desafio Offline UNLOCK-*, Recuperação 3 Níveis & Desinstalação Autorizada -->
+      <section data-view="partner" class="ccat-card" aria-labelledby="partner-heading">
+        <h2 id="partner-heading">Central do Ajudante, Recuperação em 3 Níveis &amp; Desinstalação</h2>
+
+        <div class="ccat-card">
+          <h3>Nível 1 — Desafio-Resposta Offline (HMAC-SHA256)</h3>
+          <p>
+            Informe o código de desafio atual ao seu Ajudante:
+            <strong id="partnerChallengeCode" class="tabular-nums">MB-8492-X7</strong>
+          </p>
+          <label for="offlineUnlockTokenInput" class="ccat-field-label">
+            <span>Inserir Token de Liberação Assinado (UNLOCK-15M-* / UNLOCK-60M-* / UNLOCK-PERMANENT-*)</span>
+          </label>
+          <input
+            id="offlineUnlockTokenInput"
+            type="text"
+            autocomplete="one-time-code"
+            class="ccat-input tabular-nums"
+            placeholder="Ex: UNLOCK-15M-A1B2C3D4E5, UNLOCK-60M-A1B2C3D4E5 ou UNLOCK-PERMANENT-A1B2C3D4E5"
+          />
+          <button type="button" id="verifyOfflineTokenBtn" class="ccat-btn ccat-btn-accent">
+            Validar Token Offline
+          </button>
+        </div>
+
+        <div class="ccat-card">
+          <h3>Nível 2 — Kit de Emergência de Uso Único (REC-*)</h3>
+          <label for="recoveryCodeInput" class="ccat-field-label">
+            <span>Código de Recuperação (REC-XXXXXX-XXXXXX)</span>
+          </label>
+          <input
+            id="recoveryCodeInput"
+            type="text"
+            class="ccat-input tabular-nums"
+            placeholder="Ex: REC-9F8E7D-6C5B4A"
+          />
+        </div>
+
+        <div class="ccat-card">
+          <h3>Nível 3 — Cooldown de Emergência Time-Lock (72 Horas)</h3>
+          <p class="tabular-nums">
+            Tempo restante (deltaTime real): <strong id="cooldownTimerDisplay" class="tabular-nums">72:00:00</strong>
+          </p>
+          <button type="button" id="startCooldownBtn" class="ccat-btn">
+            Iniciar Cooldown de Emergência de 72h
+          </button>
+        </div>
+
+        <div class="ccat-card">
+          <h3>Desinstalação Segura (RN-DAEMON-06)</h3>
+          <button type="button" id="authorizedUninstallBtn" class="ccat-btn ccat-btn-accent">
+            Desinstalação Autorizada pelo Ajudante
+          </button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal Semântico para Solicitação de Desbloqueio ao Ajudante -->
+  <dialog id="partnerAuthDialog" aria-labelledby="dialog-title">
+    <div class="ccat-card">
+      <h2 id="dialog-title">Autorização do Ajudante Necessária</h2>
+      <p>Esta regra está protegida pela Catraca Unidirecional. Insira a credencial do Ajudante ou peça aprovação no Telegram.</p>
+      <button type="button" class="ccat-btn" id="closePartnerDialogBtn">Voltar ao Foco</button>
+    </div>
+  </dialog>
+</body>
+</html>

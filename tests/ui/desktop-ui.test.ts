@@ -1,0 +1,393 @@
+/**
+ * Testes Automatizados AAA — Módulo 04 (MOD-04: Aplicativo Desktop Electron, Menu da Tray macOS e Interface CCAT).
+ *
+ * Valida:
+ * - Isolamento Zero-Trust da BrowserWindow e bloqueio de navegação externa (`src/main/main.ts`)
+ * - Menu da Tray macOS sem opção de sair/desativar (`INV-UI-TRAY-03`) e ocultação de janela no close (`RN-LIFE-01`)
+ * - Ponte segura Preload (`src/preload/preload.ts`) sem vazamento de `ipcRenderer` bruto
+ * - Estrutura semântica, 4 temas CCAT, 5 estados de UI, 4 views da jornada, 11 categorias e Zero-Roxo (`src/renderer/index.html`)
+ * - Lógica controladora do Renderer (`src/renderer/app.ts`): lote <= 100 domínios, cronômetro deltaTime 72h e Catraca Append-Only
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { PREDEFINED_CATEGORIES } from '../../src/domain/categories.js';
+import {
+  buildTrayMenuTemplate,
+  createSecureWindowOptions,
+  handleWindowCloseEvent,
+  validateNavigationUrl,
+} from '../../src/main/main.js';
+import { createMonBlockPreloadApi } from '../../src/preload/preload.js';
+import {
+  attemptCategoryToggle,
+  createInitialUiControllerState,
+  formatRemainingCooldown,
+  parseAndValidateBatchInput,
+  transitionUiState,
+} from '../../src/renderer/app.js';
+
+describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/main.ts)', () => {
+  it('createSecureWindowOptions deve impor tríade Zero-Trust, show: false e backgroundColor #F6F4EE', () => {
+    // Arrange & Act
+    const options = createSecureWindowOptions('/app/dist/preload/preload.js');
+
+    // Assert
+    expect(options.show).toBe(false);
+    expect(options.backgroundColor).toBe('#F6F4EE');
+    expect(options.webPreferences.nodeIntegration).toBe(false);
+    expect(options.webPreferences.contextIsolation).toBe(true);
+    expect(options.webPreferences.sandbox).toBe(true);
+    expect(options.webPreferences.webSecurity).toBe(true);
+    expect(options.webPreferences.allowRunningInsecureContent).toBe(false);
+    expect(options.webPreferences.preload).toBe('/app/dist/preload/preload.js');
+  });
+
+  it('validateNavigationUrl deve permitir apenas loopback :49152 e file:// local, bloqueando URLs externas', () => {
+    // Arrange & Act & Assert
+    expect(validateNavigationUrl('http://127.0.0.1:49152/blocked')).toBe(true);
+    expect(validateNavigationUrl('http://127.0.0.1:49152/showcase')).toBe(true);
+    expect(validateNavigationUrl('file:///Users/app/src/renderer/index.html')).toBe(true);
+
+    expect(validateNavigationUrl('https://evil.example.com/phish')).toBe(false);
+    expect(validateNavigationUrl('http://127.0.0.1:8080/other')).toBe(false);
+    expect(validateNavigationUrl('javascript:alert(1)')).toBe(false);
+    expect(validateNavigationUrl('not-a-valid-url')).toBe(false);
+  });
+
+  it('buildTrayMenuTemplate deve incluir todos os 6 itens obrigatórios e JAMAIS conter opção de sair/desativar (INV-UI-TRAY-03)', () => {
+    // Arrange
+    const handlers = {
+      onQuickAdd: vi.fn(),
+      onBlockActiveTab: vi.fn(),
+      onRequestUnblock: vi.fn(),
+      onEnterToken: vi.fn(),
+      onOpenDashboard: vi.fn(),
+    };
+
+    // Act
+    const menu = buildTrayMenuTemplate(
+      {
+        active: true,
+        partnerName: 'Ana',
+      },
+      handlers
+    );
+
+    // Assert
+    const ids = menu.filter((item) => item.id).map((item) => item.id);
+    expect(ids).toContain('status-header');
+    expect(ids).toContain('quick-add');
+    expect(ids).toContain('block-active-tab');
+    expect(ids).toContain('request-unblock');
+    expect(ids).toContain('enter-token');
+    expect(ids).toContain('open-dashboard');
+
+    const header = menu.find((i) => i.id === 'status-header');
+    expect(header?.label).toContain('monBlock Ativo — Proteção 3 Camadas');
+    expect(header?.enabled).toBe(false);
+
+    expect(menu.find((i) => i.id === 'quick-add')?.label).toBe(
+      '➕ Bloquear Site ou Palavra-Chave Rápida...'
+    );
+    expect(menu.find((i) => i.id === 'block-active-tab')?.label).toBe(
+      '🌐 Bloquear Site da Aba Atual do Navegador'
+    );
+    expect(menu.find((i) => i.id === 'request-unblock')?.label).toBe(
+      '🤝 Solicitar Desbloqueio Temporário ao Ajudante...'
+    );
+    expect(menu.find((i) => i.id === 'enter-token')?.label).toBe(
+      '🔑 Inserir Código de Liberação (UNLOCK-*)...'
+    );
+    expect(menu.find((i) => i.id === 'open-dashboard')?.label).toBe(
+      '🛡️ Abrir Painel Principal do monBlock'
+    );
+
+    // INV-UI-TRAY-03: Proibição absoluta de quit/exit/sair/desativar
+    const serialized = JSON.stringify(menu).toLowerCase();
+    expect(serialized).not.toMatch(/\b(quit|exit|sair|desativar|encerrar)\b/);
+
+    // Acionamento dos handlers
+    menu.find((i) => i.id === 'quick-add')?.click?.();
+    menu.find((i) => i.id === 'block-active-tab')?.click?.();
+    menu.find((i) => i.id === 'request-unblock')?.click?.();
+    menu.find((i) => i.id === 'enter-token')?.click?.();
+    menu.find((i) => i.id === 'open-dashboard')?.click?.();
+
+    expect(handlers.onQuickAdd).toHaveBeenCalledTimes(1);
+    expect(handlers.onBlockActiveTab).toHaveBeenCalledTimes(1);
+    expect(handlers.onRequestUnblock).toHaveBeenCalledTimes(1);
+    expect(handlers.onEnterToken).toHaveBeenCalledTimes(1);
+    expect(handlers.onOpenDashboard).toHaveBeenCalledTimes(1);
+  });
+
+  it('handleWindowCloseEvent deve ocultar a janela ao fechar sem encerrar a proteção (RN-LIFE-01)', () => {
+    // Arrange
+    const preventDefault = vi.fn();
+    const hide = vi.fn();
+
+    // Act — Fechamento normal (não autorizado pelo Ajudante)
+    handleWindowCloseEvent({ preventDefault }, { hide }, false);
+
+    // Assert
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(hide).toHaveBeenCalledTimes(1);
+
+    // Act — Fechamento durante desinstalação autorizada pelo Ajudante
+    handleWindowCloseEvent({ preventDefault }, { hide }, true);
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it('buildTrayMenuTemplate deve exibir contadores regressivos tabular-nums de pausa temporária ou cooldown 72h', () => {
+    const noop = vi.fn();
+    const handlers = {
+      onQuickAdd: noop,
+      onBlockActiveTab: noop,
+      onRequestUnblock: noop,
+      onEnterToken: noop,
+      onOpenDashboard: noop,
+    };
+
+    const pauseMenu = buildTrayMenuTemplate(
+      { active: true, temporaryUnlockRemainingFormatted: '14:22' },
+      handlers
+    );
+    expect(pauseMenu[0]?.label).toContain('14:22');
+
+    const cooldownMenu = buildTrayMenuTemplate(
+      { active: true, cooldownRemainingFormatted: '71:59:10' },
+      handlers
+    );
+    expect(cooldownMenu[0]?.label).toContain('71:59:10');
+  });
+});
+
+describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
+  it('createMonBlockPreloadApi deve expor apenas os métodos contratados e nunca expor ipcRenderer bruto', async () => {
+    // Arrange
+    const invokeMock = vi.fn().mockResolvedValue({ ok: true });
+
+    // Act
+    const api = createMonBlockPreloadApi(invokeMock);
+
+    // Assert
+    expect(Object.keys(api).sort()).toEqual(
+      [
+        'addBatchDomains',
+        'addKeywords',
+        'enableCategory',
+        'getState',
+        'pairPartner',
+        'requestAuthorizedUninstall',
+        'requestUnblock',
+        'triggerEmergencyCooldown',
+        'verifyOfflineToken',
+      ].sort()
+    );
+    expect((api as unknown as Record<string, unknown>).ipcRenderer).toBeUndefined();
+
+    await api.getState();
+    expect(invokeMock).toHaveBeenCalledWith('monblock:get-state');
+
+    await api.enableCategory('gambling');
+    expect(invokeMock).toHaveBeenCalledWith('monblock:enable-category', { categoryId: 'gambling' });
+
+    await api.addBatchDomains(['bet365.com']);
+    expect(invokeMock).toHaveBeenCalledWith('monblock:add-batch-domains', {
+      domains: ['bet365.com'],
+    });
+
+    await api.addKeywords(['cassino,online']);
+    expect(invokeMock).toHaveBeenCalledWith('monblock:add-keywords', {
+      keywords: ['cassino,online'],
+    });
+
+    await api.verifyOfflineToken({
+      challengeCode: ' mb-8492-x7 ',
+      token: ' unlock-15m-abcdef1234 ',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('monblock:verify-offline-token', {
+      challengeCode: 'MB-8492-X7',
+      token: 'UNLOCK-15M-ABCDEF1234',
+    });
+
+    await api.triggerEmergencyCooldown();
+    expect(invokeMock).toHaveBeenCalledWith('monblock:trigger-emergency-cooldown', {});
+
+    await api.requestAuthorizedUninstall({
+      authMethod: 'PASSWORD',
+      credential: 'partner-secret',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('monblock:request-authorized-uninstall', {
+      authMethod: 'PASSWORD',
+      credential: 'partner-secret',
+    });
+
+    await expect(
+      api.pairPartner({
+        partnerName: 'Ana',
+        telegramChatId: '12345',
+        password: 'secret',
+        confirmedRecoveryCodes: false,
+      })
+    ).rejects.toThrow(/Kit de Emergência/);
+  });
+});
+
+describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo (src/renderer/index.html)', () => {
+  const htmlPath = path.resolve(__dirname, '../../src/renderer/index.html');
+
+  it('deve conter os 4 temas CCAT, os 5 estados visuais, as 4 views, as 11 categorias e Zero-Roxo', () => {
+    // Arrange & Act
+    const html = fs.readFileSync(htmlPath, 'utf-8');
+
+    // Assert — Idioma, tema inicial e vínculo com tokens.css
+    expect(html).toContain('lang="pt-BR"');
+    expect(html).toContain('data-theme="capycro-ivory"');
+    expect(html).toContain('../../docs/design/tokens.css');
+    expect(html).toContain('/tokens.css');
+
+    // Assert — 4 Temas CCAT
+    expect(html).toContain('capycro-ivory');
+    expect(html).toContain('dark-tech');
+    expect(html).toContain('light-fintech');
+    expect(html).toContain('high-contrast-aaa');
+
+    // Assert — Semântica HTML5
+    expect(html).toContain('<header');
+    expect(html).toContain('<nav');
+    expect(html).toContain('<main');
+    expect(html).toContain('<dialog');
+
+    // Assert — 5 Estados Visuais Obrigatórios (loading, empty, error RFC 9457, partial, active)
+    expect(html).toContain('data-ui-state=');
+    expect(html).toContain('data-state-panel="loading"');
+    expect(html).toContain('data-state-panel="empty"');
+    expect(html).toContain('data-state-panel="error"');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('aria-live="assertive"');
+    expect(html).toContain('RFC 9457');
+    expect(html).toContain('data-state-panel="partial"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('HMAC-SHA256');
+    expect(html).toContain('data-state-panel="active"');
+
+    // Assert — 4 Views da Jornada Completa
+    expect(html).toContain('data-view="onboarding"');
+    expect(html).toContain('data-view="categories"');
+    expect(html).toContain('data-view="rules"');
+    expect(html).toContain('data-view="partner"');
+
+    // Assert —Todas as 11 categorias de PREDEFINED_CATEGORIES presentes
+    for (const cat of PREDEFINED_CATEGORIES) {
+      expect(html).toContain(`data-category-id="${cat.id}"`);
+      expect(html).toContain(cat.namePt);
+    }
+
+    // Assert — Lote 0 / 100 domínios e aviso educativo RN-WEB-07
+    expect(html).toContain('0 / 100 domínios');
+    expect(html).toContain('RN-WEB-07');
+    expect(html).toContain('instituição');
+    expect(html).toContain('sexta-feira');
+
+    // Assert — Central do Ajudante: Challenge Code MB-*, UNLOCK-*, REC-*, Cooldown 72h e Desinstalação Autorizada
+    expect(html).toContain('MB-');
+    expect(html).toContain('UNLOCK-15M-');
+    expect(html).toContain('UNLOCK-60M-');
+    expect(html).toContain('UNLOCK-PERMANENT-');
+    expect(html).toContain('REC-');
+    expect(html).toContain('72:00:00');
+    expect(html).toContain('Desinstalação Autorizada pelo Ajudante');
+
+    // Assert — WCAG 2.2 AAA, tabular-nums, prefers-reduced-motion e Zero Roxo
+    expect(html).toContain(':focus-visible');
+    expect(html).toContain('prefers-reduced-motion: reduce');
+    expect(html).toContain('tabular-nums');
+    expect(html.toLowerCase()).not.toMatch(/#8b5cf6|#7c3aed|#a855f7|#6366f1|\b(purple|violet|indigo)\b/);
+  });
+});
+
+describe('MOD-04: Controlador do Renderer (src/renderer/app.ts)', () => {
+  it('parseAndValidateBatchInput deve aceitar até 100 domínios, filtrar infra crítica e rejeitar > 100 com RFC 9457', () => {
+    // Arrange — Lote válido com infra crítica infiltrada
+    const rawText = 'bet365.com\nhttps://www.blaze.com/promo\nlocalhost\napi.telegram.org';
+
+    // Act
+    const okResult = parseAndValidateBatchInput(rawText);
+
+    // Assert
+    expect(okResult.ok).toBe(true);
+    expect(okResult.domains).toEqual(['bet365.com', 'blaze.com']);
+    expect(okResult.ignoredInfraCount).toBe(2);
+
+    // Arrange — Lote excedendo 100 domínios
+    const overLimitText = Array.from({ length: 101 }, (_, i) => `site${i}.com`).join('\n');
+
+    // Act
+    const errResult = parseAndValidateBatchInput(overLimitText);
+
+    // Assert
+    expect(errResult.ok).toBe(false);
+    expect(errResult.problem?.status).toBe(400);
+    expect(errResult.problem?.title).toContain('Limite');
+    expect(errResult.problem?.detail).toContain('100');
+  });
+
+  it('formatRemainingCooldown deve calcular tempo restante via deltaTime real em formato HH:MM:SS', () => {
+    // Arrange
+    const startedAtMs = 1_700_000_000_000;
+    const oneHourLaterMs = startedAtMs + 3_600_000;
+    const after72HoursMs = startedAtMs + 72 * 3_600_000 + 1000;
+
+    // Act & Assert
+    expect(formatRemainingCooldown(startedAtMs, startedAtMs)).toEqual({
+      expired: false,
+      remainingMs: 259_200_000,
+      formatted: '72:00:00',
+    });
+    expect(formatRemainingCooldown(startedAtMs, oneHourLaterMs)).toEqual({
+      expired: false,
+      remainingMs: 255_600_000,
+      formatted: '71:00:00',
+    });
+    expect(formatRemainingCooldown(startedAtMs, after72HoursMs)).toEqual({
+      expired: true,
+      remainingMs: 0,
+      formatted: '00:00:00',
+    });
+  });
+
+  it('attemptCategoryToggle deve ativar categoria inativa em 1 clique (Append-Only) e bloquear desativação sem Ajudante', () => {
+    // Arrange
+    const initialState = createInitialUiControllerState();
+    expect(initialState.ruleState.enabledCategories).toContain('adult');
+
+    // Act 1 — Ativar categoria inativa ('gambling') sem precisar do Ajudante
+    const addResult = attemptCategoryToggle(initialState, 'gambling');
+
+    // Assert 1
+    expect(addResult.allowed).toBe(true);
+    expect(addResult.requiresPartnerDialog).toBe(false);
+    expect(addResult.nextState.ruleState.enabledCategories).toContain('gambling');
+
+    // Act 2 — Tentar desativar 'adult' sem credencial do Ajudante
+    const removeAttempt = attemptCategoryToggle(addResult.nextState, 'adult');
+
+    // Assert 2 — Bloqueado pela Catraca Append-Only com Problem Details RFC 9457 e exigência de modal
+    expect(removeAttempt.allowed).toBe(false);
+    expect(removeAttempt.requiresPartnerDialog).toBe(true);
+    expect(removeAttempt.nextState.uiState).toBe('error');
+    expect(removeAttempt.problem?.status).toBe(403);
+    expect(removeAttempt.nextState.ruleState.enabledCategories).toContain('adult');
+
+    // Act 3 — Desativar 'gambling' COM autorização explícita do Ajudante
+    const authorizedRemove = attemptCategoryToggle(addResult.nextState, 'gambling', true);
+    expect(authorizedRemove.allowed).toBe(true);
+    expect(authorizedRemove.nextState.ruleState.enabledCategories).not.toContain('gambling');
+
+    // Act 4 — Transição explícita para estado partial (offline) e active
+    const partialState = transitionUiState(removeAttempt.nextState, 'partial');
+    expect(partialState.uiState).toBe('partial');
+  });
+});
