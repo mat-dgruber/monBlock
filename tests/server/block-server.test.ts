@@ -4,6 +4,8 @@ import { createMonBlockHttpServer } from '../../scripts/test-block-server.mjs';
 describe('Local Block Server, Idempotency & RFC 9457 Problem Details', () => {
   it('serve /blocked, /showcase, /tokens.css, /api/health e retorna application/problem+json em 404', async () => {
     const server = createMonBlockHttpServer();
+    expect(server.requestTimeout).toBe(5000);
+    expect(server.headersTimeout).toBe(3000);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const addr = server.address();
     const port = typeof addr === 'object' && addr ? addr.port : 49152;
@@ -13,11 +15,13 @@ describe('Local Block Server, Idempotency & RFC 9457 Problem Details', () => {
       expect(blockedRes.status).toBe(200);
       expect(blockedRes.headers.get('x-frame-options')).toBe('DENY');
       expect(blockedRes.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(blockedRes.headers.get('content-security-policy')).toContain("default-src 'self'");
       const html = await blockedRes.text();
       expect(html).toContain('Por que esta página foi pausada?');
 
       const showcaseRes = await fetch(`http://127.0.0.1:${port}/showcase`);
       expect(showcaseRes.status).toBe(200);
+      expect(showcaseRes.headers.get('content-security-policy')).toContain("default-src 'self'");
 
       const tokensRes = await fetch(`http://127.0.0.1:${port}/tokens.css`);
       expect(tokensRes.status).toBe(200);
@@ -79,6 +83,15 @@ describe('Local Block Server, Idempotency & RFC 9457 Problem Details', () => {
       });
       expect(badJsonRes.status).toBe(400);
       expect(badJsonRes.headers.get('content-type')).toContain('application/problem+json');
+
+      const oversizedBody = JSON.stringify({ domain: 'bet365.com', reason: 'x'.repeat(17 * 1024) });
+      const tooLargeRes = await fetch(`http://127.0.0.1:${port}/api/unblock-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: oversizedBody,
+      });
+      expect(tooLargeRes.status).toBe(413);
+      expect(tooLargeRes.headers.get('content-type')).toContain('application/problem+json');
     } finally {
       server.close();
     }

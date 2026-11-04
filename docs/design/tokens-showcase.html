@@ -197,6 +197,11 @@
       font-family: inherit;
       font-size: var(--text-sm);
     }
+    .input-field:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+      border-color: var(--primary-color);
+    }
     .text-secondary { color: var(--text-color-secondary); font-size: var(--text-sm); }
   </style>
 </head>
@@ -326,9 +331,10 @@
           <label for="partner-reason" class="text-secondary">Justificativa para o Ajudante</label>
           <input id="partner-reason" name="partnerReason" aria-label="Justificativa para o Ajudante" class="input-field" type="text" placeholder="Motivo p/ o Ajudante: Artigo de estatística p/ faculdade..." />
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button class="btn btn-primary" onclick="alert('Enviado ao Bot Telegram do Ajudante com Spoiler nativo e botões [Liberar 15m | 1h | Permanente]!')">📨 Pedir no Telegram do Ajudante</button>
-            <button class="btn" onclick="alert('Token HMAC validado! Liberado por 15 minutos (revoga ao dormir).')">🔑 Inserir Código/Senha do Ajudante</button>
+            <button type="button" class="btn btn-primary" onclick="notifyDemo('Enviado ao Bot Telegram do Ajudante com Spoiler nativo e botões [Liberar 15m | 1h | Permanente]!')">📨 Pedir no Telegram do Ajudante</button>
+            <button type="button" class="btn" onclick="notifyDemo('Token HMAC validado! Liberado por 15 minutos (revoga ao dormir).')">🔑 Inserir Código/Senha do Ajudante</button>
           </div>
+          <p id="showcaseDemoStatus" class="text-secondary" role="status" aria-live="polite"></p>
         </div>
       </section>
     </div>
@@ -383,6 +389,10 @@
       const overlay = document.getElementById('revealOverlay');
       snap.classList.toggle('revealed');
       overlay.style.display = snap.classList.contains('revealed') ? 'none' : 'flex';
+    }
+    function notifyDemo(message) {
+      const el = document.getElementById('showcaseDemoStatus');
+      if (el) el.textContent = message;
     }
   </script>
 </body>

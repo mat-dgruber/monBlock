@@ -40,36 +40,76 @@ function sendProblemDetails(res, status, title, detail, instance) {
  * `404` no formato `RFC 9457 Problem Details`.
  */
 export function createMonBlockHttpServer() {
-  // ponytail: in-memory Map para deduplicação de Idempotency-Key por instância do servidor
+  // ponytail: in-memory Map limitada a 1000 chaves para deduplicação de Idempotency-Key por instância do servidor
   const idempotencyStore = new Map();
+  const inFlightKeys = new Set();
+  const MAX_IDEMPOTENCY_ENTRIES = 1000;
+  const MAX_BODY_BYTES = 16 * 1024;
+  const HTML_CSP =
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:";
 
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
 
     if (req.method === 'GET' && url.pathname === '/tokens.css') {
-      const css = fs.readFileSync(path.join(DESIGN_DIR, 'tokens.css'));
-      res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' });
-      return res.end(css);
+      try {
+        const css = fs.readFileSync(path.join(DESIGN_DIR, 'tokens.css'));
+        res.writeHead(200, {
+          'Content-Type': 'text/css; charset=utf-8',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        return res.end(css);
+      } catch {
+        return sendProblemDetails(
+          res,
+          500,
+          'Erro ao carregar tokens CSS',
+          'Não foi possível ler o arquivo de estilos estático.',
+          url.pathname
+        );
+      }
     }
 
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/blocked')) {
-      const html = fs.readFileSync(path.join(DESIGN_DIR, 'blocked-page.html'));
-      res.writeHead(200, {
-        'Content-Type': 'text/html; charset=utf-8',
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-      });
-      return res.end(html);
+      try {
+        const html = fs.readFileSync(path.join(DESIGN_DIR, 'blocked-page.html'));
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy': HTML_CSP,
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
+        });
+        return res.end(html);
+      } catch {
+        return sendProblemDetails(
+          res,
+          500,
+          'Erro ao carregar página de bloqueio',
+          'Não foi possível ler o template HTML da página de bloqueio.',
+          url.pathname
+        );
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/showcase') {
-      const html = fs.readFileSync(path.join(DESIGN_DIR, 'tokens-showcase.html'));
-      res.writeHead(200, {
-        'Content-Type': 'text/html; charset=utf-8',
-        'X-Content-Type-Options': 'nosniff',
-        'X-Frame-Options': 'DENY',
-      });
-      return res.end(html);
+      try {
+        const html = fs.readFileSync(path.join(DESIGN_DIR, 'tokens-showcase.html'));
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy': HTML_CSP,
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
+        });
+        return res.end(html);
+      } catch {
+        return sendProblemDetails(
+          res,
+          500,
+          'Erro ao carregar showcase',
+          'Não foi possível ler o template HTML do showcase.',
+          url.pathname
+        );
+      }
     }
 
     if (req.method === 'GET' && url.pathname === '/api/health') {
@@ -86,8 +126,30 @@ export function createMonBlockHttpServer() {
     if (req.method === 'POST' && url.pathname === '/api/unblock-requests') {
       const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
       const chunks = [];
-      req.on('data', (chunk) => chunks.push(chunk));
+      let totalBytes = 0;
+      let aborted = false;
+
+      req.on('data', (chunk) => {
+        if (aborted) return;
+        totalBytes += chunk.length;
+        if (totalBytes > MAX_BODY_BYTES) {
+          aborted = true;
+          sendProblemDetails(
+            res,
+            413,
+            'Payload Too Large',
+            `O corpo da requisição excede o limite máximo de ${MAX_BODY_BYTES} bytes (16 KB).`,
+            url.pathname
+          );
+          req.resume();
+          return;
+        }
+        chunks.push(chunk);
+      });
+
       req.on('end', () => {
+        if (aborted) return;
+
         if (idempotencyKey && idempotencyStore.has(idempotencyKey)) {
           const cached = idempotencyStore.get(idempotencyKey);
           res.writeHead(202, {
@@ -98,39 +160,65 @@ export function createMonBlockHttpServer() {
           return res.end(JSON.stringify({ ...cached, deduplicated: true }));
         }
 
-        let payload = {};
-        const rawBody = Buffer.concat(chunks).toString('utf8').trim();
-        if (rawBody) {
-          try {
-            payload = JSON.parse(rawBody);
-          } catch {
-            return sendProblemDetails(
-              res,
-              400,
-              'Payload JSON inválido',
-              'O corpo da requisição não pôde ser interpretado como JSON válido.',
-              url.pathname
-            );
-          }
+        if (idempotencyKey && inFlightKeys.has(idempotencyKey)) {
+          return sendProblemDetails(
+            res,
+            409,
+            'Requisição concorrente em andamento',
+            'Já existe uma requisição com esta Idempotency-Key sendo processada.',
+            url.pathname
+          );
         }
-
-        const record = {
-          status: 'accepted',
-          requestId: `req_${crypto.randomBytes(6).toString('hex')}`,
-          domain: typeof payload.domain === 'string' ? payload.domain : null,
-          deduplicated: false,
-        };
 
         if (idempotencyKey) {
-          idempotencyStore.set(idempotencyKey, record);
+          inFlightKeys.add(idempotencyKey);
         }
 
-        res.writeHead(202, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'X-Content-Type-Options': 'nosniff',
-          'X-Frame-Options': 'DENY',
-        });
-        return res.end(JSON.stringify(record));
+        try {
+          let payload = {};
+          const rawBody = Buffer.concat(chunks).toString('utf8').trim();
+          if (rawBody) {
+            try {
+              payload = JSON.parse(rawBody);
+            } catch {
+              return sendProblemDetails(
+                res,
+                400,
+                'Payload JSON inválido',
+                'O corpo da requisição não pôde ser interpretado como JSON válido.',
+                url.pathname
+              );
+            }
+          }
+
+          const record = {
+            status: 'accepted',
+            requestId: `req_${crypto.randomBytes(6).toString('hex')}`,
+            domain: typeof payload.domain === 'string' ? payload.domain : null,
+            deduplicated: false,
+          };
+
+          if (idempotencyKey) {
+            if (idempotencyStore.size >= MAX_IDEMPOTENCY_ENTRIES) {
+              const oldestKey = idempotencyStore.keys().next().value;
+              if (oldestKey !== undefined) {
+                idempotencyStore.delete(oldestKey);
+              }
+            }
+            idempotencyStore.set(idempotencyKey, record);
+          }
+
+          res.writeHead(202, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'DENY',
+          });
+          return res.end(JSON.stringify(record));
+        } finally {
+          if (idempotencyKey) {
+            inFlightKeys.delete(idempotencyKey);
+          }
+        }
       });
       return;
     }
@@ -143,6 +231,10 @@ export function createMonBlockHttpServer() {
       url.pathname
     );
   });
+
+  server.requestTimeout = 5000;
+  server.headersTimeout = 3000;
+  return server;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

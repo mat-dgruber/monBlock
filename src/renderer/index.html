@@ -163,6 +163,47 @@
       border-radius: 0.75rem;
     }
 
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0.75rem;
+      z-index: var(--z-toast, 1000);
+      padding: 0.625rem 1.25rem;
+      background: var(--ccat-brand-primary);
+      color: #FFFFFF;
+      border-radius: 9999px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .skip-link:focus,
+    .skip-link:focus-visible {
+      left: 1rem;
+    }
+
+    /* Regras de visibilidade estrita dos 5 Estados de UI e das Views */
+    html[data-ui-state="active"] [data-state-panel]:not([data-state-panel="active"]) { display: none; }
+    html[data-ui-state="loading"] [data-state-panel]:not([data-state-panel="loading"]) { display: none; }
+    html[data-ui-state="empty"] [data-state-panel]:not([data-state-panel="empty"]) { display: none; }
+    html[data-ui-state="error"] [data-state-panel]:not([data-state-panel="error"]) { display: none; }
+    html[data-ui-state="partial"] [data-state-panel]:not([data-state-panel="partial"]) { display: none; }
+    [data-view][hidden] { display: none !important; }
+
+    dialog#partnerAuthDialog {
+      margin: auto;
+      max-width: 480px;
+      width: calc(100% - 2rem);
+      border: 1px solid var(--ccat-border);
+      border-radius: 1rem;
+      background: var(--ccat-bg-surface);
+      color: var(--ccat-text-primary);
+      padding: 0;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.35);
+    }
+    dialog#partnerAuthDialog::backdrop {
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(4px);
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         animation-duration: 0.01ms !important;
@@ -172,6 +213,7 @@
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
   <header class="app-header">
     <div>
       <h1>monBlock — Guardião Desktop CCAT</h1>
@@ -180,16 +222,16 @@
 
     <!-- Seletor dos 4 Temas CCAT -->
     <div role="group" aria-label="Seletor de Tema Visual CCAT">
-      <button type="button" class="ccat-btn" data-theme-select="capycro-ivory">Capycro Ivory</button>
-      <button type="button" class="ccat-btn" data-theme-select="dark-tech">Dark Tech</button>
-      <button type="button" class="ccat-btn" data-theme-select="light-fintech">Light Fintech</button>
-      <button type="button" class="ccat-btn" data-theme-select="high-contrast-aaa">High Contrast AAA</button>
+      <button type="button" class="ccat-btn" data-theme-select="capycro-ivory" aria-pressed="true">Capycro Ivory</button>
+      <button type="button" class="ccat-btn" data-theme-select="dark-tech" aria-pressed="false">Dark Tech</button>
+      <button type="button" class="ccat-btn" data-theme-select="light-fintech" aria-pressed="false">Light Fintech</button>
+      <button type="button" class="ccat-btn" data-theme-select="high-contrast-aaa" aria-pressed="false">High Contrast AAA</button>
     </div>
   </header>
 
   <nav class="app-nav" aria-label="Navegação Principal da Jornada monBlock">
     <button type="button" class="ccat-btn" data-nav-target="onboarding">1. Onboarding (4 Passos)</button>
-    <button type="button" class="ccat-btn ccat-btn-primary" data-nav-target="categories">2. 11 Categorias (Append-Only)</button>
+    <button type="button" class="ccat-btn ccat-btn-primary" data-nav-target="categories" aria-current="page">2. 11 Categorias (Append-Only)</button>
     <button type="button" class="ccat-btn" data-nav-target="rules">3. Domínios em Lote &amp; Palavras-Chave</button>
     <button type="button" class="ccat-btn" data-nav-target="partner">4. Central do Ajudante &amp; Recuperação</button>
   </nav>
@@ -426,6 +468,7 @@
             class="ccat-input tabular-nums"
             placeholder="Ex: REC-9F8E7D-6C5B4A"
           />
+          <button type="button" id="useRecoveryCodeBtn" class="ccat-btn ccat-btn-primary">Utilizar Código de Emergência</button>
         </div>
 
         <div class="ccat-card">
@@ -453,7 +496,20 @@
     <div class="ccat-card">
       <h2 id="dialog-title">Autorização do Ajudante Necessária</h2>
       <p>Esta regra está protegida pela Catraca Unidirecional. Insira a credencial do Ajudante ou peça aprovação no Telegram.</p>
-      <button type="button" class="ccat-btn" id="closePartnerDialogBtn">Voltar ao Foco</button>
+      <label for="dialogPartnerSecretInput" class="ccat-field-label">
+        <span>Senha Mestra ou Token Assinado do Ajudante</span>
+      </label>
+      <input
+        id="dialogPartnerSecretInput"
+        type="password"
+        autocomplete="one-time-code"
+        class="ccat-input tabular-nums"
+        placeholder="Insira a senha do Ajudante ou UNLOCK-*..."
+      />
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="button" class="ccat-btn ccat-btn-primary" id="confirmPartnerAuthBtn">Confirmar Autorização</button>
+        <button type="button" class="ccat-btn" id="closePartnerDialogBtn">Voltar ao Foco</button>
+      </div>
     </div>
   </dialog>
 </body>

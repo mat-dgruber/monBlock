@@ -32,10 +32,18 @@ export interface MonBlockPreloadApi {
   }) => Promise<unknown>;
   triggerEmergencyCooldown: (payload?: { recoveryCode?: string }) => Promise<unknown>;
   requestAuthorizedUninstall: (payload: {
-    authMethod: 'PASSWORD' | 'HMAC_TOKEN' | 'RECOVERY_CODE';
+    authMethod: 'PASSWORD' | 'PERMANENT_TOKEN' | 'COOLDOWN_72H' | 'HMAC_TOKEN' | 'RECOVERY_CODE';
     credential: string;
     challengeCode?: string;
   }) => Promise<unknown>;
+}
+
+export interface ContextBridgeLike {
+  exposeInMainWorld: (apiKey: string, api: MonBlockPreloadApi) => void;
+}
+
+export interface IpcRendererLike {
+  invoke: IpcInvokeFn;
 }
 
 /**
@@ -88,4 +96,18 @@ export function createMonBlockPreloadApi(ipcInvoker: IpcInvokeFn): MonBlockPrelo
   };
 
   return Object.freeze(api);
+}
+
+/**
+ * Expõe a API congelada do monBlock em `window.monblock` via `contextBridge.exposeInMainWorld`.
+ */
+export function exposeMonBlockPreload(
+  contextBridgeObj: ContextBridgeLike,
+  ipcRendererObj: IpcRendererLike
+): MonBlockPreloadApi {
+  const api = createMonBlockPreloadApi((channel, payload) =>
+    ipcRendererObj.invoke(channel, payload)
+  );
+  contextBridgeObj.exposeInMainWorld('monblock', api);
+  return api;
 }

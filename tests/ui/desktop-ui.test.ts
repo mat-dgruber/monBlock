@@ -19,11 +19,12 @@ import {
   handleWindowCloseEvent,
   validateNavigationUrl,
 } from '../../src/main/main.js';
-import { createMonBlockPreloadApi } from '../../src/preload/preload.js';
+import { createMonBlockPreloadApi, exposeMonBlockPreload } from '../../src/preload/preload.js';
 import {
   attemptCategoryToggle,
   createInitialUiControllerState,
   formatRemainingCooldown,
+  initRendererDom,
   parseAndValidateBatchInput,
   transitionUiState,
 } from '../../src/renderer/app.js';
@@ -44,12 +45,17 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     expect(options.webPreferences.preload).toBe('/app/dist/preload/preload.js');
   });
 
-  it('validateNavigationUrl deve permitir apenas loopback :49152 e file:// local, bloqueando URLs externas', () => {
+  it('validateNavigationUrl deve permitir apenas loopback :49152 e file:// da aplicação, bloqueando file:///etc/passwd e URLs externas', () => {
     // Arrange & Act & Assert
     expect(validateNavigationUrl('http://127.0.0.1:49152/blocked')).toBe(true);
     expect(validateNavigationUrl('http://127.0.0.1:49152/showcase')).toBe(true);
     expect(validateNavigationUrl('file:///Users/app/src/renderer/index.html')).toBe(true);
+    expect(validateNavigationUrl('file:///Users/app/docs/design/blocked-page.html')).toBe(true);
+    expect(validateNavigationUrl('file:///opt/monblock/custom.html', '/opt/monblock')).toBe(true);
 
+    expect(validateNavigationUrl('file:///etc/passwd')).toBe(false);
+    expect(validateNavigationUrl('file:///Users/outro')).toBe(false);
+    expect(validateNavigationUrl('file:///Users/app/src/renderer/../../etc/passwd')).toBe(false);
     expect(validateNavigationUrl('https://evil.example.com/phish')).toBe(false);
     expect(validateNavigationUrl('http://127.0.0.1:8080/other')).toBe(false);
     expect(validateNavigationUrl('javascript:alert(1)')).toBe(false);
@@ -224,6 +230,30 @@ describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
       credential: 'partner-secret',
     });
 
+    await api.requestAuthorizedUninstall({
+      authMethod: 'PERMANENT_TOKEN',
+      credential: 'UNLOCK-PERMANENT-123456',
+      challengeCode: 'MB-8492-X7',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('monblock:request-authorized-uninstall', {
+      authMethod: 'PERMANENT_TOKEN',
+      credential: 'UNLOCK-PERMANENT-123456',
+      challengeCode: 'MB-8492-X7',
+    });
+
+    await api.requestAuthorizedUninstall({
+      authMethod: 'COOLDOWN_72H',
+      credential: '',
+    });
+    expect(invokeMock).toHaveBeenCalledWith('monblock:request-authorized-uninstall', {
+      authMethod: 'COOLDOWN_72H',
+      credential: '',
+    });
+
+    const exposeInMainWorld = vi.fn();
+    const exposed = exposeMonBlockPreload({ exposeInMainWorld }, { invoke: invokeMock });
+    expect(exposeInMainWorld).toHaveBeenCalledWith('monblock', exposed);
+
     await expect(
       api.pairPartner({
         partnerName: 'Ana',
@@ -305,6 +335,40 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     expect(html).toContain('prefers-reduced-motion: reduce');
     expect(html).toContain('tabular-nums');
     expect(html.toLowerCase()).not.toMatch(/#8b5cf6|#7c3aed|#a855f7|#6366f1|\b(purple|violet|indigo)\b/);
+
+    // Assert — Correções da auditoria MOD-04 (skip-link, ocultação data-state-panel, aria-pressed/aria-current, #useRecoveryCodeBtn, dialog inputs)
+    expect(html).toContain('<a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>');
+    expect(html).toContain('html[data-ui-state="active"] [data-state-panel]:not([data-state-panel="active"])');
+    expect(html).toContain('[data-view][hidden]');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('id="useRecoveryCodeBtn"');
+    expect(html).toContain('id="dialogPartnerSecretInput"');
+    expect(html).toContain('id="confirmPartnerAuthBtn"');
+  });
+
+  it('docs/design/tokens.css, blocked-page.html e tokens-showcase.html devem ter seletores unificados, contraste WCAG AA/AAA e acessibilidade completa', () => {
+    const tokensCss = fs.readFileSync(path.resolve(__dirname, '../../docs/design/tokens.css'), 'utf-8');
+    const blockedHtml = fs.readFileSync(path.resolve(__dirname, '../../docs/design/blocked-page.html'), 'utf-8');
+    const showcaseHtml = fs.readFileSync(path.resolve(__dirname, '../../docs/design/tokens-showcase.html'), 'utf-8');
+
+    expect(tokensCss).toContain('[data-theme="capycro-ivory"]');
+    expect(tokensCss).toContain('[data-theme="light-fintech"]');
+    expect(tokensCss).toContain('[data-theme="dark-tech"]');
+    expect(tokensCss).toContain('[data-theme="high-contrast-aaa"]');
+    expect(tokensCss).toContain('--primary-color: #005A64;');
+    expect(tokensCss).toContain('--accent-color: #B84227;');
+    expect(tokensCss).toContain('--success-color: #2E6B34;');
+    expect(tokensCss).toContain('--accent-color: #0369a1;');
+    expect(tokensCss).toContain('min-height: var(--touch-target-min);');
+
+    expect(blockedHtml).not.toContain('min-height:2.25rem;');
+    expect(blockedHtml).toContain('aria-pressed');
+    expect(blockedHtml).toContain("['INPUT', 'TEXTAREA', 'SELECT']");
+
+    expect(showcaseHtml).toContain('.input-field:focus-visible');
+    expect(showcaseHtml).toContain('aria-live="polite"');
+    expect(showcaseHtml).not.toContain('onclick="alert(');
   });
 });
 
@@ -389,5 +453,53 @@ describe('MOD-04: Controlador do Renderer (src/renderer/app.ts)', () => {
     // Act 4 — Transição explícita para estado partial (offline) e active
     const partialState = transitionUiState(removeAttempt.nextState, 'partial');
     expect(partialState.uiState).toBe('partial');
+
+    // Act 5 — Hidratação de eventos DOM (initRendererDom)
+    const listeners: Record<string, () => void> = {};
+    let currentThemeAttr = 'capycro-ivory';
+    const themeBtn = {
+      getAttribute: (n: string) => (n === 'data-theme-select' ? 'dark-tech' : null),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      addEventListener: (_t: string, cb: () => void) => {
+        listeners.themeClick = cb;
+      },
+    };
+    const navBtn = {
+      getAttribute: (n: string) => (n === 'data-nav-target' ? 'partner' : null),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      addEventListener: (_t: string, cb: () => void) => {
+        listeners.navClick = cb;
+      },
+      classList: { add: vi.fn(), remove: vi.fn() },
+    };
+    const viewEl = {
+      getAttribute: (n: string) => (n === 'data-view' ? 'partner' : null),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      addEventListener: vi.fn(),
+    };
+    const controller = initRendererDom({
+      documentElement: {
+        setAttribute: (_n, v) => {
+          currentThemeAttr = v;
+        },
+        getAttribute: () => currentThemeAttr,
+      },
+      querySelectorAll: (sel: string) => {
+        if (sel === '[data-theme-select]') return [themeBtn];
+        if (sel === '[data-nav-target]') return [navBtn];
+        if (sel === '[data-view]') return [viewEl];
+        return [];
+      },
+      getElementById: () => null,
+    });
+    listeners.themeClick?.();
+    expect(currentThemeAttr).toBe('dark-tech');
+    expect(controller.getState().theme).toBe('dark-tech');
+    listeners.navClick?.();
+    expect(controller.getState().currentView).toBe('partner');
+    expect(viewEl.removeAttribute).toHaveBeenCalledWith('hidden');
   });
 });

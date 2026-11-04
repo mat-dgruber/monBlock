@@ -249,3 +249,86 @@ export function attemptCategoryToggle(
     },
   };
 }
+
+// MARK: - Hidratação de Eventos DOM do Renderer
+
+export interface DomElementLike {
+  getAttribute: (name: string) => string | null;
+  setAttribute: (name: string, value: string) => void;
+  removeAttribute: (name: string) => void;
+  addEventListener: (type: string, listener: () => void) => void;
+  classList?: {
+    add: (cls: string) => void;
+    remove: (cls: string) => void;
+  };
+  value?: string;
+  textContent?: string | null;
+}
+
+export interface DocumentLike {
+  documentElement: {
+    setAttribute: (name: string, value: string) => void;
+    getAttribute: (name: string) => string | null;
+  };
+  querySelectorAll: (selector: string) => Iterable<DomElementLike>;
+  getElementById: (id: string) => DomElementLike | null;
+}
+
+/**
+ * Conecta os listeners de troca de tema (`[data-theme-select]`), navegação entre views
+ * (`[data-nav-target]`) e contador de lote de domínios quando executado no navegador.
+ */
+export function initRendererDom(doc: DocumentLike): { getState: () => UiControllerState } {
+  let state = createInitialUiControllerState();
+
+  const themeBtns = Array.from(doc.querySelectorAll('[data-theme-select]'));
+  for (const btn of themeBtns) {
+    btn.addEventListener('click', () => {
+      const theme = (btn.getAttribute('data-theme-select') || 'capycro-ivory') as CcatThemeId;
+      state = { ...state, theme };
+      doc.documentElement.setAttribute('data-theme', theme);
+      for (const b of themeBtns) {
+        const isCurrent = b === btn;
+        b.setAttribute('aria-pressed', isCurrent ? 'true' : 'false');
+      }
+    });
+  }
+
+  const navBtns = Array.from(doc.querySelectorAll('[data-nav-target]'));
+  const views = Array.from(doc.querySelectorAll('[data-view]'));
+  for (const btn of navBtns) {
+    btn.addEventListener('click', () => {
+      const target = (btn.getAttribute('data-nav-target') || 'categories') as DashboardViewId;
+      state = { ...state, currentView: target };
+      for (const b of navBtns) {
+        if (b === btn) {
+          b.setAttribute('aria-current', 'page');
+          b.classList?.add('ccat-btn-primary');
+        } else {
+          b.removeAttribute('aria-current');
+          b.classList?.remove('ccat-btn-primary');
+        }
+      }
+      for (const v of views) {
+        if (v.getAttribute('data-view') === target) {
+          v.removeAttribute('hidden');
+        } else {
+          v.setAttribute('hidden', 'true');
+        }
+      }
+    });
+  }
+
+  const batchTextarea = doc.getElementById('batchDomainsTextarea');
+  const batchCounter = doc.getElementById('batchCounter');
+  if (batchTextarea && batchCounter) {
+    batchTextarea.addEventListener('input', () => {
+      const parsed = parseAndValidateBatchInput(batchTextarea.value || '');
+      batchCounter.textContent = `${parsed.domains.length} / ${MAX_BATCH_DOMAINS} domínios`;
+    });
+  }
+
+  return {
+    getState: () => state,
+  };
+}

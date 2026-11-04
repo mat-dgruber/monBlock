@@ -384,10 +384,10 @@
     </div>
 
     <div class="theme-pills" role="group" aria-label="Alternar tema visual CCAT">
-      <button type="button" class="theme-pill active" onclick="setTheme('capycro', this)">Capycro</button>
-      <button type="button" class="theme-pill" onclick="setTheme('dark', this)">Escuro Tech</button>
-      <button type="button" class="theme-pill" onclick="setTheme('light', this)">Claro Fintech</button>
-      <button type="button" class="theme-pill" onclick="setTheme('high-contrast', this)">Alto Contraste</button>
+      <button type="button" class="theme-pill active" aria-pressed="true" onclick="setTheme('capycro', this)">Capycro</button>
+      <button type="button" class="theme-pill" aria-pressed="false" onclick="setTheme('dark', this)">Escuro Tech</button>
+      <button type="button" class="theme-pill" aria-pressed="false" onclick="setTheme('light', this)">Claro Fintech</button>
+      <button type="button" class="theme-pill" aria-pressed="false" onclick="setTheme('high-contrast', this)">Alto Contraste</button>
     </div>
   </header>
 
@@ -423,7 +423,7 @@
     <!-- Feedback de Ação (Toast) -->
     <div id="statusToast" class="toast-banner" role="status" aria-live="polite">
       <span id="statusToastText"></span>
-      <button type="button" class="ccat-btn ccat-btn-ghost" style="min-height:2.25rem; padding:0.25rem 0.65rem;" onclick="closeToast()">Fechar</button>
+      <button type="button" class="ccat-btn ccat-btn-ghost" style="padding:0.25rem 0.65rem;" onclick="closeToast()">Fechar</button>
     </div>
 
     <!-- Grid Principal: 1. Explicação para o Usuário | 2. Solicitação / Desbloqueio com Componentes CCAT -->
@@ -502,9 +502,9 @@
             </label>
 
             <div class="ccat-segmented" role="group" aria-label="Escolha rápida de duração" style="margin-bottom: 0.6rem;">
-              <button type="button" class="ccat-seg-btn active" data-val="15m" onclick="selectDurationPill('15m', this)">15 min</button>
-              <button type="button" class="ccat-seg-btn" data-val="60m" onclick="selectDurationPill('60m', this)">1 hora</button>
-              <button type="button" class="ccat-seg-btn" data-val="permanent" onclick="selectDurationPill('permanent', this)">Permanente</button>
+              <button type="button" class="ccat-seg-btn active" aria-pressed="true" data-val="15m" onclick="selectDurationPill('15m', this)">15 min</button>
+              <button type="button" class="ccat-seg-btn" aria-pressed="false" data-val="60m" onclick="selectDurationPill('60m', this)">1 hora</button>
+              <button type="button" class="ccat-seg-btn" aria-pressed="false" data-val="permanent" onclick="selectDurationPill('permanent', this)">Permanente</button>
             </div>
 
             <div class="ccat-select-wrap">
@@ -612,24 +612,35 @@
 
     // Suporte universal à tecla Escape (Heurística de Nielsen #3: Saída de Emergência)
     window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
       if (e.key === 'Escape') goBackSafely();
     });
 
     function setTheme(theme, btn) {
       document.documentElement.setAttribute('data-theme', theme);
-      document.querySelectorAll('.theme-pill').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.theme-pill').forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      });
       btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
     }
 
     function selectDurationPill(val, btn) {
       document.getElementById('durationSelect').value = val;
-      document.querySelectorAll('.ccat-seg-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.ccat-seg-btn').forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-pressed', 'false');
+      });
       btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
     }
 
     function syncPillsFromSelect(val) {
       document.querySelectorAll('.ccat-seg-btn').forEach(b => {
-        b.classList.toggle('active', b.getAttribute('data-val') === val);
+        const isSelected = b.getAttribute('data-val') === val;
+        b.classList.toggle('active', isSelected);
+        b.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
       });
     }
 

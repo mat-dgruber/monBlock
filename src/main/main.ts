@@ -83,13 +83,37 @@ export function createSecureWindowOptions(
 
 /**
  * Valida se uma URL de navegação é permitida dentro da `BrowserWindow`.
- * Permite apenas `file://` local ou o servidor loopback `http://127.0.0.1:49152`.
+ * Permite apenas `file://` da aplicação (`/renderer/index.html`, `/docs/design/blocked-page.html`
+ * ou dentro de `allowedFileRoot`) ou o servidor loopback `http://127.0.0.1:49152`.
  */
-export function validateNavigationUrl(rawUrl: string): boolean {
+export function validateNavigationUrl(rawUrl: string, allowedFileRoot?: string): boolean {
   try {
+    if (rawUrl.includes('..') || decodeURIComponent(rawUrl).includes('..')) {
+      return false;
+    }
     const parsed = new URL(rawUrl);
     if (parsed.protocol === 'file:') {
-      return true;
+      const decodedPath = decodeURIComponent(parsed.pathname);
+      if (decodedPath.includes('..')) {
+        return false;
+      }
+      const normalizedPath = path.posix.normalize(decodedPath);
+      if (
+        normalizedPath.endsWith('/renderer/index.html') ||
+        normalizedPath.endsWith('/docs/design/blocked-page.html')
+      ) {
+        return true;
+      }
+      if (allowedFileRoot) {
+        const normalizedRoot = path.posix.normalize(allowedFileRoot).replace(/\/+$/, '');
+        if (
+          normalizedPath === normalizedRoot ||
+          normalizedPath.startsWith(`${normalizedRoot}/`)
+        ) {
+          return true;
+        }
+      }
+      return false;
     }
     if (
       parsed.protocol === 'http:' &&

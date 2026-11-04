@@ -5,7 +5,9 @@
    ========================================================================== */
 
 @layer tokens {
-  :root {
+  :root,
+  [data-theme="capycro"],
+  [data-theme="capycro-ivory"] {
     /* ----------------------------------------------------------------------
        1. Escala Canônica de Z-Index (8 Níveis)
        ---------------------------------------------------------------------- */
@@ -64,21 +66,21 @@
     --surface-border: #ebdcc5;
     --text-color: #3e3a35;
     --text-color-secondary: #7a6b5d;
-    --primary-color: #5d8a8c;
-    --primary-hover: #4b7375;
+    --primary-color: #005A64;
+    --primary-hover: #00454D;
     --primary-foreground: #ffffff;
-    --accent-color: #d8704c;
-    --accent-hover: #c05c39;
+    --accent-color: #B84227;
+    --accent-hover: #99341C;
     --accent-foreground: #ffffff;
 
     /* Semânticos Anti-Pânico */
-    --success-color: #5a9261;
+    --success-color: #2E6B34;
     --success-surface: #eef6ef;
     --warning-color: #c27803;
     --warning-surface: #fef7e6;
     --danger-color: #b84a39;
     --danger-surface: #fbeee9;
-    --info-color: #5d8a8c;
+    --info-color: #005A64;
     --info-surface: #edf4f4;
 
     /* Glassmorphism CCAT */
@@ -91,6 +93,7 @@
      Tema 2: Claro ("Azul Fintech Confiável")
      ------------------------------------------------------------------------ */
   [data-theme="light"],
+  [data-theme="light-fintech"],
   .theme-light {
     --surface-ground: #f8fafc;
     --surface-card: #ffffff;
@@ -101,8 +104,8 @@
     --primary-color: #2563eb;
     --primary-hover: #1d4ed8;
     --primary-foreground: #ffffff;
-    --accent-color: #0284c7;
-    --accent-hover: #0369a1;
+    --accent-color: #0369a1;
+    --accent-hover: #075985;
     --accent-foreground: #ffffff;
     --success-color: #15803d;
     --success-surface: #f0fdf4;
@@ -110,7 +113,7 @@
     --warning-surface: #fffbeb;
     --danger-color: #b91c1c;
     --danger-surface: #fef2f2;
-    --info-color: #0284c7;
+    --info-color: #0369a1;
     --info-surface: #f0f9ff;
     --glass-bg: rgba(255, 255, 255, 0.68);
     --glass-border: rgba(255, 255, 255, 0.45);
@@ -121,7 +124,7 @@
      Tema 3: Escuro ("Tech & Imersão Noturna" — Automático em Dark Mode)
      ------------------------------------------------------------------------ */
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="capycro"]):not([data-theme="light"]):not([data-theme="high-contrast"]) {
+    :root:not([data-theme="capycro"]):not([data-theme="capycro-ivory"]):not([data-theme="light"]):not([data-theme="light-fintech"]):not([data-theme="high-contrast"]):not([data-theme="high-contrast-aaa"]) {
       --surface-ground: #0f172a;
       --surface-card: #1e293b;
       --surface-elevated: #334155;
@@ -150,6 +153,7 @@
   }
 
   [data-theme="dark"],
+  [data-theme="dark-tech"],
   .theme-dark {
     --surface-ground: #0f172a;
     --surface-card: #1e293b;
@@ -194,12 +198,22 @@
       --accent-color: #00ffff;
       --accent-hover: #67e8f9;
       --accent-foreground: #000000;
+      --success-color: #4ade80;
+      --success-surface: #000000;
+      --warning-color: #ffff00;
+      --warning-surface: #000000;
+      --danger-color: #ff6b6b;
+      --danger-surface: #000000;
+      --info-color: #00ffff;
+      --info-surface: #000000;
       --glass-bg: #121212;
       --glass-border: #ffffff;
+      --glass-shadow: none;
     }
   }
 
   [data-theme="high-contrast"],
+  [data-theme="high-contrast-aaa"],
   .theme-high-contrast {
     --surface-ground: #000000;
     --surface-card: #121212;
@@ -418,7 +432,7 @@
 }
 
 .ccat-seg-btn {
-  min-height: 2.5rem;
+  min-height: var(--touch-target-min);
   padding: 0.4rem 0.65rem;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
