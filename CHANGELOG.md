@@ -11,4 +11,5 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Especificação de Arquitetura (`docs/architecture/ARCHITECTURE_SPEC.md`) e 4 ADRs canônicas (`docs/adrs/0001..0004`).
 - Especificação de Design e Plano de Implementação do MVP em `docs/ai/specs/2026-11-04-monblock-mvp-design.md` e `docs/ai/plans/2026-11-04-monblock-mvp-plan.md` (`Risk Score: 0/100`).
 - Design System Oficial CCAT (`docs/design/tokens.css`), Tela de Bloqueio limpa com componentes `.ccat-*` (`docs/design/blocked-page.html`) e servidor local `scripts/test-block-server.mjs` (`127.0.0.1:49152`).
+- Implementação TDD do MVP Fase 1 (`src/domain/categories.ts`, `src/domain/rule-engine.ts`, `src/domain/partner-guard.ts`, `src/enforcers/hosts-enforcer.ts`, `src/enforcers/browser-policy-enforcer.ts`, `scripts/test-block-server.mjs`) com 14 testes automatizados no Vitest (`tests/`).
 
