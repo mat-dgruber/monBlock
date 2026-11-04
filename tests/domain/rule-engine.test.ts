@@ -139,4 +139,75 @@ describe('RuleEngine & Categories (RN-WEB-01..06)', () => {
     expect(invalidRes.valid).toBe(false);
     expect(invalidRes.error).toContain('100');
   });
+
+  it('previne falsos positivos de palavras-chave curtas ("tit", "sex", "anal", "ass", "cum") em substrings de URLs/títulos ("instituição", "sexta", "análise") e abreviações ("sex.", "tit.") (RN-WEB-07)', () => {
+    const state: RuleEngineState = {
+      enabledCategories: ['adult'],
+      blockedDomains: [],
+      allowlistDomains: [],
+      keywords: ['sex', 'anal', 'tit', 'ass', 'cum'],
+      lockIncognito: false,
+    };
+
+    // Caso 1: "instituição" (com ou sem acento / URL-encoded), "título", "constituição", "atitude", "assunto", "documento" NÃO devem bloquear
+    expect(
+      evaluateUrlAndTitle({
+        url: 'https://portal.mec.gov.br/instituicao/constituicao/institui%C3%A7%C3%A3o-de-ensino/documento-oficial',
+        title: 'Instituição de Ensino — Título de Eleitor, Assunto Acadêmico e Atitude Cidadã (Prof. Tit. Silva)',
+        state,
+      }).blocked
+    ).toBe(false);
+
+    // Caso 2: "sexta-feira", "unissex", "análise" e "canal" NÃO devem ser bloqueados
+    expect(
+      evaluateUrlAndTitle({
+        url: 'https://g1.globo.com/economia/noticia/mercado-fecha-em-alta-nesta-sexta-feira.ghtml',
+        title: 'Análise do canal econômico nesta sexta-feira e camiseta unissex',
+        state,
+      }).blocked
+    ).toBe(false);
+
+    // Caso 3: Abreviações de calendário ("sex.", "seg a sex", "sex, sáb e dom") NÃO devem ser bloqueadas
+    expect(
+      evaluateUrlAndTitle({
+        url: 'https://climatempo.com.br/previsao',
+        title: 'Previsão para sex. 14/11 | Atendimento de seg a sex das 8h às 18h (sex, sáb e dom)',
+        state,
+      }).blocked
+    ).toBe(false);
+
+    // Caso 4: Formulário cadastral/médico ("Sexo: Masculino") NÃO deve ser bloqueado
+    expect(
+      evaluateUrlAndTitle({
+        url: 'https://gov.br/cadastro',
+        title: 'Ficha Cadastral - Sexo: Masculino / Sexo Feminino',
+        state,
+      }).blocked
+    ).toBe(false);
+
+    // Caso 5: Uso explícito real de "sex" ou "tit" como palavra inteira isolada na URL ou título DEVE bloquear
+    expect(
+      evaluateUrlAndTitle({
+        url: 'https://unknown-tube.org/free-sex-videos',
+        title: 'Watch Live Sex Cams',
+        state,
+      })
+    ).toEqual({
+      blocked: true,
+      reason: 'KEYWORD',
+      ruleLabel: 'Palavra-chave: sex',
+    });
+
+    expect(
+      evaluateUrlAndTitle({
+        url: 'https://some-image-board.org/gallery/tit-pics',
+        title: 'Gallery',
+        state,
+      })
+    ).toEqual({
+      blocked: true,
+      reason: 'KEYWORD',
+      ruleLabel: 'Palavra-chave: tit',
+    });
+  });
 });

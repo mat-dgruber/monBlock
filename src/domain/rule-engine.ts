@@ -117,6 +117,47 @@ function matchesDomain(host: string, ruleDomain: string): boolean {
 }
 
 /**
+ * Decodifica percent-encoding de URLs de forma segura (ex.: `institui%C3%A7%C3%A3o` -> `instituição`),
+ * evitando que sequências `%XX` quebrem palavras acentuadas no meio durante a análise de fronteira.
+ */
+function safeDecodeUri(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Neutraliza contextos cotidianos benignos no título da página (ex.: abreviações de
+ * sexta-feira como "sex.", "seg a sex", abreviações de "tit." para título/titular
+ * ou campos de formulário "sexo: masculino/feminino") antes de avaliar palavras-chave,
+ * prevenindo falsos positivos (RN-WEB-07).
+ */
+function sanitizeBenignTitleContexts(rawTitle: string): string {
+  return rawTitle
+    .toLowerCase()
+    // Abreviações de calendário em pt-BR ("sex.", "seg a sex", "seg. a sex.", "sex, sáb")
+    .replace(/\b(?:seg\.?|ter\.?|qua\.?|qui\.?)\s*(?:a|até|-|–)\s*sex\.?(?![\p{L}\p{N}])/gu, ' ')
+    .replace(/\b(?:sex|tit|art|cap|inc|prof|dr)\.(?=\s|,|;|:|\/|-|\)|\]|$|\d)/gu, ' ')
+    .replace(/\bsex\s*,\s*(?:s[aá]b|dom)\b/gu, ' ')
+    // Campos demográficos/cadastrais legítimos
+    .replace(/\bsexo\s*:?\s*(?:masculino|feminino|biol[oó]gico|m\/f)\b/gu, ' ');
+}
+
+/**
+ * Verifica se um termo de palavra-chave casa por fronteira de palavra inteira Unicode (\p{L}\p{N}),
+ * impedindo o "Scunthorpe Problem" em que termos curtos (ex.: "tit", "sex", "anal", "ass", "cum")
+ * casam com substrings de palavras legítimas como "instituição", "título", "constituição",
+ * "sexta-feira", "unissex", "análise", "canal", "assunto" ou "documento" (RN-WEB-07).
+ */
+function matchesKeywordWholeWord(haystack: string, term: string): boolean {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
+  return pattern.test(haystack);
+}
+
+/**
  * Avalia se uma URL e título de aba devem ser bloqueados segundo o estado atual de regras.
  *
  * Ordem de precedência:
@@ -176,8 +217,10 @@ export function evaluateUrlAndTitle(input: {
     }
   }
 
-  // Palavras-chave simples e combinadas por vírgula (AND — RN-WEB-06)
-  const haystack = `${cleanUrl} ${input.title}`.toLowerCase();
+  // Palavras-chave simples e combinadas por vírgula (AND — RN-WEB-06) com fronteira de palavra (RN-WEB-07)
+  const decodedUrl = safeDecodeUri(cleanUrl).toLowerCase();
+  const sanitizedTitle = sanitizeBenignTitleContexts(safeDecodeUri(input.title));
+  const haystack = `${decodedUrl} ${sanitizedTitle}`;
   const activeCategoryKeywords = input.state.enabledCategories.flatMap(
     (id) => PREDEFINED_CATEGORIES.find((c) => c.id === id)?.keywords ?? []
   );
@@ -188,7 +231,7 @@ export function evaluateUrlAndTitle(input: {
       .split(',')
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean);
-    if (terms.length > 0 && terms.every((term) => haystack.includes(term))) {
+    if (terms.length > 0 && terms.every((term) => matchesKeywordWholeWord(haystack, term))) {
       return {
         blocked: true,
         reason: 'KEYWORD',
