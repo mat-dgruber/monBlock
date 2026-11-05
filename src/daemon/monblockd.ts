@@ -8,6 +8,7 @@
  */
 
 import crypto from 'node:crypto';
+import { TelegramPartnerClient } from './telegram-client.js';
 import {
   canMutateProtectionRule,
   evaluateEmergencyCooldown,
@@ -61,6 +62,18 @@ export interface PublicSanitizedState {
 export type DaemonCommand =
   | { type: 'GET_STATE' }
   | {
+      type: 'INITIATE_PAIRING';
+      partnerName: string;
+      telegramChatId: string;
+      currentPartnerPassword?: string;
+    }
+  | {
+      type: 'CHECK_PAIRING_STATUS';
+    }
+  | {
+      type: 'CANCEL_PAIRING';
+    }
+  | {
       type: 'PAIR_PARTNER';
       password: string;
       hmacSecret?: string;
@@ -101,6 +114,22 @@ export type DaemonCommand =
 /** Respostas tipadas de sucesso dos comandos IPC. */
 export type DaemonSuccessResponse =
   | { status: 200; state: PublicSanitizedState }
+  | {
+      status: 200;
+      pairingInitiated: true;
+      partnerName: string;
+      telegramChatId: string;
+      expiresAtMs: number;
+    }
+  | {
+      status: 200;
+      paired: boolean;
+      pending: boolean;
+      partnerName?: string;
+      telegramChatId?: string;
+      error?: string;
+    }
+  | { status: 200; cancelled: true }
   | { status: 200; paired: true; recoveryCodes: string[] }
   | { status: 200; rules: ProtectionRuleset }
   | {
@@ -159,16 +188,28 @@ function maskTelegramChatId(chatId?: string): string | undefined {
 
 // MARK: - Implementação MonBlockDaemon
 
+export interface PendingPairingState {
+  partnerName: string;
+  telegramChatId: string;
+  initiatedAtMs: number;
+  expiresAtMs: number;
+  lastUpdateOffset?: number;
+}
+
 export interface MonBlockDaemonOptions {
   store: TripleStateStore;
   enforcer: PlatformEnforcer;
   nowFn?: () => number;
+  telegramClient?: TelegramPartnerClient;
 }
 
 export class MonBlockDaemon {
   private readonly store: TripleStateStore;
   private readonly enforcer: PlatformEnforcer;
   private readonly nowFn: () => number;
+  private readonly telegramClient?: TelegramPartnerClient;
+  private pendingPairing: PendingPairingState | null = null;
+  private isCheckingPairing = false;
   private wasPaired = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
 
@@ -176,6 +217,7 @@ export class MonBlockDaemon {
     this.store = options.store;
     this.enforcer = options.enforcer;
     this.nowFn = options.nowFn ?? (() => Date.now());
+    this.telegramClient = options.telegramClient;
   }
 
   /**
@@ -274,6 +316,185 @@ export class MonBlockDaemon {
         return {
           status: 200,
           state: this.toPublicState(state),
+        };
+      }
+
+      case 'INITIATE_PAIRING': {
+        const partnerName = cmd.partnerName?.trim();
+        const telegramChatId = cmd.telegramChatId?.trim();
+        if (!partnerName || !telegramChatId) {
+          return buildProblem(
+            400,
+            'Dados de Pareamento Inválidos',
+            'Informe o Nome do Ajudante e o Chat ID do Telegram.',
+            '/ipc/monblockd/initiate-pairing'
+          );
+        }
+
+        if (state.paired && state.partnerCredentials) {
+          const authorized =
+            Boolean(cmd.currentPartnerPassword) &&
+            verifyPartnerPassword(
+              cmd.currentPartnerPassword!,
+              state.partnerCredentials.passwordHash
+            );
+          if (!authorized) {
+            return buildProblem(
+              403,
+              'Pareamento Já Ativo (INV-RATCHET-01)',
+              'O sistema já possui um Ajudante vinculado. Substituir o pareamento exige a senha atual do Ajudante.',
+              '/ipc/monblockd/initiate-pairing'
+            );
+          }
+        }
+
+        const expiresAtMs = now + 15 * 60 * 1000;
+        this.pendingPairing = {
+          partnerName,
+          telegramChatId,
+          initiatedAtMs: now,
+          expiresAtMs,
+        };
+
+        const client =
+          this.telegramClient ??
+          new TelegramPartnerClient({ pairedChatId: telegramChatId });
+        await client.sendPairingInvitation({
+          partnerName,
+          chatId: telegramChatId,
+        });
+
+        return {
+          status: 200,
+          pairingInitiated: true,
+          partnerName,
+          telegramChatId,
+          expiresAtMs,
+        };
+      }
+
+      case 'CHECK_PAIRING_STATUS': {
+        if (!this.pendingPairing) {
+          return {
+            status: 200,
+            paired: state.paired,
+            pending: false,
+            partnerName: state.paired ? 'Pareado' : undefined,
+            telegramChatId: state.partnerCredentials?.telegramChatId,
+          };
+        }
+
+        if (this.isCheckingPairing) {
+          return {
+            status: 200,
+            paired: state.paired,
+            pending: true,
+            partnerName: this.pendingPairing.partnerName,
+            telegramChatId: this.pendingPairing.telegramChatId,
+          };
+        }
+
+        if (now > this.pendingPairing.expiresAtMs) {
+          const expiredPartner = this.pendingPairing.partnerName;
+          this.pendingPairing = null;
+          return {
+            status: 200,
+            paired: state.paired,
+            pending: false,
+            error: `O convite para ${expiredPartner} expirou após 15 minutos sem resposta.`,
+          };
+        }
+
+        this.isCheckingPairing = true;
+        try {
+          const client =
+            this.telegramClient ??
+            new TelegramPartnerClient({ pairedChatId: this.pendingPairing.telegramChatId });
+
+          const pollRes = await client.pollUpdates({
+            offset: this.pendingPairing.lastUpdateOffset,
+            timeoutSec: 0,
+          });
+
+          if (pollRes.ok && pollRes.updates.length > 0) {
+            for (const update of pollRes.updates) {
+              this.pendingPairing.lastUpdateOffset = Math.max(
+                this.pendingPairing.lastUpdateOffset ?? 0,
+                update.update_id + 1
+              );
+
+              const pwdCheck = client.extractPasswordFromUpdate(
+                update,
+                this.pendingPairing.telegramChatId
+              );
+              if (pwdCheck.valid && pwdCheck.password) {
+                const hmacSecret = crypto.randomBytes(32).toString('hex');
+                const passwordHash = hashPartnerPassword(pwdCheck.password);
+                const salt = passwordHash.split('$')[1] ?? '';
+                const kit = generateRecoveryKit();
+
+                const nextState: MonBlockPersistentState = {
+                  ...state,
+                  version: state.version + 1,
+                  paired: true,
+                  partnerCredentials: {
+                    passwordHash,
+                    salt,
+                    hmacSecret,
+                    recoveryCodeHashes: kit.hashedCodes,
+                    usedTokens: state.partnerCredentials?.usedTokens ?? [],
+                    telegramChatId: this.pendingPairing.telegramChatId,
+                  },
+                  updatedAtMs: now,
+                };
+
+                this.wasPaired = true;
+                this.store.save(nextState);
+                await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
+
+                // Envia os 5 códigos de emergência exclusivamente ao Telegram do Ajudante
+                await client.sendEmergencyKit({
+                  codes: kit.plainCodes,
+                  partnerName: this.pendingPairing.partnerName,
+                  chatId: this.pendingPairing.telegramChatId,
+                });
+
+                // Tenta remover a mensagem com a senha para higienização
+                if (pwdCheck.messageId) {
+                  await client.deleteMessage(this.pendingPairing.telegramChatId, pwdCheck.messageId);
+                }
+
+                const finalizedPartnerName = this.pendingPairing.partnerName;
+                this.pendingPairing = null;
+
+                return {
+                  status: 200,
+                  paired: true,
+                  pending: false,
+                  partnerName: finalizedPartnerName,
+                };
+              }
+            }
+          }
+
+          return {
+            status: 200,
+            paired: state.paired,
+            pending: true,
+            partnerName: this.pendingPairing.partnerName,
+            telegramChatId: this.pendingPairing.telegramChatId,
+            ...(pollRes.error ? { error: pollRes.error } : {}),
+          };
+        } finally {
+          this.isCheckingPairing = false;
+        }
+      }
+
+      case 'CANCEL_PAIRING': {
+        this.pendingPairing = null;
+        return {
+          status: 200,
+          cancelled: true,
         };
       }
 

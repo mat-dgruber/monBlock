@@ -539,4 +539,104 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
       expect(res2.rules.allowlistDomains).toEqual(['portaleducativo.org.br']);
     }
   });
+
+  it('INITIATE_PAIRING e CHECK_PAIRING_STATUS devem permitir pareamento remoto via Telegram sem expor códigos na resposta', async () => {
+    // Arrange: Mock do TelegramPartnerClient
+    let sentInvitation = false;
+    let sentEmergencyKit = false;
+    let emergencyCodesSentToTelegram: string[] = [];
+    const mockUpdates: Array<{ update_id: number; message: { message_id: number; chat: { id: number }; text: string } }> = [];
+
+    const mockTelegramClient = {
+      sendPairingInvitation: async () => {
+        sentInvitation = true;
+        return { ok: true, status: 200 };
+      },
+      sendEmergencyKit: async (params: { codes: string[] }) => {
+        sentEmergencyKit = true;
+        emergencyCodesSentToTelegram = params.codes;
+        return { ok: true, status: 200 };
+      },
+      pollUpdates: async () => {
+        return { ok: true, updates: [...mockUpdates] };
+      },
+      deleteMessage: async () => {
+        return { ok: true };
+      },
+      extractPasswordFromUpdate: (update: any, expectedChatId?: string) => {
+        if (String(update?.message?.chat?.id) !== String(expectedChatId)) {
+          return { valid: false, error: 'Chat não autorizado' };
+        }
+        const text = update?.message?.text ?? '';
+        if (text.startsWith('/senha ')) {
+          return { valid: true, password: text.replace('/senha ', '').trim(), messageId: 99 };
+        }
+        return { valid: false, error: 'Comando inválido' };
+      },
+    } as any;
+
+    const daemonWithTelegram = new MonBlockDaemon({
+      store,
+      enforcer,
+      nowFn: () => currentNow,
+      telegramClient: mockTelegramClient,
+    });
+
+    // Act 1: Iniciar pareamento
+    const initRes = await daemonWithTelegram.handleCommand({
+      type: 'INITIATE_PAIRING',
+      partnerName: 'Carlos Ajudante',
+      telegramChatId: '88776655',
+    });
+    expect(initRes.status).toBe(200);
+    expect(sentInvitation).toBe(true);
+
+    // Act 2: Checar status antes da resposta do Ajudante (deve estar pending)
+    const check1 = await daemonWithTelegram.handleCommand({
+      type: 'CHECK_PAIRING_STATUS',
+    });
+    expect(check1.status).toBe(200);
+    if ('pending' in check1) {
+      expect(check1.pending).toBe(true);
+      expect(check1.paired).toBe(false);
+      expect(check1.partnerName).toBe('Carlos Ajudante');
+    }
+
+    // Act 3: Ajudante envia mensagem no Telegram: "/senha SenhaDoCarlos2026"
+    mockUpdates.push({
+      update_id: 1,
+      message: {
+        message_id: 99,
+        chat: { id: 88776655 },
+        text: '/senha SenhaDoCarlos2026',
+      },
+    });
+
+    // Act 4: Checar status novamente (agora deve processar e concluir o pareamento)
+    const check2 = await daemonWithTelegram.handleCommand({
+      type: 'CHECK_PAIRING_STATUS',
+    });
+    expect(check2.status).toBe(200);
+    if ('paired' in check2 && 'pending' in check2) {
+      expect(check2.paired).toBe(true);
+      expect(check2.pending).toBe(false);
+      // Invariante de Segurança: a resposta NÃO expõe recoveryCodes para o cliente!
+      expect('recoveryCodes' in check2).toBe(false);
+    }
+    expect(sentEmergencyKit).toBe(true);
+    expect(emergencyCodesSentToTelegram).toHaveLength(5);
+    expect(emergencyCodesSentToTelegram[0]).toMatch(/^REC-[0-9A-F]{6}-[0-9A-F]{6}$/);
+
+    // Act 5: Verificar que a senha do Carlos funciona no daemon
+    const stateRes = await daemonWithTelegram.handleCommand({ type: 'GET_STATE' });
+    expect(stateRes.status).toBe(200);
+    if ('state' in stateRes) {
+      expect(stateRes.state.paired).toBe(true);
+      expect(stateRes.state.partner.remainingRecoveryCodes).toBe(5);
+    }
+
+    // Act 6: Testar CANCEL_PAIRING
+    const cancelRes = await daemonWithTelegram.handleCommand({ type: 'CANCEL_PAIRING' });
+    expect(cancelRes.status).toBe(200);
+  });
 });

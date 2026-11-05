@@ -61,8 +61,8 @@ describe('MOD-02: TelegramPartnerClient (Bot API, Resiliência, Raio-X e Callbac
     expect(textContent).toContain('MB-4821');
     expect(textContent).toContain('Preciso consultar uma thread sobre bug do Electron.');
 
-    const keyboard = sent.payload.reply_markup?.inline_keyboard?.flat() ?? [];
-    const callbackDataList = keyboard.map((btn) => btn.callback_data);
+    const keyboard = (sent.payload.reply_markup as any)?.inline_keyboard?.flat() ?? [];
+    const callbackDataList = keyboard.map((btn: any) => btn.callback_data);
     expect(callbackDataList).toEqual([
       'approve_15m:req-001',
       'approve_60m:req-001',
@@ -297,5 +297,120 @@ describe('MOD-02: TelegramPartnerClient (Bot API, Resiliência, Raio-X e Callbac
     expect(probeFail.delivered).toBe(false);
     expect(probeFail.circuitState).toBe('OPEN');
     expect(capturedRequests).toHaveLength(7); // Apenas +1 tentativa em HALF_OPEN!
+  });
+
+  it('deve enviar convite de pareamento e kit de emergência com formatação adequada', async () => {
+    const captured: TelegramTransportRequest[] = [];
+    const transport: TelegramTransportAdapter = {
+      send: vi.fn(async (req: TelegramTransportRequest): Promise<TelegramTransportResponse> => {
+        captured.push(req);
+        return { ok: true, status: 200, body: { ok: true } };
+      }),
+    };
+
+    const client = new TelegramPartnerClient({
+      botToken: 'token-123',
+      pairedChatId: '12345678',
+      transport,
+    });
+
+    // 1. Convite de pareamento
+    const inviteRes = await client.sendPairingInvitation({
+      partnerName: 'Alice',
+      userMachineName: 'MacBook do Bob',
+    });
+    expect(inviteRes.ok).toBe(true);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.endpointUrl).toContain('/sendMessage');
+    expect(captured[0]?.payload.chat_id).toBe('12345678');
+    expect(captured[0]?.payload.text).toContain('/senha');
+    expect(captured[0]?.payload.text).toContain('Alice');
+    expect(captured[0]?.payload.parse_mode).toBe('HTML');
+
+    // 2. Kit de emergência
+    const kitRes = await client.sendEmergencyKit({
+      codes: ['REC-1-AAAAAA', 'REC-2-BBBBBB', 'REC-3-CCCCCC', 'REC-4-DDDDDD', 'REC-5-EEEEEE'],
+      partnerName: 'Alice',
+    });
+    expect(kitRes.ok).toBe(true);
+    expect(captured).toHaveLength(2);
+    expect(captured[1]?.payload.text).toContain('REC-1-AAAAAA');
+    expect(captured[1]?.payload.text).toContain('REC-5-EEEEEE');
+    expect(captured[1]?.payload.text).toContain('autossabotagem');
+    expect(captured[1]?.payload.parse_mode).toBe('HTML');
+  });
+
+  it('deve consultar updates via pollUpdates e extrair senha com timingSafeEqual', async () => {
+    const mockUpdates = [
+      {
+        update_id: 101,
+        message: {
+          message_id: 55,
+          chat: { id: 999999 }, // Chat não autorizado
+          text: '/senha SenhaHacker123',
+        },
+      },
+      {
+        update_id: 102,
+        message: {
+          message_id: 56,
+          chat: { id: 12345678 }, // Chat correto do Ajudante
+          text: '/senha SegredoForte2026',
+        },
+      },
+    ];
+
+    const transport: TelegramTransportAdapter = {
+      send: vi.fn(async (req: TelegramTransportRequest): Promise<TelegramTransportResponse> => {
+        if (req.endpointUrl.includes('/getUpdates')) {
+          return { ok: true, status: 200, body: { ok: true, result: mockUpdates } };
+        }
+        if (req.endpointUrl.includes('/deleteMessage')) {
+          return { ok: true, status: 200, body: { ok: true } };
+        }
+        return { ok: true, status: 200 };
+      }),
+    };
+
+    const client = new TelegramPartnerClient({
+      botToken: 'token-123',
+      pairedChatId: '12345678',
+      transport,
+    });
+
+    const pollRes = await client.pollUpdates({ offset: 100, timeoutSec: 5 });
+    expect(pollRes.ok).toBe(true);
+    expect(pollRes.updates).toHaveLength(2);
+
+    // Validação 1: Remetente não autorizado deve ser rejeitado
+    const rejectCheck = client.extractPasswordFromUpdate(pollRes.updates[0]!);
+    expect(rejectCheck.valid).toBe(false);
+    expect(rejectCheck.error).toContain('Remetente não autorizado');
+
+    // Validação 2: Remetente legítimo deve ter a senha extraída
+    const validCheck = client.extractPasswordFromUpdate(pollRes.updates[1]!);
+    expect(validCheck.valid).toBe(true);
+    expect(validCheck.password).toBe('SegredoForte2026');
+    expect(validCheck.messageId).toBe(56);
+
+    // Validação 3: deleteMessage
+    const delRes = await client.deleteMessage('12345678', 56);
+    expect(delRes.ok).toBe(true);
+
+    // Validação 4: pollUpdates com falha de transporte propaga erro
+    const failingTransport: TelegramTransportAdapter = {
+      send: vi.fn(async () => {
+        throw new Error('ETIMEDOUT');
+      }),
+    };
+    const failingClient = new TelegramPartnerClient({
+      botToken: 'token-123',
+      pairedChatId: '12345678',
+      transport: failingTransport,
+    });
+    const failRes = await failingClient.pollUpdates();
+    expect(failRes.ok).toBe(false);
+    expect(failRes.updates).toHaveLength(0);
+    expect(failRes.error).toBe('ETIMEDOUT');
   });
 });

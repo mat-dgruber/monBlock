@@ -24,17 +24,35 @@ export interface TelegramMessagePayload {
   text?: string;
   caption?: string;
   photo?: string;
-  has_spoiler: boolean;
+  has_spoiler?: boolean;
   parse_mode?: 'HTML' | 'MarkdownV2';
-  reply_markup: {
+  reply_markup?: {
     inline_keyboard: InlineKeyboardButton[][];
   };
+  [key: string]: unknown;
+}
+
+export interface TelegramUpdate {
+  update_id: number;
+  message?: {
+    message_id: number;
+    chat: { id: number | string };
+    from?: { id: number | string; username?: string; first_name?: string };
+    text?: string;
+  };
+  callback_query?: {
+    id: string;
+    from: { id: number | string };
+    data?: string;
+    message?: { message_id: number; chat: { id: number | string } };
+  };
+  [key: string]: unknown;
 }
 
 export interface TelegramTransportRequest {
   endpointUrl: string;
   timeoutMs: number;
-  payload: TelegramMessagePayload;
+  payload: TelegramMessagePayload | Record<string, unknown>;
 }
 
 export interface TelegramTransportResponse {
@@ -116,6 +134,10 @@ export function generateShortChallengeCode(): string {
   return `MB-${randomHex}`;
 }
 
+function escapeTelegramHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 export class TelegramPartnerClient {
   private readonly botToken: string;
   private readonly pairedChatId: string;
@@ -133,7 +155,7 @@ export class TelegramPartnerClient {
 
   constructor(options: TelegramPartnerClientOptions) {
     this.botToken = options.botToken ?? process.env.MONBLOCK_TELEGRAM_BOT_TOKEN ?? '';
-    this.pairedChatId = options.pairedChatId.trim();
+    this.pairedChatId = (options.pairedChatId ?? '').trim();
     this.transport = options.transport ?? new NativeFetchTelegramTransport();
     this.timeoutMs = options.timeoutMs ?? 3000;
     this.baseDelayMs = options.baseDelayMs ?? 250;
@@ -327,6 +349,191 @@ export class TelegramPartnerClient {
       authorized: true,
       decision,
       requestId,
+    };
+  }
+
+  /**
+   * Envia o convite de pareamento ao Ajudante solicitando a definição da Senha Mestra via `/senha <senha>`.
+   */
+  async sendPairingInvitation(params: {
+    partnerName: string;
+    userMachineName?: string;
+    chatId?: string;
+  }): Promise<{ ok: boolean; status: number; error?: string }> {
+    const targetChatId = (params.chatId ?? this.pairedChatId).trim();
+    if (!targetChatId || !this.botToken) {
+      return { ok: false, status: 400, error: 'Chat ID do Telegram ou Bot Token não configurados.' };
+    }
+
+    const invitationText = [
+      '🛡️ <b>monBlock — Convite de Ajudante de Foco (CCAT)</b>',
+      '',
+      `Olá, <b>${escapeTelegramHtml(params.partnerName)}</b>!`,
+      `Você foi convidado(a) para ser o(a) <b>Ajudante de Foco</b> no computador ${params.userMachineName ? `("${escapeTelegramHtml(params.userMachineName)}")` : ''} de quem confia em você.`,
+      '',
+      'Para concluir o pareamento e ativar a proteção contra distrações, defina a <b>Senha Mestra</b> respondendo a esta mensagem com:',
+      '👉 <code>/senha &lt;sua_senha&gt;</code>',
+      '<i>(Exemplo: <code>/senha FocoProtegido2026</code> — mínimo 6 caracteres)</i>',
+      '',
+      '⚠️ <b>Guarde esta senha com você.</b> O usuário no computador NÃO terá acesso a ela. Ela será solicitada caso você precise autorizar alterações extremas ou desinstalar o guardião.',
+    ].join('\n');
+
+    const endpointUrl = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+    try {
+      const res = await this.transport.send({
+        endpointUrl,
+        timeoutMs: this.timeoutMs,
+        payload: {
+          chat_id: targetChatId,
+          text: invitationText,
+          parse_mode: 'HTML',
+        },
+      });
+      return { ok: res.ok, status: res.status };
+    } catch (err: unknown) {
+      return { ok: false, status: 500, error: (err as Error)?.message ?? 'Falha de rede.' };
+    }
+  }
+
+  /**
+   * Envia os 5 Códigos de Emergência exclusivamente ao Telegram do Ajudante.
+   */
+  async sendEmergencyKit(params: {
+    codes: string[];
+    partnerName?: string;
+    chatId?: string;
+  }): Promise<{ ok: boolean; status: number; error?: string }> {
+    const targetChatId = (params.chatId ?? this.pairedChatId).trim();
+    if (!targetChatId || !this.botToken) {
+      return { ok: false, status: 400, error: 'Chat ID do Telegram ou Bot Token não configurados.' };
+    }
+
+    const codesList = params.codes
+      .map((code, idx) => `🔑 Chave ${idx + 1}: <code>${escapeTelegramHtml(code)}</code>`)
+      .join('\n');
+
+    const emergencyKitText = [
+      '🚨 <b>monBlock — Kit Exclusivo de Códigos de Emergência (Offline)</b>',
+      '',
+      '✅ <b>Senha Mestra configurada e Proteção Ativa!</b>',
+      '',
+      'Abaixo estão os seus <b>5 Códigos de Recuperação de Emergência</b> de uso único. Guarde-os em local seguro:',
+      '',
+      codesList,
+      '',
+      '📌 <b>Como funciona:</b> Se a internet cair e o usuário precisar urgentemente de acesso a um site bloqueado de trabalho/estudo, você pode ditar uma destas chaves. Cada chave libera 1 site por 1 hora.',
+      '⚠️ <b>Importante:</b> O usuário NÃO tem acesso a essas chaves no computador dele para evitar autossabotagem.',
+    ].join('\n');
+
+    const endpointUrl = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+    try {
+      const res = await this.transport.send({
+        endpointUrl,
+        timeoutMs: this.timeoutMs,
+        payload: {
+          chat_id: targetChatId,
+          text: emergencyKitText,
+          parse_mode: 'HTML',
+        },
+      });
+      return { ok: res.ok, status: res.status };
+    } catch (err: unknown) {
+      return { ok: false, status: 500, error: (err as Error)?.message ?? 'Falha de rede.' };
+    }
+  }
+
+  /**
+   * Consulta novas atualizações do Telegram via long-polling (`getUpdates`).
+   */
+  async pollUpdates(params?: {
+    offset?: number;
+    timeoutSec?: number;
+  }): Promise<{ ok: boolean; updates: TelegramUpdate[]; error?: string }> {
+    if (!this.botToken) return { ok: false, updates: [], error: 'Bot token não configurado.' };
+
+    const endpointUrl = `https://api.telegram.org/bot${this.botToken}/getUpdates`;
+    try {
+      const res = await this.transport.send({
+        endpointUrl,
+        timeoutMs: ((params?.timeoutSec ?? 0) + 5) * 1000,
+        payload: {
+          offset: params?.offset,
+          timeout: params?.timeoutSec ?? 0,
+        },
+      });
+      if (res.ok && res.body && typeof res.body === 'object' && 'result' in res.body) {
+        const updates = Array.isArray((res.body as { result: unknown }).result)
+          ? ((res.body as { result: unknown[] }).result as TelegramUpdate[])
+          : [];
+        return { ok: true, updates };
+      }
+      return { ok: false, updates: [], error: `Resposta inválida da API (${res.status})` };
+    } catch (err: unknown) {
+      return { ok: false, updates: [], error: (err as Error)?.message ?? 'Falha de rede na consulta de atualizações.' };
+    }
+  }
+
+  /**
+   * Apaga a mensagem contendo a senha do chat no Telegram para redução de rastros.
+   */
+  async deleteMessage(chatId: string, messageId: number): Promise<{ ok: boolean }> {
+    if (!this.botToken) return { ok: false };
+    const endpointUrl = `https://api.telegram.org/bot${this.botToken}/deleteMessage`;
+    try {
+      const res = await this.transport.send({
+        endpointUrl,
+        timeoutMs: this.timeoutMs,
+        payload: {
+          chat_id: chatId,
+          message_id: messageId,
+        },
+      });
+      return { ok: res.ok };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  /**
+   * Valida com timingSafeEqual e extrai senha de um update se originado do Ajudante.
+   */
+  extractPasswordFromUpdate(
+    update: TelegramUpdate,
+    expectedChatId?: string
+  ): { valid: boolean; password?: string; messageId?: number; error?: string } {
+    const message = update.message;
+    if (!message || !message.text) {
+      return { valid: false, error: 'Atualização não contém texto de mensagem.' };
+    }
+
+    const candidateChatId = String(message.chat.id).trim();
+    const targetChatId = (expectedChatId ?? this.pairedChatId).trim();
+    const candidateBuf = Buffer.from(candidateChatId, 'utf8');
+    const targetBuf = Buffer.from(targetChatId, 'utf8');
+
+    if (
+      !candidateChatId ||
+      !targetChatId ||
+      candidateBuf.length !== targetBuf.length ||
+      !crypto.timingSafeEqual(candidateBuf, targetBuf)
+    ) {
+      return { valid: false, error: 'Remetente não autorizado: Chat ID diverge do esperado.' };
+    }
+
+    const match = message.text.trim().match(/^\/(?:senha|password)(?:\s+(.+))?$/i);
+    if (!match) {
+      return { valid: false, error: 'Mensagem não é um comando /senha válido.' };
+    }
+
+    const rawPassword = match[1]?.trim();
+    if (!rawPassword || rawPassword.length < 6) {
+      return { valid: false, error: 'A senha precisa ter no mínimo 6 caracteres.' };
+    }
+
+    return {
+      valid: true,
+      password: rawPassword,
+      messageId: message.message_id,
     };
   }
 
