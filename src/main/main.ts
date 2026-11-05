@@ -8,6 +8,7 @@
  * - Independência da janela em relação ao bloqueio (`handleWindowCloseEvent` — `RN-LIFE-01`)
  */
 
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -217,6 +218,33 @@ export function handleWindowCloseEvent(
   }
 }
 
+/**
+ * Carrega (ou cria na primeira execução) a chave aleatória de 256 bits dos cofres,
+ * persistida cifrada pelo `safeStorage` (chave mestra no Keychain do macOS).
+ * Se a decifragem falhar, gera chave nova: os cofres antigos ficam inválidos e o
+ * `TripleStateStore` entra em Fail-Closed.
+ * ponytail: userland eleva a barreira mas não isola do próprio usuário; isolamento real exige o daemon root do ADR-0001.
+ */
+export function loadOrCreateVaultKey(
+  keyPath: string,
+  safeStorage: { isEncryptionAvailable(): boolean; encryptString(s: string): Buffer; decryptString(b: Buffer): string }
+): string {
+  if (process.env.MONBLOCK_INTEGRITY_KEY) return process.env.MONBLOCK_INTEGRITY_KEY;
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('safeStorage indisponível: não é possível proteger a chave dos cofres.');
+  }
+  if (fs.existsSync(keyPath)) {
+    try {
+      return safeStorage.decryptString(fs.readFileSync(keyPath));
+    } catch {
+      // Chave ilegível: regenera e deixa o Fail-Closed agir sobre os cofres antigos.
+    }
+  }
+  const key = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync(keyPath, safeStorage.encryptString(key), { mode: 0o600 });
+  return key;
+}
+
 // MARK: - Bootstrap Real do Runtime Electron (Processo Principal, Tray macOS & IPC)
 
 export async function bootstrapElectronRuntime(): Promise<void> {
@@ -225,7 +253,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   }
 
   const electron = await import('electron');
-  const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, powerMonitor } = electron;
+  const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, powerMonitor, safeStorage } = electron;
 
   const gotSingleLock = app.requestSingleInstanceLock();
   if (!gotSingleLock) {
@@ -245,7 +273,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     primaryPath: path.join(vaultsDir, 'state.primary.json'),
     keychainPath: path.join(vaultsDir, 'state.keychain.json'),
     sealPath: path.join(vaultsDir, 'partner.seal'),
-    integrityKey: process.env.MONBLOCK_INTEGRITY_KEY ?? 'monblock-local-runtime-integrity-key-v1',
+    integrityKey: loadOrCreateVaultKey(path.join(vaultsDir, 'vault.key'), safeStorage),
   });
 
   const enforcer = new MacOSPlatformEnforcer({
