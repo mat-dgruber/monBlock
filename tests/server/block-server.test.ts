@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createMonBlockHttpServer } from '../../scripts/test-block-server.mjs';
+import { createMonBlockHttpServer } from '../../src/server/block-server.js';
 
 describe('Local Block Server, Idempotency & RFC 9457 Problem Details', () => {
   it('serve /blocked, /showcase, /tokens.css, /api/health e retorna application/problem+json em 404', async () => {

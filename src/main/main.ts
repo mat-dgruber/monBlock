@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { MonBlockDaemon } from '../daemon/monblockd.js';
 import { MacOSPlatformEnforcer } from '../enforcers/platform-enforcer.js';
 import { TripleStateStore } from '../storage/state-store.js';
+import { createMonBlockHttpServer } from '../server/block-server.js';
 
 const CURRENT_DIR =
   typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -259,6 +260,14 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   let tray: InstanceType<typeof Tray> | null = null;
   let isAuthorizedQuit = false;
 
+  // Inicializa o servidor HTTP local na porta 49152 para tela de bloqueio e Problem Details
+  const blockServer = createMonBlockHttpServer();
+  try {
+    blockServer.listen(49152, '127.0.0.1');
+  } catch {
+    // Porta pode estar ocupada ou em execução prévia
+  }
+
   const navigateMainWindow = (viewId: string): void => {
     if (!mainWindow) return;
     if (!mainWindow.isVisible()) {
@@ -272,6 +281,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     if (!tray) return;
     const stateRes = await daemon.handleCommand({ type: 'GET_STATE' });
     const pubState = 'state' in stateRes ? stateRes.state : null;
+    const hasMenuSymbol = typeof (nativeImage as any).createMenuSymbol === 'function';
     const menuItems = buildTrayMenuTemplate(
       {
         active: Boolean(pubState),
@@ -284,12 +294,12 @@ export async function bootstrapElectronRuntime(): Promise<void> {
         onEnterToken: () => navigateMainWindow('partner'),
         onOpenDashboard: () => navigateMainWindow('categories'),
       },
-      process.platform === 'darwin' ? {
-        'quick-add': nativeImage.createMenuSymbol('plus.circle'),
-        'block-active-tab': nativeImage.createMenuSymbol('globe'),
-        'request-unblock': nativeImage.createMenuSymbol('person.crop.circle.badge.questionmark'),
-        'enter-token': nativeImage.createMenuSymbol('key'),
-        'open-dashboard': nativeImage.createMenuSymbol('square.grid.2x2'),
+      process.platform === 'darwin' && hasMenuSymbol ? {
+        'quick-add': (nativeImage as any).createMenuSymbol('plus.circle'),
+        'block-active-tab': (nativeImage as any).createMenuSymbol('globe'),
+        'request-unblock': (nativeImage as any).createMenuSymbol('person.crop.circle.badge.questionmark'),
+        'enter-token': (nativeImage as any).createMenuSymbol('key'),
+        'open-dashboard': (nativeImage as any).createMenuSymbol('square.grid.2x2'),
       } : undefined
     );
     tray.setContextMenu(Menu.buildFromTemplate(menuItems));
@@ -491,6 +501,14 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     if (mainWindow) {
       mainWindow.show();
       mainWindow.focus();
+    }
+  });
+
+  app.on('will-quit', () => {
+    try {
+      blockServer.close();
+    } catch {
+      // Ignora erro de encerramento do servidor HTTP
     }
   });
 }
