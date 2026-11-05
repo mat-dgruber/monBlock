@@ -59,6 +59,7 @@ export interface TrayMenuItem {
   type?: 'normal' | 'separator';
   enabled?: boolean;
   click?: () => void;
+  icon?: Electron.NativeImage;
 }
 
 // MARK: - Funções Puras de Segurança e Ciclo de Vida
@@ -144,15 +145,17 @@ export function validateNavigationUrl(rawUrl: string, allowedFileRoot?: string):
  */
 export function buildTrayMenuTemplate(
   state: TrayStatusSnapshot,
-  handlers: TrayActionHandlers
+  handlers: TrayActionHandlers,
+  icons?: Partial<Record<'quick-add' | 'block-active-tab' | 'request-unblock' | 'enter-token' | 'open-dashboard', Electron.NativeImage>>
 ): TrayMenuItem[] {
-  let headerLabel = 'monBlock Ativo — Proteção 3 Camadas';
+  let headerLabel = 'monBlock — Estado não verificado';
+  if (state.active) headerLabel = 'monBlock — Estado da proteção carregado';
   if (state.temporaryUnlockRemainingFormatted) {
-    headerLabel = `monBlock Ativo — Pausa Temporária (${state.temporaryUnlockRemainingFormatted})`;
+    headerLabel = `monBlock — Pausa temporária (${state.temporaryUnlockRemainingFormatted})`;
   } else if (state.cooldownRemainingFormatted) {
-    headerLabel = `monBlock Ativo — Cooldown 72h (${state.cooldownRemainingFormatted})`;
+    headerLabel = `monBlock — Espera de 72h (${state.cooldownRemainingFormatted})`;
   } else if (state.partnerName) {
-    headerLabel = `monBlock Ativo — Proteção 3 Camadas • Ajudante: ${state.partnerName}`;
+    headerLabel = `monBlock — Estado carregado • Ajudante: ${state.partnerName}`;
   }
 
   return [
@@ -164,29 +167,34 @@ export function buildTrayMenuTemplate(
     { type: 'separator' },
     {
       id: 'quick-add',
-      label: '➕ Bloquear Site ou Palavra-Chave Rápida...',
+      label: 'Bloquear site ou palavra-chave...',
+      icon: icons?.['quick-add'],
       click: () => handlers.onQuickAdd(),
     },
     {
       id: 'block-active-tab',
-      label: '🌐 Bloquear Site da Aba Atual do Navegador',
+      label: 'Adicionar site manualmente...',
+      icon: icons?.['block-active-tab'],
       click: () => handlers.onBlockActiveTab(),
     },
     { type: 'separator' },
     {
       id: 'request-unblock',
-      label: '🤝 Solicitar Desbloqueio Temporário ao Ajudante...',
+      label: 'Solicitar desbloqueio ao Ajudante...',
+      icon: icons?.['request-unblock'],
       click: () => handlers.onRequestUnblock(),
     },
     {
       id: 'enter-token',
-      label: '🔑 Inserir Código de Liberação (UNLOCK-*)...',
+      label: 'Inserir código de liberação...',
+      icon: icons?.['enter-token'],
       click: () => handlers.onEnterToken(),
     },
     { type: 'separator' },
     {
       id: 'open-dashboard',
-      label: '🛡️ Abrir Painel Principal do monBlock',
+      label: 'Abrir painel principal',
+      icon: icons?.['open-dashboard'],
       click: () => handlers.onOpenDashboard(),
     },
   ];
@@ -266,7 +274,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     const pubState = 'state' in stateRes ? stateRes.state : null;
     const menuItems = buildTrayMenuTemplate(
       {
-        active: true,
+        active: Boolean(pubState),
         partnerName: pubState?.paired ? 'Pareado' : null,
       },
       {
@@ -275,13 +283,45 @@ export async function bootstrapElectronRuntime(): Promise<void> {
         onRequestUnblock: () => navigateMainWindow('partner'),
         onEnterToken: () => navigateMainWindow('partner'),
         onOpenDashboard: () => navigateMainWindow('categories'),
-      }
+      },
+      process.platform === 'darwin' ? {
+        'quick-add': nativeImage.createMenuSymbol('plus.circle'),
+        'block-active-tab': nativeImage.createMenuSymbol('globe'),
+        'request-unblock': nativeImage.createMenuSymbol('person.crop.circle.badge.questionmark'),
+        'enter-token': nativeImage.createMenuSymbol('key'),
+        'open-dashboard': nativeImage.createMenuSymbol('square.grid.2x2'),
+      } : undefined
     );
     tray.setContextMenu(Menu.buildFromTemplate(menuItems));
   };
 
   // Registro dos canais IPC conectados ao MonBlockDaemon
   ipcMain.handle('monblock:get-state', () => daemon.handleCommand({ type: 'GET_STATE' }));
+
+  ipcMain.handle('monblock:initiate-pairing', async (_event, payload: {
+    partnerName?: string;
+    telegramChatId?: string;
+    currentPartnerPassword?: string;
+  }) => {
+    return daemon.handleCommand({
+      type: 'INITIATE_PAIRING',
+      partnerName: payload?.partnerName ?? '',
+      telegramChatId: payload?.telegramChatId ?? '',
+      currentPartnerPassword: payload?.currentPartnerPassword,
+    });
+  });
+
+  ipcMain.handle('monblock:check-pairing-status', async () => {
+    const res = await daemon.handleCommand({ type: 'CHECK_PAIRING_STATUS' });
+    if (res.status === 200 && 'paired' in res && res.paired) {
+      await refreshTrayMenu();
+    }
+    return res;
+  });
+
+  ipcMain.handle('monblock:cancel-pairing', async () => {
+    return daemon.handleCommand({ type: 'CANCEL_PAIRING' });
+  });
 
   ipcMain.handle('monblock:pair-partner', async (_event, payload: {
     partnerName?: string;
@@ -330,20 +370,11 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     });
   });
 
-  ipcMain.handle('monblock:request-unblock', async (_event, payload: {
-    targetUrlOrApp?: string;
-    requestedDurationMinutes?: 15 | 60;
-    reason?: string;
-  }) => {
-    const stateRes = await daemon.handleCommand({ type: 'GET_STATE' });
-    return {
-      status: 200,
-      requested: true,
-      targetUrlOrApp: payload?.targetUrlOrApp ?? '',
-      requestedDurationMinutes: payload?.requestedDurationMinutes ?? 15,
-      paired: 'state' in stateRes ? stateRes.state.paired : false,
-    };
-  });
+  ipcMain.handle('monblock:request-unblock', () => ({
+    status: 503,
+    requested: false,
+    detail: 'O envio de pedidos ao Ajudante ainda não está disponível nesta versão.',
+  }));
 
   ipcMain.handle('monblock:verify-offline-token', async (_event, payload: {
     challengeCode: string;
@@ -362,12 +393,15 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   ipcMain.handle('monblock:verify-recovery-code', async (_event, payload: {
     recoveryCode: string;
-    target?: string;
+    target: string;
   }) => {
+    if (!payload || typeof payload.recoveryCode !== 'string' || typeof payload.target !== 'string' || !/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(payload.target.trim())) {
+      return { status: 400, detail: 'Informe um código e um domínio específico para a recuperação.' };
+    }
     const res = await daemon.handleCommand({
       type: 'VERIFY_RECOVERY_CODE',
       code: payload.recoveryCode,
-      target: payload.target,
+      target: payload.target.trim(),
     });
     await refreshTrayMenu();
     return res;
@@ -423,10 +457,22 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   await mainWindow.loadFile(rendererHtmlPath);
 
   // Criação do Ícone e Menu da Tray (Barra de Menu do macOS)
-  const emptyTrayImg = nativeImage.createEmpty();
-  tray = new Tray(emptyTrayImg);
-  tray.setTitle('🛡️ monBlock');
-  tray.setToolTip('monBlock — Proteção 3 Camadas Ativa (CCAT)');
+  // Ícone Retina @2x (36x36px -> 18x18pt) com anti-aliasing nativo Apple SF Symbol checkmark.shield
+  const trayShieldPngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAACQAAAAkCAYAAADhAJiYAAAAAXNSR0IArs4c6QAAAGxlWElmTU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAIdpAAQAAAABAAAATgAAAAAAAACQAAAAAQAAAJAAAAABAAKgAgAEAAAAAQAAACSgAwAEAAAAAQAAACQAAAAAQCQK+gAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAAw5JREFUWAntlluITVEYx4fcJ5GiKZdQM3IZU1MuJbxMFIUHjFLygocZanhAQ4rUCE2exIMnSmlKKIrSeHAp436JxDSYZCZGkfvl96uza3ecc/bZ58yZp/OvX/uy1vftb63vW2vtkpKiijOQ3wz0y8+8pAL7KqiGP3AL7sJr6BM5gFnQCHfgG/xN4jPPV6EepkBB5Azsg2fwC8JBdPNsAK3wIantB89tsB2mQl4aj/VOeAy/IRxEB8/HoAbKINA4bpbBSeiCsI0DcVa3QdiGx2htoMtPCDt8ynMTmLJSiNJIOiwCA++EsC9TXQtZ6z09dfAW9sJ0GAi5agiG8+AwBL6fx3EWjKYBo0FxDCP6GpgD1H9Pqr4DUr0MvbMoc9VQDK1Dg3iQcGIglkJa9U/bkl+DNbYK3JMuQtbLvxABuVfNgF1gutuhA7JSIQKayJfroBws4K3wFbJSVA1l5STUaSz3i2EteHwcBY+TrNWbAbktrAZXpjNyBQ5BLMVJ2Sg874f1MAaSVcOLNeAs3QePmowrivb/FCcgd91NcCJxHR3yNon7WpgNr+BI4solnuIEdAHX98AzqRGWw3AYDAazAtrhPJyBnJSuhvy3MVg3NZex8rdiHZyDSmiCLvDMMlX2PQ3N4AaYSvqyn/IbWcsP6dSiDBwExv5GtIIz5bL+BPZtgZmQScNoNOX2f5GpY3LbzYRRG1fTkqxqXtwGR6nzR7ASojSCDi9Bm0tRncPt1ohGYjpSnfQLeW/gjnQzeHZlkru2G2bgtz5T5+Q268J0OAM9MB/yOfVN+xJwf/JnrwNMXyy5434ER/QFtkApxJUp3w3fQV/W5wLISUux6oagVi5zXwUu9SiZwrlwHQxEH+/ADTQvuapuQDBCZ+s4VECqfcytpBJOgf9TBqPtNSiHXpFFbUF2QjBb1tgecMbcXwxuDhyAINX29ZDdCOn2PJpyVxmmzWBgjlxMQwucBdPrOwN5AwchfMTwWBhNxq3nVRBAEJxXZ85AJkCfaxpf3AFP4CE0QK/VCb6KKs5A7Bn4BzLTxEQuanheAAAAAElFTkSuQmCC';
+
+  let trayIcon: Electron.NativeImage;
+  if (process.platform === 'darwin') {
+    const rawImage = nativeImage.createFromBuffer(Buffer.from(trayShieldPngBase64, 'base64'), {
+      scaleFactor: 2.0,
+    });
+    trayIcon = rawImage.resize({ width: 18, height: 18, quality: 'best' });
+    trayIcon.setTemplateImage(true);
+  } else {
+    trayIcon = nativeImage.createEmpty();
+  }
+  tray = new Tray(trayIcon);
+  tray.setToolTip('monBlock — Painel de proteção');
   await refreshTrayMenu();
 
   // Revogação automática de concessões temporárias quando o Mac entra em sleep (RN-APP-04)

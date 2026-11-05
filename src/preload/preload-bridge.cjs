@@ -10,6 +10,15 @@ const api = Object.freeze({
   getState() {
     return ipcRenderer.invoke('monblock:get-state');
   },
+  initiatePairing(payload) {
+    return ipcRenderer.invoke('monblock:initiate-pairing', payload);
+  },
+  checkPairingStatus() {
+    return ipcRenderer.invoke('monblock:check-pairing-status');
+  },
+  cancelPairing() {
+    return ipcRenderer.invoke('monblock:cancel-pairing');
+  },
   pairPartner(payload) {
     return ipcRenderer.invoke('monblock:pair-partner', payload);
   },

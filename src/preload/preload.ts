@@ -11,6 +11,9 @@ export type IpcInvokeFn = (channel: string, payload?: unknown) => Promise<unknow
 
 export interface MonBlockPreloadApi {
   getState: () => Promise<unknown>;
+  initiatePairing: (payload: { partnerName: string; telegramChatId: string }) => Promise<unknown>;
+  checkPairingStatus: () => Promise<unknown>;
+  cancelPairing: () => Promise<unknown>;
   pairPartner: (payload: {
     partnerName: string;
     telegramChatId: string;
@@ -53,6 +56,18 @@ export function createMonBlockPreloadApi(ipcInvoker: IpcInvokeFn): MonBlockPrelo
   const api: MonBlockPreloadApi = {
     getState() {
       return ipcInvoker('monblock:get-state');
+    },
+    initiatePairing(payload) {
+      if (!payload || !payload.partnerName || !payload.telegramChatId) {
+        return Promise.reject(new Error('Nome do Ajudante e Chat ID do Telegram são obrigatórios.'));
+      }
+      return ipcInvoker('monblock:initiate-pairing', payload);
+    },
+    checkPairingStatus() {
+      return ipcInvoker('monblock:check-pairing-status');
+    },
+    cancelPairing() {
+      return ipcInvoker('monblock:cancel-pairing');
     },
     pairPartner(payload) {
       if (!payload || typeof payload.partnerName !== 'string' || !payload.confirmedRecoveryCodes) {
