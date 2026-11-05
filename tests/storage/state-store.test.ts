@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   TripleStateStore,
   createDefaultPersistentState,
+  resolveVaultIntegrityKey,
   type MonBlockPersistentState,
 } from '../../src/storage/state-store.js';
 
@@ -263,5 +264,23 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
     } finally {
       failTwoSpy.mockRestore();
     }
+  });
+
+  it('resolveVaultIntegrityKey() deve priorizar chave explicita, variavel de ambiente ou derivar chave do contexto da maquina', () => {
+    // 1. Chave explícita
+    expect(resolveVaultIntegrityKey('chave-customizada')).toBe('chave-customizada');
+
+    // 2. Variável de ambiente
+    process.env.MONBLOCK_VAULT_KEY = 'env-vault-key-xyz';
+    try {
+      expect(resolveVaultIntegrityKey()).toBe('env-vault-key-xyz');
+    } finally {
+      delete process.env.MONBLOCK_VAULT_KEY;
+    }
+
+    // 3. Derivação determinística sem chave estática
+    const derived = resolveVaultIntegrityKey();
+    expect(derived).toMatch(/^[a-f0-9]{64}$/);
+    expect(resolveVaultIntegrityKey()).toBe(derived);
   });
 });

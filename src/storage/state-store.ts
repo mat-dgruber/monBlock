@@ -107,6 +107,20 @@ export function createDefaultPersistentState(
   };
 }
 
+// MARK: - Resolução Dinâmica de Integridade
+
+/**
+ * Resolve a chave de integridade HMAC para assinatura dos cofres.
+ * Prioriza chave explícita (testes/injeção), variável de ambiente ou deriva
+ * uma chave determinística a partir do contexto da máquina/usuário do SO.
+ */
+export function resolveVaultIntegrityKey(explicitKey?: string): string {
+  if (explicitKey) return explicitKey;
+  if (process.env.MONBLOCK_VAULT_KEY) return process.env.MONBLOCK_VAULT_KEY;
+  const seed = `${process.platform}:${process.arch}:${process.env.USER || 'root'}:monblock-vault-v1`;
+  return crypto.createHash('sha256').update(seed).digest('hex');
+}
+
 // MARK: - Implementação TripleStateStore
 
 export class TripleStateStore {
@@ -119,7 +133,7 @@ export class TripleStateStore {
       { id: 'keychain', filePath: options.keychainPath },
       { id: 'seal', filePath: options.sealPath },
     ];
-    this.integrityKey = options.integrityKey ?? 'monblock-system-vault-key-v1';
+    this.integrityKey = resolveVaultIntegrityKey(options.integrityKey);
   }
 
   /**
