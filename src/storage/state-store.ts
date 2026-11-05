@@ -110,15 +110,36 @@ export function createDefaultPersistentState(
 // MARK: - Resolução Dinâmica de Integridade
 
 /**
- * Resolve a chave de integridade HMAC para assinatura dos cofres.
- * Prioriza chave explícita (testes/injeção), variável de ambiente ou deriva
- * uma chave determinística a partir do contexto da máquina/usuário do SO.
+ * Resolve a chave de integridade dos cofres: chave explícita (runtime/testes) ou `MONBLOCK_VAULT_KEY`.
+ * Não há derivação determinística: uma chave recomputável a partir de dados públicos
+ * (plataforma, usuário) permitiria forjar cofres válidos.
  */
 export function resolveVaultIntegrityKey(explicitKey?: string): string {
-  if (explicitKey) return explicitKey;
-  if (process.env.MONBLOCK_VAULT_KEY) return process.env.MONBLOCK_VAULT_KEY;
-  const seed = `${process.platform}:${process.arch}:${process.env.USER || 'root'}:monblock-vault-v1`;
-  return crypto.createHash('sha256').update(seed).digest('hex');
+  const key = explicitKey || process.env.MONBLOCK_VAULT_KEY;
+  if (!key) {
+    throw new Error('Chave de integridade dos cofres ausente: injete uma chave aleatória por instalação.');
+  }
+  return key;
+}
+
+const VAULT_CIPHER_PREFIX = 'MBV1.';
+
+/** Cifra o envelope com AES-256-GCM (iv | tag | ciphertext em base64) para que segredos não fiquem legíveis em disco. */
+function sealVaultPayload(encKey: Buffer, plaintext: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', encKey, iv);
+  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return VAULT_CIPHER_PREFIX + Buffer.concat([iv, cipher.getAuthTag(), ct]).toString('base64');
+}
+
+/** Decifra um cofre; lança erro se o formato for inválido ou a tag GCM não conferir (adulteração). */
+function openVaultPayload(encKey: Buffer, raw: string): string {
+  if (!raw.startsWith(VAULT_CIPHER_PREFIX)) throw new Error('Formato de cofre inválido.');
+  const buf = Buffer.from(raw.slice(VAULT_CIPHER_PREFIX.length), 'base64');
+  if (buf.length < 28) throw new Error('Cofre truncado.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, buf.subarray(0, 12));
+  decipher.setAuthTag(buf.subarray(12, 28));
+  return Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString('utf8');
 }
 
 // MARK: - Implementação TripleStateStore
@@ -126,6 +147,7 @@ export function resolveVaultIntegrityKey(explicitKey?: string): string {
 export class TripleStateStore {
   private readonly vaults: ReadonlyArray<{ id: VaultId; filePath: string }>;
   private readonly integrityKey: string;
+  private readonly encryptionKey: Buffer;
 
   constructor(options: TripleStateStoreOptions) {
     this.vaults = [
@@ -134,6 +156,9 @@ export class TripleStateStore {
       { id: 'seal', filePath: options.sealPath },
     ];
     this.integrityKey = resolveVaultIntegrityKey(options.integrityKey);
+    this.encryptionKey = Buffer.from(
+      crypto.hkdfSync('sha256', this.integrityKey, '', 'monblock-vault-enc-v1', 32)
+    );
   }
 
   /**
@@ -170,7 +195,7 @@ export class TripleStateStore {
     const dir = path.dirname(filePath);
     fs.mkdirSync(dir, { recursive: true });
     const tmpPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-    const serialized = JSON.stringify(envelope, null, 2);
+    const serialized = sealVaultPayload(this.encryptionKey, JSON.stringify(envelope));
     try {
       fs.writeFileSync(tmpPath, serialized, { encoding: 'utf8', mode: 0o600 });
       fs.renameSync(tmpPath, filePath);
@@ -227,7 +252,7 @@ export class TripleStateStore {
       return { exists: true, valid: false, ioError: true };
     }
     try {
-      const parsed = JSON.parse(raw) as SignedVaultEnvelope;
+      const parsed = JSON.parse(openVaultPayload(this.encryptionKey, raw)) as SignedVaultEnvelope;
       if (!this.verifyEnvelope(parsed)) {
         return { exists: true, valid: false, ioError: false };
       }

@@ -98,11 +98,11 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
     };
     store.save(state);
 
-    // Act — Adultera o conteúdo JSON do cofre seal tentando desativar lockIncognito
-    const rawSeal = JSON.parse(fs.readFileSync(sealPath, 'utf8'));
-    rawSeal.state.rules.lockIncognito = false;
-    rawSeal.state.rules.enabledCategories = [];
-    fs.writeFileSync(sealPath, JSON.stringify(rawSeal), 'utf8');
+    // Act — Adultera bytes cifrados do cofre seal (a tag GCM deve rejeitar)
+    const rawSeal = fs.readFileSync(sealPath, 'utf8');
+    const bytes = Buffer.from(rawSeal.slice('MBV1.'.length), 'base64');
+    bytes[bytes.length - 1] ^= 0xff;
+    fs.writeFileSync(sealPath, `MBV1.${bytes.toString('base64')}`, 'utf8');
 
     const reconciled = store.loadAndReconcile({ expectPaired: true });
 
@@ -174,7 +174,7 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
     expect(reconciled.healedVaults).toEqual(['primary', 'keychain', 'seal']);
   });
 
-  it('deve assinar o HMAC exclusivamente com integrityKey sem depender de campos internos do JSON não verificado', () => {
+  it('deve cifrar os cofres em disco sem expor hmacSecret em texto puro e rejeitar envelope JSON forjado', () => {
     const pairedState: MonBlockPersistentState = {
       ...createDefaultPersistentState(1_700_000_000_000),
       version: 2,
@@ -189,15 +189,26 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
       updatedAtMs: 1_700_000_030_000,
     };
 
+    // Act
     store.save(pairedState);
 
-    const rawEnvelope = JSON.parse(fs.readFileSync(primaryPath, 'utf8'));
-    const expectedPureHmac = crypto
+    // Assert — nenhum cofre contém o segredo legível
+    for (const p of [primaryPath, keychainPath, sealPath]) {
+      const raw = fs.readFileSync(p, 'utf8');
+      expect(raw.startsWith('MBV1.')).toBe(true);
+      expect(raw).not.toContain('secret-inside-json');
+    }
+
+    // Assert — um envelope JSON em texto puro (mesmo com HMAC correto) é rejeitado
+    const forgedHmac = crypto
       .createHmac('sha256', 'test-system-integrity-key-01')
       .update(JSON.stringify(pairedState))
       .digest('hex');
-
-    expect(rawEnvelope.hmac).toBe(expectedPureHmac);
+    const forged = JSON.stringify({ state: pairedState, hmac: forgedHmac });
+    fs.writeFileSync(primaryPath, forged, 'utf8');
+    fs.writeFileSync(keychainPath, forged, 'utf8');
+    fs.writeFileSync(sealPath, forged, 'utf8');
+    expect(store.loadAndReconcile({ expectPaired: true }).tamperDetected).toBe(true);
   });
 
   it('não deve sobrescrever cofres legítimos em disco quando ocorrer erro transitório de I/O (ex: EACCES/EMFILE)', () => {
@@ -266,7 +277,7 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
     }
   });
 
-  it('resolveVaultIntegrityKey() deve priorizar chave explicita, variavel de ambiente ou derivar chave do contexto da maquina', () => {
+  it('resolveVaultIntegrityKey() deve priorizar chave explicita, variavel de ambiente e falhar sem chave (sem derivacao previsivel)', () => {
     // 1. Chave explícita
     expect(resolveVaultIntegrityKey('chave-customizada')).toBe('chave-customizada');
 
@@ -278,9 +289,7 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
       delete process.env.MONBLOCK_VAULT_KEY;
     }
 
-    // 3. Derivação determinística sem chave estática
-    const derived = resolveVaultIntegrityKey();
-    expect(derived).toMatch(/^[a-f0-9]{64}$/);
-    expect(resolveVaultIntegrityKey()).toBe(derived);
+    // 3. Sem chave: falha explícita em vez de derivar algo recomputável
+    expect(() => resolveVaultIntegrityKey()).toThrow(/Chave de integridade/);
   });
 });
