@@ -5,7 +5,7 @@
 ## 1. Camada Frontend
 
 *   **Componentes de UI do Domínio:**
-    1. **Wizard de Onboarding do Ajudante:** Fluxo guiado para cadastro do nome do Ajudante, definição da Senha Mestra (pelo próprio Ajudante ou via link/QR Code do Bot do Telegram) e exibição única dos 5 códigos do Kit de Emergência (`REC-XXXXXX-XXXXXX`) com botão de exportação/cópia segura.
+    1. **Wizard de Onboarding do Ajudante:** Fluxo guiado para cadastro do nome do Ajudante e Chat ID do Telegram. A definição da Senha Mestra é delegada diretamente ao Ajudante no Telegram via comando `/senha <senha>`, e os 5 códigos do Kit de Emergência (`REC-XXXXXX-XXXXXX`) são entregues exclusivamente no Telegram do Ajudante, sem exibição nem download na máquina do usuário (Custódia Exclusiva Anti-Autossabotagem — `ADR-0005`).
     2. **Modal / Card de Desafio-Resposta Offline (Tela `:49152/blocked` e App Desktop):** Exibe o código de desafio atual (`challengeCode`, ex.: `MB-8492-X7`) em fonte monoespaçada (`--font-mono`, `tabular-nums`) e campo de entrada para o token `UNLOCK-<DURATION>-<MAC10>` fornecido pelo Ajudante.
     3. **Central de Recuperação em 3 Níveis:** Interface dedicada com abas claras para (1) Solicitar `/reset_senha` via Telegram, (2) Inserir código `REC-XXXXXX-XXXXXX` do Kit de Emergência e (3) Iniciar/acompanhar o cronômetro regressivo do Cooldown de 72 horas calculado por `deltaTime` real (`Date.now() - startMs`).
 *   **Feedback de Erro e Estados:**
