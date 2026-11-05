@@ -269,6 +269,15 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
             'X-Frame-Options': 'DENY',
           });
           return res.end(JSON.stringify(record));
+        } catch {
+          // Falha do handler não pode virar unhandled rejection nem deixar a requisição pendurada.
+          return sendProblemDetails(
+            res,
+            502,
+            'Falha ao registrar pedido de desbloqueio',
+            'O pedido não pôde ser processado agora. Tente novamente.',
+            url.pathname
+          );
         } finally {
           if (idempotencyKey) {
             inFlightKeys.delete(idempotencyKey);
@@ -291,3 +300,4 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
   server.headersTimeout = 3000;
   return server;
 }
+
