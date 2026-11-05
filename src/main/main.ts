@@ -13,8 +13,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MonBlockDaemon } from '../daemon/monblockd.js';
+import { MacOSBrowserWatcher } from '../enforcers/macos-watcher.js';
 import { MacOSPlatformEnforcer } from '../enforcers/platform-enforcer.js';
-import { TripleStateStore } from '../storage/state-store.js';
+import { TripleStateStore, createDefaultPersistentState } from '../storage/state-store.js';
 import { createMonBlockHttpServer } from '../server/block-server.js';
 
 const CURRENT_DIR =
@@ -512,6 +513,34 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   tray = new Tray(trayIcon);
   tray.setToolTip('monBlock — Painel de proteção');
   await refreshTrayMenu();
+
+  // Camada 3 (ADR-0002): Watcher de abas. O tick consulta o daemon (que também expira concessões vencidas)
+  // e avalia a aba em foco; se o estado falhar, mantém as últimas regras conhecidas (Fail-Closed).
+  if (process.platform === 'darwin') {
+    let watcherRules = createDefaultPersistentState().rules;
+    const watcher = new MacOSBrowserWatcher({ getRules: () => watcherRules });
+    const watchTick = async (): Promise<void> => {
+      try {
+        const now = Date.now();
+        let wildcardGrant = false;
+        const res = await daemon.handleCommand({ type: 'GET_STATE' });
+        if ('state' in res) {
+          const grants = res.state.temporaryGrants.filter((g) => g.expiresAtMs > now);
+          wildcardGrant = grants.some((g) => g.target === '*');
+          watcherRules = {
+            ...res.state.rules,
+            allowlistDomains: [...res.state.rules.allowlistDomains, ...grants.map((g) => g.target)],
+          };
+        }
+        if (!wildcardGrant) await watcher.inspectOnce(now);
+      } catch (err) {
+        console.error('[monBlock] Falha no ciclo do watcher:', err);
+      } finally {
+        setTimeout(() => void watchTick(), 1500);
+      }
+    };
+    void watchTick();
+  }
 
   // Revogação automática de concessões temporárias quando o Mac entra em sleep (RN-APP-04)
   powerMonitor.on('suspend', () => {
