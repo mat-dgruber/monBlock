@@ -262,11 +262,11 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   // Inicializa o servidor HTTP local na porta 49152 para tela de bloqueio e Problem Details
   const blockServer = createMonBlockHttpServer();
-  try {
-    blockServer.listen(49152, '127.0.0.1');
-  } catch {
-    // Porta pode estar ocupada ou em execução prévia
-  }
+  // Erros de listen (ex.: EADDRINUSE) chegam como evento assíncrono; sem listener derrubariam o processo main.
+  blockServer.on('error', (err) => {
+    console.error('[monBlock] Servidor local 127.0.0.1:49152 indisponível:', (err as NodeJS.ErrnoException).code ?? err);
+  });
+  blockServer.listen(49152, '127.0.0.1');
 
   const navigateMainWindow = (viewId: string): void => {
     if (!mainWindow) return;
