@@ -1,156 +1,581 @@
 'use strict';
 
-/**
- * Inicializador de DOM do Renderer Electron do monBlock (MOD-04).
- *
- * Compatível com `sandbox: true`, `nodeIntegration: false`, `contextIsolation: true`
- * e Content-Security-Policy estrita (`script-src 'self'`).
- * Comunica-se exclusivamente com o processo Main via `window.monblock` (contextBridge).
- */
 (function bootstrapDesktopRenderer() {
   if (typeof document === 'undefined') return;
 
   const htmlEl = document.documentElement;
-  const themeBtns = Array.from(document.querySelectorAll('[data-theme-select]'));
+  const bridge = window.monblock;
   const navBtns = Array.from(document.querySelectorAll('[data-nav-target]'));
   const views = Array.from(document.querySelectorAll('[data-view]'));
   const dialog = document.getElementById('partnerAuthDialog');
-  const closeDialogBtn = document.getElementById('closePartnerDialogBtn');
-  const confirmDialogBtn = document.getElementById('confirmPartnerAuthBtn');
+  const feedback = document.getElementById('actionFeedback');
+  const status = document.getElementById('protectionStatus');
+  const partnerStatus = document.getElementById('partnerStatus');
+  const cooldownDisplay = document.getElementById('cooldownTimerDisplay');
+  const startCooldownBtn = document.getElementById('startCooldownBtn');
+  let cooldownStartedAtMs = null;
+  let currentRules = {
+    enabledCategories: ['adult'],
+    blockedDomains: [],
+    allowlistDomains: [],
+    keywords: [],
+  };
 
-  function switchView(targetView) {
-    htmlEl.setAttribute('data-ui-state', 'active');
+  const CATEGORIES_DATA = [
+    {
+      id: 'adult',
+      namePt: 'Conteúdo Adulto & Pornografia',
+      domains: ['pornhub.com', 'xvideos.com', 'xnxx.com', 'onlyfans.com', 'redtube.com'],
+      keywords: ['porn', 'xxx', 'nsfw', 'hentai'],
+    },
+    {
+      id: 'gambling',
+      namePt: 'Apostas & Cassinos (Bets)',
+      domains: ['bet365.com', 'blaze.com', 'stake.com', 'betano.com', 'sportingbet.com'],
+      keywords: ['cassino,online', 'roleta,aposta', 'slot,bonus'],
+    },
+    {
+      id: 'games',
+      namePt: 'Jogos Online',
+      domains: ['roblox.com', 'poki.com', 'twitch.tv'],
+      keywords: ['jogos,online,gratis'],
+    },
+    {
+      id: 'proxy',
+      namePt: 'Proxies, VPNs & Bypass',
+      domains: ['hidemyass.com', 'croxyproxy.com', 'kproxy.com'],
+      keywords: ['web,proxy,unblock'],
+    },
+    {
+      id: 'dating',
+      namePt: 'Sites de Relacionamento',
+      domains: ['tinder.com', 'badoo.com', 'bumble.com'],
+      keywords: ['encontros,casuais'],
+    },
+    {
+      id: 'social',
+      namePt: 'Redes Sociais',
+      domains: ['instagram.com', 'tiktok.com', 'x.com', 'facebook.com'],
+      keywords: [],
+    },
+    {
+      id: 'video',
+      namePt: 'Streaming & Vídeos',
+      domains: ['netflix.com', 'primevideo.com'],
+      keywords: [],
+    },
+    {
+      id: 'forums',
+      namePt: 'Fóruns & Comunidades Mistas',
+      domains: ['reddit.com', '4chan.org', '9gag.com'],
+      keywords: [],
+    },
+    {
+      id: 'shopping',
+      namePt: 'Compras por Impulso',
+      domains: ['shopee.com.br', 'aliexpress.com', 'shein.com'],
+      keywords: [],
+    },
+    {
+      id: 'news',
+      namePt: 'Notícias & Portais',
+      domains: ['tmz.com', 'buzzfeed.com'],
+      keywords: [],
+    },
+    {
+      id: 'search_unsafe',
+      namePt: 'Buscadores sem SafeSearch',
+      domains: ['yandex.com', 'duckduckgo.com'],
+      keywords: [],
+    },
+  ];
+
+  let pairingPollInterval = null;
+
+  function stopPairingPoll() {
+    if (pairingPollInterval) {
+      clearInterval(pairingPollInterval);
+      pairingPollInterval = null;
+    }
+  }
+
+  window.addEventListener('beforeunload', stopPairingPoll);
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function notify(message, isError = false) {
+    feedback.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" style="background:none; border:none; color:inherit; font-weight:700; cursor:pointer; padding:0 0.5rem; font-size:1rem;" aria-label="Fechar aviso">✕</button>`;
+    feedback.hidden = false;
+    feedback.dataset.kind = isError ? 'error' : 'success';
+    feedback.setAttribute('role', isError ? 'alert' : 'status');
+    feedback.querySelector('button')?.addEventListener('click', () => {
+      feedback.hidden = true;
+    });
+  }
+
+  function switchView(targetView, moveFocus = false) {
+    if (!views.some((view) => view.dataset.view === targetView)) return;
+    if (targetView !== 'onboarding') {
+      stopPairingPoll();
+    }
     for (const btn of navBtns) {
-      const isMatch = btn.getAttribute('data-nav-target') === targetView;
-      if (isMatch) {
-        btn.setAttribute('aria-current', 'page');
-        btn.classList.add('ccat-btn-primary');
-      } else {
-        btn.removeAttribute('aria-current');
-        btn.classList.remove('ccat-btn-primary');
+      const active = btn.dataset.navTarget === targetView;
+      btn.classList.toggle('ccat-btn-primary', active);
+      if (active) btn.setAttribute('aria-current', 'page');
+      else btn.removeAttribute('aria-current');
+    }
+    for (const view of views) view.hidden = view.dataset.view !== targetView;
+    if (moveFocus) views.find((view) => view.dataset.view === targetView)?.querySelector('h2')?.focus();
+  }
+
+  function renderCategories(enabledCategories) {
+    for (const card of document.querySelectorAll('[data-category-id]')) {
+      const catId = card.dataset.categoryId;
+      const enabled = enabledCategories.includes(catId);
+      card.dataset.locked = String(enabled);
+      const button = card.querySelector('[data-action]');
+      if (button) {
+        button.dataset.action = enabled ? 'request-partner-unlock' : 'enable-category';
+        button.classList.toggle('ccat-btn-primary', !enabled);
+        button.textContent = enabled ? 'Pedir ajuda para alterar' : 'Ativar bloqueio';
+      }
+      let badge = card.querySelector('[data-category-status]');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.dataset.categoryStatus = '';
+        badge.className = 'category-badge-status';
+        card.querySelector('.category-header, h3')?.appendChild(badge);
+      }
+      badge.textContent = enabled ? 'Ativa' : 'Não ativada';
+    }
+  }
+
+  function renderActiveRulesTable(filterQuery = '') {
+    const tbody = document.getElementById('activeRulesTableBody');
+    if (!tbody) return;
+
+    const query = filterQuery.trim().toLowerCase();
+    const rows = [];
+
+    // Adiciona regras das categorias ativas
+    for (const catId of currentRules.enabledCategories || []) {
+      const cat = CATEGORIES_DATA.find((c) => c.id === catId);
+      if (!cat) continue;
+      for (const d of cat.domains) {
+        if (!query || d.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
+          rows.push({
+            item: d,
+            type: 'Domínio',
+            origin: `Categoria: ${cat.namePt}`,
+            status: '🔒 Protegido',
+          });
+        }
+      }
+      for (const kw of cat.keywords) {
+        if (!query || kw.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
+          rows.push({
+            item: kw,
+            type: 'Palavra-chave',
+            origin: `Categoria: ${cat.namePt}`,
+            status: '🔒 Protegido',
+          });
+        }
       }
     }
-    for (const view of views) {
-      if (view.getAttribute('data-view') === targetView) {
-        view.removeAttribute('hidden');
-      } else {
-        view.setAttribute('hidden', 'true');
+
+    // Adiciona domínios customizados
+    for (const d of currentRules.blockedDomains || []) {
+      if (!query || d.toLowerCase().includes(query)) {
+        rows.push({
+          item: d,
+          type: 'Domínio',
+          origin: 'Adicionado Manualmente',
+          status: '🔒 Protegido',
+        });
       }
+    }
+
+    // Adiciona palavras customizadas
+    for (const kw of currentRules.keywords || []) {
+      if (!query || kw.toLowerCase().includes(query)) {
+        rows.push({
+          item: kw,
+          type: 'Palavra-chave',
+          origin: 'Adicionado Manualmente',
+          status: '🔒 Protegido',
+        });
+      }
+    }
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--ccat-text-muted); padding: 1.5rem;">Nenhuma regra corresponde ao filtro.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows
+      .slice(0, 100)
+      .map(
+        (r) => `
+        <tr>
+          <td><span class="category-tag-chip ${r.type === 'Domínio' ? 'category-tag-chip--domain' : 'category-tag-chip--keyword'}">${r.type === 'Domínio' ? '🌐' : '🔤'} ${escapeHtml(r.item)}</span></td>
+          <td>${escapeHtml(r.type)}</td>
+          <td>${escapeHtml(r.origin)}</td>
+          <td><span class="category-badge-status">${escapeHtml(r.status)}</span></td>
+        </tr>`
+      )
+      .join('');
+  }
+
+  function checkUrlBlockStatus(rawInput) {
+    const input = rawInput.trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/[\/:].*$/, '');
+    if (!input) return null;
+
+    // Checa categorias ativas
+    for (const catId of currentRules.enabledCategories || []) {
+      const cat = CATEGORIES_DATA.find((c) => c.id === catId);
+      if (!cat) continue;
+      for (const d of cat.domains) {
+        if (input === d || input.endsWith('.' + d)) {
+          return { blocked: true, reason: `Categoria: ${cat.namePt}`, item: d };
+        }
+      }
+      for (const kw of cat.keywords) {
+        const terms = kw.split(',').map((t) => t.trim());
+        if (terms.every((t) => input.includes(t))) {
+          return { blocked: true, reason: `Termo da Categoria ${cat.namePt}`, item: kw };
+        }
+      }
+    }
+
+    // Checa domínios customizados
+    for (const d of currentRules.blockedDomains || []) {
+      if (input === d.toLowerCase() || input.endsWith('.' + d.toLowerCase())) {
+        return { blocked: true, reason: 'Lista Customizada de Bloqueios', item: d };
+      }
+    }
+
+    // Checa palavras customizadas
+    for (const kw of currentRules.keywords || []) {
+      const terms = kw.toLowerCase().split(',').map((t) => t.trim());
+      if (terms.every((t) => input.includes(t))) {
+        return { blocked: true, reason: 'Palavra-chave Customizada', item: kw };
+      }
+    }
+
+    return { blocked: false };
+  }
+
+  function updateCooldown() {
+    if (cooldownStartedAtMs === null) {
+      cooldownDisplay.textContent = 'Não iniciada';
+      startCooldownBtn.disabled = false;
+      return;
+    }
+    const remaining = Math.max(0, 72 * 3600 * 1000 - Math.max(0, Date.now() - cooldownStartedAtMs));
+    const seconds = Math.ceil(remaining / 1000);
+    cooldownDisplay.textContent = [Math.floor(seconds / 3600), Math.floor((seconds % 3600) / 60), seconds % 60]
+      .map((value) => String(value).padStart(2, '0')).join(':');
+    startCooldownBtn.disabled = true;
+  }
+
+  async function loadState() {
+    try {
+      const result = await bridge.getState();
+      if (!result || result.status !== 200 || !result.state) throw new Error('O estado da proteção não pôde ser consultado.');
+      currentRules = result.state.rules || currentRules;
+      renderCategories(currentRules.enabledCategories || []);
+      renderActiveRulesTable();
+      cooldownStartedAtMs = result.state.cooldown?.startedAtMs ?? null;
+      updateCooldown();
+      status.textContent = result.state.tamperLockdown ? 'Estado carregado — modo de segurança' : 'Estado da proteção carregado';
+      status.dataset.status = result.state.tamperLockdown ? 'error' : 'loaded';
+      partnerStatus.textContent = result.state.paired ? 'Ajudante pareado' : 'Ajudante ainda não pareado';
+      htmlEl.dataset.uiState = 'active';
+      return true;
+    } catch (error) {
+      htmlEl.dataset.uiState = 'error';
+      status.textContent = 'Não foi possível conferir a proteção';
+      status.dataset.status = 'error';
+      document.getElementById('problemDetailsTitle').textContent = 'Estado indisponível';
+      document.getElementById('problemDetailsDetail').textContent = error.message || 'Abra novamente o aplicativo para tentar consultar o estado.';
+      return false;
     }
   }
 
-  // Inicializa exibindo a view ativa padrão (categories) e ocultando as outras 3
-  switchView('categories');
-
-  for (const btn of themeBtns) {
-    btn.addEventListener('click', () => {
-      const theme = btn.getAttribute('data-theme-select') || 'capycro-ivory';
-      htmlEl.setAttribute('data-theme', theme);
-      for (const b of themeBtns) {
-        b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+  async function execute(button, operation, successMessage) {
+    if (button) button.disabled = true;
+    try {
+      const response = await operation();
+      if (!response || response.status !== 200) {
+        notify(response?.detail || 'Não foi possível concluir a ação. Consulte o estado antes de tentar novamente.', true);
+        return false;
       }
+      notify(successMessage);
+      return true;
+    } catch (error) {
+      notify(error.message || 'Falha de comunicação. Consulte o estado antes de tentar novamente.', true);
+      return false;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  // Seletor de Tema
+  const themeSelect = document.getElementById('themeSelect');
+  if (themeSelect) {
+    themeSelect.addEventListener('change', () => {
+      htmlEl.dataset.theme = themeSelect.value;
+      for (const option of themeSelect.options) option.setAttribute('aria-pressed', String(option.selected));
     });
   }
 
-  for (const btn of navBtns) {
-    btn.addEventListener('click', () => {
-      const target = btn.getAttribute('data-nav-target') || 'categories';
-      switchView(target);
-    });
-  }
-
-  // Interação das 11 Categorias (Catraca Append-Only) usando [data-category-id]
-  document.querySelectorAll('[data-category-id]').forEach((card) => {
-    const actionBtn = card.querySelector('[data-action]');
-    if (!actionBtn) return;
-    actionBtn.addEventListener('click', async () => {
-      const action = actionBtn.getAttribute('data-action');
-      const catId = card.getAttribute('data-category-id');
-      if (action === 'request-partner-unlock') {
-        if (dialog && typeof dialog.showModal === 'function') {
-          dialog.showModal();
-        }
-        return;
-      }
-      if (action === 'enable-category' && catId) {
-        if (window.monblock && typeof window.monblock.enableCategory === 'function') {
-          await window.monblock.enableCategory(catId);
-        }
-        card.setAttribute('data-locked', 'true');
-        const badge = card.querySelector('.ccat-badge');
-        if (badge) {
-          badge.className = 'ccat-badge ccat-badge-locked';
-          badge.textContent = '🔒 Ativa e Trancada pelo Ajudante';
-        }
-        actionBtn.setAttribute('data-action', 'request-partner-unlock');
-        actionBtn.className = 'ccat-btn';
-        actionBtn.textContent = 'Solicitar Desbloqueio ao Ajudante';
-      }
-    });
+  // Navegação Principal da Sidebar
+  for (const btn of navBtns) btn.addEventListener('click', () => switchView(btn.dataset.navTarget, true));
+  document.getElementById('goToCategoriesBtn')?.addEventListener('click', () => switchView('categories', true));
+  document.getElementById('addFirstDomainBtn')?.addEventListener('click', () => {
+    switchView('rules', true);
+    document.getElementById('batchDomainsTextarea')?.focus();
   });
 
-  if (closeDialogBtn && dialog) {
-    closeDialogBtn.addEventListener('click', () => dialog.close());
-  }
-  if (confirmDialogBtn && dialog) {
-    confirmDialogBtn.addEventListener('click', () => dialog.close());
+  // Stepper Interativo de Onboarding (Passos 1 a 4)
+  function switchOnboardingStep(stepNumber) {
+    for (let i = 1; i <= 4; i++) {
+      const panel = document.getElementById(`onboardingStepPanel${i}`);
+      const tab = document.getElementById(`stepIndicator${i}`);
+      if (panel) panel.style.display = i === stepNumber ? 'block' : 'none';
+      if (tab) {
+        tab.classList.toggle('active', i === stepNumber);
+        tab.setAttribute('aria-selected', String(i === stepNumber));
+      }
+    }
   }
 
-  // Contador de Lote de Domínios (0 / 100)
+  for (let i = 1; i <= 4; i++) {
+    document.getElementById(`stepIndicator${i}`)?.addEventListener('click', () => switchOnboardingStep(i));
+  }
+  document.getElementById('nextToStep2Btn')?.addEventListener('click', () => switchOnboardingStep(2));
+  document.getElementById('backToStep1Btn')?.addEventListener('click', () => switchOnboardingStep(1));
+  document.getElementById('nextToStep3Btn')?.addEventListener('click', () => switchOnboardingStep(3));
+  document.getElementById('backToStep2Btn')?.addEventListener('click', () => switchOnboardingStep(2));
+  document.getElementById('nextToStep4Btn')?.addEventListener('click', () => switchOnboardingStep(4));
+  document.getElementById('backToStep3Btn')?.addEventListener('click', () => switchOnboardingStep(3));
+
+  // Modal de Pausa Consciente & Respiração 10s
+  let breathingInterval = null;
+  function startBreathingTimer() {
+    const timerEl = document.getElementById('dialogBreathingTimer');
+    if (!timerEl) return;
+    let count = 10;
+    timerEl.textContent = String(count);
+    clearInterval(breathingInterval);
+    breathingInterval = setInterval(() => {
+      count -= 1;
+      if (count <= 0) {
+        clearInterval(breathingInterval);
+        timerEl.textContent = '✓';
+      } else {
+        timerEl.textContent = String(count);
+      }
+    }, 1000);
+  }
+
+  document.getElementById('closePartnerDialogBtn')?.addEventListener('click', () => {
+    clearInterval(breathingInterval);
+    dialog?.close();
+  });
+  dialog?.addEventListener('close', () => {
+    clearInterval(breathingInterval);
+  });
+
+  // Categorias
+  for (const card of document.querySelectorAll('[data-category-id]')) {
+    const button = card.querySelector('[data-action]');
+    if (button) {
+      button.addEventListener('click', async () => {
+        if (button.dataset.action === 'request-partner-unlock') {
+          if (dialog && typeof dialog.showModal === 'function') {
+            startBreathingTimer();
+            dialog.showModal();
+          }
+          return;
+        }
+        if (await execute(button, () => bridge.enableCategory(card.dataset.categoryId), 'Categoria ativada.')) {
+          await loadState();
+        }
+      });
+    }
+  }
+
+  // Verificador Universal Raio-X
+  const urlCheckerInput = document.getElementById('urlCheckerInput');
+  const urlCheckerBtn = document.getElementById('urlCheckerBtn');
+  const urlCheckerResult = document.getElementById('urlCheckerResult');
+
+  function runUrlCheck() {
+    if (!urlCheckerInput || !urlCheckerResult) return;
+    const value = urlCheckerInput.value.trim();
+    if (!value) {
+      urlCheckerResult.style.display = 'none';
+      return;
+    }
+    const check = checkUrlBlockStatus(value);
+    urlCheckerResult.style.display = 'flex';
+    if (check && check.blocked) {
+      urlCheckerResult.dataset.status = 'blocked';
+      urlCheckerResult.textContent = `🚫 Bloqueado por: ${check.reason} (regra: ${check.item})`;
+    } else {
+      urlCheckerResult.dataset.status = 'allowed';
+      urlCheckerResult.textContent = '🟢 Acesso livre: este endereço não coincide com nenhuma categoria ou bloqueio ativo.';
+    }
+  }
+
+  urlCheckerBtn?.addEventListener('click', runUrlCheck);
+  urlCheckerInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runUrlCheck();
+  });
+
+  // Filtro na Tabela de Regras Ativas
+  const rulesTableSearchInput = document.getElementById('rulesTableSearchInput');
+  rulesTableSearchInput?.addEventListener('input', () => {
+    renderActiveRulesTable(rulesTableSearchInput.value);
+  });
+
+  // Pareamento no Onboarding via Telegram (Sem senha local)
+  const onboardingPairBtn = document.getElementById('onboardingPairBtn');
+  const onboardingPairingCard = document.getElementById('onboardingPairingCard');
+  const onboardingPairingWaitingCard = document.getElementById('onboardingPairingWaitingCard');
+  const cancelPairingBtn = document.getElementById('cancelPairingBtn');
+
+  cancelPairingBtn?.addEventListener('click', async () => {
+    stopPairingPoll();
+    if (bridge?.cancelPairing) await bridge.cancelPairing();
+    if (onboardingPairingWaitingCard) onboardingPairingWaitingCard.style.display = 'none';
+    if (onboardingPairingCard) onboardingPairingCard.style.display = 'grid';
+    if (onboardingPairBtn) onboardingPairBtn.disabled = false;
+    notify('Convite de pareamento cancelado.');
+  });
+
+  onboardingPairBtn?.addEventListener('click', async () => {
+    const partnerName = document.getElementById('onboardingPartnerNameInput')?.value.trim();
+    const telegramChatId = document.getElementById('onboardingTelegramChatIdInput')?.value.trim();
+
+    if (!partnerName || !telegramChatId) {
+      notify('Preencha o Nome do Ajudante e o Chat ID do Telegram.', true);
+      return;
+    }
+
+    if (onboardingPairBtn) onboardingPairBtn.disabled = true;
+
+    try {
+      const res = await bridge.initiatePairing({ partnerName, telegramChatId });
+      if (!res || res.status !== 200) {
+        notify(res?.detail || 'Não foi possível enviar o convite pelo Telegram.', true);
+        if (onboardingPairBtn) onboardingPairBtn.disabled = false;
+        return;
+      }
+
+      // Alterna para tela de espera do Ajudante
+      if (onboardingPairingCard) onboardingPairingCard.style.display = 'none';
+      if (onboardingPairingWaitingCard) onboardingPairingWaitingCard.style.display = 'grid';
+      notify(`Convite enviado ao Telegram de ${partnerName}! Aguardando definição da senha...`);
+
+      stopPairingPoll();
+      pairingPollInterval = setInterval(async () => {
+        try {
+          const statusRes = await bridge.checkPairingStatus();
+          if (statusRes?.status === 200 && statusRes.paired) {
+            stopPairingPoll();
+            const cb = document.getElementById('onboardingConfirmCodesCheckbox');
+            if (cb) cb.checked = true;
+            await loadState();
+            notify('Ajudante configurou a Senha Mestra no Telegram! Proteção ativa.');
+            switchOnboardingStep(4);
+          } else if (statusRes?.error) {
+            stopPairingPoll();
+            notify(statusRes.error, true);
+            if (onboardingPairingWaitingCard) onboardingPairingWaitingCard.style.display = 'none';
+            if (onboardingPairingCard) onboardingPairingCard.style.display = 'grid';
+            if (onboardingPairBtn) onboardingPairBtn.disabled = false;
+          }
+        } catch {
+          // Continua tentando
+        }
+      }, 2000);
+    } catch (err) {
+      notify(err?.message || 'Falha ao iniciar pareamento.', true);
+      if (onboardingPairBtn) onboardingPairBtn.disabled = false;
+    }
+  });
+
+  // Lote de Domínios
   const batchTextarea = document.getElementById('batchDomainsTextarea');
   const batchCounter = document.getElementById('batchCounter');
+  const parseBatch = () => batchTextarea.value.split(/[\r\n,\s]+/).map((entry) => entry.trim()).filter(Boolean);
+  batchTextarea?.addEventListener('input', () => {
+    if (batchCounter) batchCounter.textContent = `${parseBatch().length} / 100 domínios`;
+  });
   const submitBatchBtn = document.getElementById('submitBatchBtn');
-  if (batchTextarea && batchCounter) {
-    batchTextarea.addEventListener('input', () => {
-      const lines = batchTextarea.value
-        .split(/[\r\n,\s]+/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      batchCounter.textContent = `${lines.length} / 100 domínios`;
-    });
-  }
-  if (submitBatchBtn && batchTextarea) {
-    submitBatchBtn.addEventListener('click', async () => {
-      const domains = batchTextarea.value
-        .split(/[\r\n,\s]+/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      if (domains.length > 0 && domains.length <= 100 && window.monblock?.addBatchDomains) {
-        await window.monblock.addBatchDomains(domains);
-        batchTextarea.value = '';
-        if (batchCounter) batchCounter.textContent = '0 / 100 domínios';
-      }
-    });
-  }
+  submitBatchBtn?.addEventListener('click', async () => {
+    const domains = parseBatch();
+    if (!domains.length || domains.length > 100) {
+      notify('Informe entre 1 e 100 sites para bloquear.', true);
+      return;
+    }
+    if (await execute(submitBatchBtn, () => bridge.addBatchDomains(domains), 'Sites adicionados à proteção.')) {
+      batchTextarea.value = '';
+      if (batchCounter) batchCounter.textContent = '0 / 100 domínios';
+      await loadState();
+    }
+  });
 
-  // Adição de Palavra-Chave
+  // Palavra-chave
   const keywordInput = document.getElementById('keywordInput');
   const submitKeywordBtn = document.getElementById('submitKeywordBtn');
-  if (submitKeywordBtn && keywordInput) {
-    submitKeywordBtn.addEventListener('click', async () => {
-      const kw = keywordInput.value.trim();
-      if (kw && window.monblock?.addKeywords) {
-        await window.monblock.addKeywords([kw]);
-        keywordInput.value = '';
-      }
-    });
-  }
+  submitKeywordBtn?.addEventListener('click', async () => {
+    const keyword = keywordInput.value.trim();
+    if (!keyword) {
+      notify('Escreva uma palavra ou combinação para bloquear.', true);
+      return;
+    }
+    if (await execute(submitKeywordBtn, () => bridge.addKeywords([keyword]), 'Palavra adicionada à proteção.')) {
+      keywordInput.value = '';
+      await loadState();
+    }
+  });
 
-  // Cooldown de 72h e Navegação vinda da Tray macOS
-  const startCooldownBtn = document.getElementById('startCooldownBtn');
-  const cooldownDisplay = document.getElementById('cooldownTimerDisplay');
-  if (startCooldownBtn && cooldownDisplay) {
-    startCooldownBtn.addEventListener('click', async () => {
-      if (window.monblock?.triggerEmergencyCooldown) {
-        await window.monblock.triggerEmergencyCooldown();
-      }
-      startCooldownBtn.textContent = 'Cooldown de 72h em Andamento (Ajudante Notificado)';
-    });
-  }
+  // Código de Recuperação
+  const recoveryInput = document.getElementById('recoveryCodeInput');
+  const recoveryTarget = document.getElementById('recoveryTargetInput');
+  const recoveryBtn = document.getElementById('useRecoveryCodeBtn');
+  recoveryBtn?.addEventListener('click', async () => {
+    const recoveryCode = recoveryInput.value.trim();
+    const target = recoveryTarget.value.trim();
+    if (!recoveryCode || !/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(target)) {
+      notify('Informe um código de recuperação e um domínio válido (ex.: exemplo.com).', true);
+      return;
+    }
+    if (await execute(recoveryBtn, () => bridge.verifyRecoveryCode({ recoveryCode, target }), 'Código validado. O site informado foi liberado por uma hora.')) {
+      recoveryInput.value = '';
+      await loadState();
+    }
+  });
 
-  if (window.monblock && typeof window.monblock.onTrayNavigate === 'function') {
-    window.monblock.onTrayNavigate((viewId) => {
-      if (viewId) switchView(viewId);
-    });
-  }
+  // Cooldown de 72h
+  startCooldownBtn?.addEventListener('click', async () => {
+    if (await execute(startCooldownBtn, () => bridge.triggerEmergencyCooldown(), 'Espera de 72 horas iniciada. A proteção permanece ativa.')) {
+      await loadState();
+    }
+  });
+
+  if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => switchView(viewId, true));
+  switchView('categories');
+  void loadState();
+  setInterval(updateCooldown, 1000);
 })();

@@ -13,6 +13,7 @@ import {
   CRITICAL_INFRA_ALLOWLIST,
   MAX_BATCH_DOMAINS,
   PREDEFINED_CATEGORIES,
+  evaluateUrlAndTitle,
   sanitizeAndNormalizeUrl,
   validateBatchDomains,
   type RuleEngineState,
@@ -132,6 +133,116 @@ export function parseAndValidateBatchInput(rawText: string): {
     domains: validation.domains,
     ignoredInfraCount,
   };
+}
+
+// MARK: - Inspeção de Regras e Verificador Universal Raio-X
+
+export interface RuleTableItem {
+  id: string;
+  item: string;
+  type: 'Domínio' | 'Palavra-chave';
+  origin: string;
+  locked: boolean;
+}
+
+/**
+ * Avalia o status de bloqueio de uma URL ou termo para o "Raio-X de Bloqueio" do Renderer.
+ */
+export function evaluateUrlBlockStatus(
+  rawUrl: string,
+  state: RuleEngineState
+): {
+  blocked: boolean;
+  reason?: 'CATEGORY' | 'CUSTOM_DOMAIN' | 'KEYWORD';
+  ruleLabel?: string;
+  categoryNamePt?: string;
+} {
+  const decision = evaluateUrlAndTitle({
+    url: rawUrl,
+    title: rawUrl,
+    state,
+  });
+
+  if (!decision.blocked) {
+    return { blocked: false };
+  }
+
+  let categoryNamePt: string | undefined;
+  if (decision.reason === 'CATEGORY' && decision.ruleLabel) {
+    const found = PREDEFINED_CATEGORIES.find(
+      (c) => c.namePt === decision.ruleLabel || c.id === decision.ruleLabel
+    );
+    if (found) categoryNamePt = found.namePt;
+  }
+
+  return {
+    blocked: true,
+    reason: decision.reason,
+    ruleLabel: decision.ruleLabel,
+    categoryNamePt,
+  };
+}
+
+/**
+ * Constrói a lista consolidada de itens bloqueados ativos (categorias + domínios customizados + palavras)
+ * para exibição transparente e filtragem reativa na interface.
+ */
+export function getActiveRulesList(state: RuleEngineState, filterQuery = ''): RuleTableItem[] {
+  const items: RuleTableItem[] = [];
+  const query = filterQuery.trim().toLowerCase();
+
+  for (const catId of state.enabledCategories) {
+    const cat = PREDEFINED_CATEGORIES.find((c) => c.id === catId);
+    if (!cat) continue;
+    for (const d of cat.domains) {
+      if (!query || d.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
+        items.push({
+          id: `cat-${cat.id}-${d}`,
+          item: d,
+          type: 'Domínio',
+          origin: `Categoria: ${cat.namePt}`,
+          locked: true,
+        });
+      }
+    }
+    for (const kw of cat.keywords) {
+      if (!query || kw.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
+        items.push({
+          id: `cat-kw-${cat.id}-${kw}`,
+          item: kw,
+          type: 'Palavra-chave',
+          origin: `Categoria: ${cat.namePt}`,
+          locked: true,
+        });
+      }
+    }
+  }
+
+  for (const d of state.blockedDomains) {
+    if (!query || d.toLowerCase().includes(query)) {
+      items.push({
+        id: `custom-dom-${d}`,
+        item: d,
+        type: 'Domínio',
+        origin: 'Adicionado Manualmente',
+        locked: true,
+      });
+    }
+  }
+
+  for (const kw of state.keywords) {
+    if (!query || kw.toLowerCase().includes(query)) {
+      items.push({
+        id: `custom-kw-${kw}`,
+        item: kw,
+        type: 'Palavra-chave',
+        origin: 'Adicionado Manualmente',
+        locked: true,
+      });
+    }
+  }
+
+  return items;
 }
 
 // MARK: - Cronômetro Regressivo via DeltaTime Real (72h Cooldown)

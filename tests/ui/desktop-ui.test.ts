@@ -23,7 +23,9 @@ import { createMonBlockPreloadApi, exposeMonBlockPreload } from '../../src/prelo
 import {
   attemptCategoryToggle,
   createInitialUiControllerState,
+  evaluateUrlBlockStatus,
   formatRemainingCooldown,
+  getActiveRulesList,
   initRendererDom,
   parseAndValidateBatchInput,
   transitionUiState,
@@ -91,23 +93,23 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     expect(ids).toContain('open-dashboard');
 
     const header = menu.find((i) => i.id === 'status-header');
-    expect(header?.label).toContain('monBlock Ativo — Proteção 3 Camadas');
+    expect(header?.label).toContain('Estado carregado');
     expect(header?.enabled).toBe(false);
 
     expect(menu.find((i) => i.id === 'quick-add')?.label).toBe(
-      '➕ Bloquear Site ou Palavra-Chave Rápida...'
+      'Bloquear site ou palavra-chave...'
     );
     expect(menu.find((i) => i.id === 'block-active-tab')?.label).toBe(
-      '🌐 Bloquear Site da Aba Atual do Navegador'
+      'Adicionar site manualmente...'
     );
     expect(menu.find((i) => i.id === 'request-unblock')?.label).toBe(
-      '🤝 Solicitar Desbloqueio Temporário ao Ajudante...'
+      'Solicitar desbloqueio ao Ajudante...'
     );
     expect(menu.find((i) => i.id === 'enter-token')?.label).toBe(
-      '🔑 Inserir Código de Liberação (UNLOCK-*)...'
+      'Inserir código de liberação...'
     );
     expect(menu.find((i) => i.id === 'open-dashboard')?.label).toBe(
-      '🛡️ Abrir Painel Principal do monBlock'
+      'Abrir painel principal'
     );
 
     // INV-UI-TRAY-03: Proibição absoluta de quit/exit/sair/desativar
@@ -182,8 +184,11 @@ describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
       [
         'addBatchDomains',
         'addKeywords',
+        'cancelPairing',
+        'checkPairingStatus',
         'enableCategory',
         'getState',
+        'initiatePairing',
         'pairPartner',
         'requestAuthorizedUninstall',
         'requestUnblock',
@@ -240,6 +245,18 @@ describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
       credential: 'UNLOCK-PERMANENT-123456',
       challengeCode: 'MB-8492-X7',
     });
+
+    await api.initiatePairing({ partnerName: 'Ana', telegramChatId: '12345' });
+    expect(invokeMock).toHaveBeenCalledWith('monblock:initiate-pairing', {
+      partnerName: 'Ana',
+      telegramChatId: '12345',
+    });
+
+    await api.checkPairingStatus();
+    expect(invokeMock).toHaveBeenCalledWith('monblock:check-pairing-status');
+
+    await api.cancelPairing();
+    expect(invokeMock).toHaveBeenCalledWith('monblock:cancel-pairing');
 
     await api.requestAuthorizedUninstall({
       authMethod: 'COOLDOWN_72H',
@@ -321,13 +338,15 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     expect(html).toContain('instituição');
     expect(html).toContain('sexta-feira');
 
-    // Assert — Central do Ajudante: Challenge Code MB-*, UNLOCK-*, REC-*, Cooldown 72h e Desinstalação Autorizada
-    expect(html).toContain('MB-');
+    // Assert — A interface não exibe código de desafio fictício como autorização real.
+    expect(html).not.toContain('MB-8492-X7');
+    expect(html).toContain('Desafio indisponível nesta versão');
+    expect(html).toContain('id="recoveryTargetInput"');
     expect(html).toContain('UNLOCK-15M-');
     expect(html).toContain('UNLOCK-60M-');
     expect(html).toContain('UNLOCK-PERMANENT-');
     expect(html).toContain('REC-');
-    expect(html).toContain('72:00:00');
+    expect(html).toContain('Não iniciada');
     expect(html).toContain('Desinstalação Autorizada pelo Ajudante');
 
     // Assert — WCAG 2.2 AAA, tabular-nums, prefers-reduced-motion e Zero Roxo
@@ -340,11 +359,19 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     expect(html).toContain('<a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>');
     expect(html).toContain('html[data-ui-state="active"] [data-state-panel]:not([data-state-panel="active"])');
     expect(html).toContain('[data-view][hidden]');
-    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('id="themeSelect"');
     expect(html).toContain('aria-current="page"');
     expect(html).toContain('id="useRecoveryCodeBtn"');
-    expect(html).toContain('id="dialogPartnerSecretInput"');
-    expect(html).toContain('id="confirmPartnerAuthBtn"');
+    expect(html).toContain('id="partnerAuthDialog"');
+    expect(html).not.toContain('id="confirmPartnerAuthBtn"');
+
+    // Invariante de Segurança Comportamental CCAT: Proibição de Senha e Download Local no Onboarding
+    expect(html).not.toContain('id="onboardingPasswordInput"');
+    expect(html).not.toContain('id="copyRecoveryCodesBtn"');
+    expect(html).not.toContain('id="downloadRecoveryCodesBtn"');
+    expect(html).toContain('id="onboardingPairBtn"');
+    expect(html).toContain('id="cancelPairingBtn"');
+    expect(html).toContain('Custódia Exclusiva dos 5 Códigos de Emergência');
   });
 
   it('docs/design/tokens.css, blocked-page.html e tokens-showcase.html devem ter seletores unificados, contraste WCAG AA/AAA e acessibilidade completa', () => {
@@ -501,5 +528,37 @@ describe('MOD-04: Controlador do Renderer (src/renderer/app.ts)', () => {
     listeners.navClick?.();
     expect(controller.getState().currentView).toBe('partner');
     expect(viewEl.removeAttribute).toHaveBeenCalledWith('hidden');
+  });
+
+  it('evaluateUrlBlockStatus e getActiveRulesList devem suportar o Verificador Raio-X e a tabela de regras', () => {
+    // Arrange
+    const state = createInitialUiControllerState().ruleState;
+    state.blockedDomains = ['custom-distraction.com'];
+    state.keywords = ['apostas,online'];
+
+    // Act 1 — Verificar URL de categoria ativa (adult)
+    const adultCheck = evaluateUrlBlockStatus('https://pornhub.com/video', state);
+    expect(adultCheck.blocked).toBe(true);
+    expect(adultCheck.reason).toBe('CATEGORY');
+
+    // Act 2 — Verificar URL de domínio customizado
+    const customCheck = evaluateUrlBlockStatus('custom-distraction.com', state);
+    expect(customCheck.blocked).toBe(true);
+    expect(customCheck.reason).toBe('CUSTOM_DOMAIN');
+
+    // Act 3 — Verificar site livre
+    const safeCheck = evaluateUrlBlockStatus('https://developer.mozilla.org', state);
+    expect(safeCheck.blocked).toBe(false);
+
+    // Act 4 — Listar todas as regras ativas consolidadas
+    const rules = getActiveRulesList(state);
+    expect(rules.length).toBeGreaterThan(5);
+    const hasCustom = rules.some((r) => r.item === 'custom-distraction.com');
+    expect(hasCustom).toBe(true);
+
+    // Act 5 — Filtrar regras por busca textual
+    const filtered = getActiveRulesList(state, 'custom');
+    expect(filtered.length).toBe(1);
+    expect(filtered[0]?.item).toBe('custom-distraction.com');
   });
 });
