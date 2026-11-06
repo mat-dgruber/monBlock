@@ -55,6 +55,16 @@ export interface MonBlockPersistentState {
   tamperLockdown?: boolean;
   /** Snapshot do `TrustedClock` (RN-DAEMON-08); ausente em cofres antigos. */
   clock?: { expiryMs: number; trustedMs: number };
+  /** Falhas consecutivas de autenticação do Ajudante (RN-DAEMON-09). */
+  authFailures?: number;
+  /** Até quando (tempo confiável) novas tentativas recebem 429. */
+  authLockedUntilMs?: number;
+}
+
+/** Marcador de "já houve Ajudante" que sobrevive à perda dos 3 cofres (RN-DAEMON-07). */
+export interface PairingTombstone {
+  pairedAtMs: number;
+  telegramChatId?: string;
 }
 
 /** Identificadores canônicos dos 3 cofres de persistência. */
@@ -65,6 +75,8 @@ export interface TripleStateStoreOptions {
   primaryPath: string;
   keychainPath: string;
   sealPath: string;
+  /** Padrão: `tombstone` ao lado do `sealPath`. */
+  tombstonePath?: string;
   integrityKey?: string;
 }
 
@@ -150,8 +162,10 @@ export class TripleStateStore {
   private readonly vaults: ReadonlyArray<{ id: VaultId; filePath: string }>;
   private readonly integrityKey: string;
   private readonly encryptionKey: Buffer;
+  private readonly tombstonePath: string;
 
   constructor(options: TripleStateStoreOptions) {
+    this.tombstonePath = options.tombstonePath ?? path.join(path.dirname(options.sealPath), 'tombstone');
     this.vaults = [
       { id: 'primary', filePath: options.primaryPath },
       { id: 'keychain', filePath: options.keychainPath },
@@ -194,10 +208,14 @@ export class TripleStateStore {
    * Escreve atomicamente um envelope assinado em um único cofre via `.tmp` único + `renameSync`.
    */
   private writeVaultAtomically(filePath: string, envelope: SignedVaultEnvelope): void {
+    this.writeSealedAtomically(filePath, JSON.stringify(envelope));
+  }
+
+  private writeSealedAtomically(filePath: string, plaintext: string): void {
     const dir = path.dirname(filePath);
     fs.mkdirSync(dir, { recursive: true });
     const tmpPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-    const serialized = sealVaultPayload(this.encryptionKey, JSON.stringify(envelope));
+    const serialized = sealVaultPayload(this.encryptionKey, plaintext);
     try {
       fs.writeFileSync(tmpPath, serialized, { encoding: 'utf8', mode: 0o600 });
       fs.renameSync(tmpPath, filePath);
@@ -230,6 +248,39 @@ export class TripleStateStore {
     if (successCount < 2) {
       throw errors[0] ?? new Error('Falha ao persistir quórum mínimo nos cofres.');
     }
+  }
+
+  /** Grava o tombstone cifrado (o chatId do Ajudante anterior não fica legível). */
+  public writeTombstone(tombstone: PairingTombstone): void {
+    this.writeSealedAtomically(this.tombstonePath, JSON.stringify(tombstone));
+  }
+
+  /**
+   * `null` só quando o arquivo não existe. Ilegível/adulterado conta como pareamento
+   * prévio sem chatId (Fail-Closed: só o cooldown de 72h libera novo pareamento).
+   */
+  public readTombstone(): PairingTombstone | null {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(this.tombstonePath, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      return { pairedAtMs: 0 };
+    }
+    try {
+      const parsed = JSON.parse(openVaultPayload(this.encryptionKey, raw)) as PairingTombstone;
+      if (typeof parsed?.pairedAtMs !== 'number') return { pairedAtMs: 0 };
+      return typeof parsed.telegramChatId === 'string'
+        ? { pairedAtMs: parsed.pairedAtMs, telegramChatId: parsed.telegramChatId }
+        : { pairedAtMs: parsed.pairedAtMs };
+    } catch {
+      return { pairedAtMs: 0 };
+    }
+  }
+
+  /** Só na desinstalação autorizada. */
+  public clearTombstone(): void {
+    fs.rmSync(this.tombstonePath, { force: true });
   }
 
   /**
@@ -275,6 +326,7 @@ export class TripleStateStore {
    * Self-Healing (Quórum 2 de 3 / maior `updatedAtMs` íntegro).
    */
   public loadAndReconcile(options?: { expectPaired?: boolean }): ReconcileResult {
+    const expectPaired = options?.expectPaired ?? this.readTombstone() !== null;
     const readings = this.vaults.map((v) => ({
       ...v,
       ...this.readVault(v.filePath),
@@ -287,7 +339,7 @@ export class TripleStateStore {
     );
 
     // Inicialização limpa (nenhum cofre existe ainda e não era esperado pareamento prévio)
-    if (!anyExists && !options?.expectPaired) {
+    if (!anyExists && !expectPaired) {
       const initial = createDefaultPersistentState();
       this.save(initial);
       return {
@@ -302,7 +354,7 @@ export class TripleStateStore {
       const hasIoError = readings.some((r) => r.ioError);
       const failClosedState: MonBlockPersistentState = {
         ...createDefaultPersistentState(),
-        paired: Boolean(options?.expectPaired),
+        paired: expectPaired,
         tamperLockdown: true,
         rules: {
           enabledCategories: ['adult'],

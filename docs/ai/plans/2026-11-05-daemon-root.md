@@ -72,6 +72,8 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 **Pronto:** commit `fix(daemon): persistir pareamento em tombstone e limitar tentativas`.
 
+> **Execução (2026-11-05):** a "aprovação do Ajudante anterior" é o próprio `INITIATE_PAIRING` com o mesmo `chatId` do tombstone: só ele responde `/senha` daquele chat. `PAIR_PARTNER` (sem Telegram) e troca de Ajudante exigem as 72h. Um novo pareamento zera o cooldown, para que um cooldown antigo não autorize desinstalação depois. Tombstone ilegível conta como pareamento prévio sem chatId. Ficaram para a Fase 6, onde serão usados: `lastHeartbeatMs`, `schemaVersion` e o aviso ao Ajudante anterior a cada 6h (precisa do timer do daemon).
+
 ## Fase 4 — Imposição em caminhos reais (P3)
 
 - **Alterar:** `hosts-enforcer.ts` — bloco gerenciado `# BEGIN/END monBlock`, merge que preserva linhas do usuário; `nouchg` → escrita atômica → `uchg`; flush de DNS.
