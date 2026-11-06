@@ -3,7 +3,7 @@
  *
  * Valida:
  * - Isolamento Zero-Trust da BrowserWindow e bloqueio de navegação externa (`src/main/main.ts`)
- * - Menu da Tray macOS sem opção de sair/desativar (`INV-UI-TRAY-03`) e ocultação de janela no close (`RN-LIFE-01`)
+ * - Menu da Tray macOS com "Sair" e sem opção de desativar o bloqueio (`INV-UI-TRAY-03`) e ocultação de janela no close (`RN-LIFE-01`)
  * - Ponte segura Preload (`src/preload/preload.ts`) sem vazamento de `ipcRenderer` bruto
  * - Estrutura semântica, 4 temas CCAT, 5 estados de UI, 4 views da jornada, 11 categorias e Zero-Roxo (`src/renderer/index.html`)
  * - Lógica controladora do Renderer (`src/renderer/app.ts`): lote <= 100 domínios, cronômetro deltaTime 72h e Catraca Append-Only
@@ -64,7 +64,7 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     expect(validateNavigationUrl('not-a-valid-url')).toBe(false);
   });
 
-  it('buildTrayMenuTemplate deve incluir todos os 6 itens obrigatórios e JAMAIS conter opção de sair/desativar (INV-UI-TRAY-03)', () => {
+  it('buildTrayMenuTemplate deve incluir os itens obrigatórios, Sair, e JAMAIS opção de desativar o bloqueio (INV-UI-TRAY-03)', () => {
     // Arrange
     const handlers = {
       onQuickAdd: vi.fn(),
@@ -72,6 +72,7 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
       onRequestUnblock: vi.fn(),
       onEnterToken: vi.fn(),
       onOpenDashboard: vi.fn(),
+      onQuit: vi.fn(),
     };
 
     // Act
@@ -112,9 +113,10 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
       'Abrir painel principal'
     );
 
-    // INV-UI-TRAY-03: Proibição absoluta de quit/exit/sair/desativar
+    // INV-UI-TRAY-03: sair fecha só a UI (o daemon root segue impondo); desativar nunca
+    expect(menu.find((i) => i.id === 'quit')?.label).toBe('Sair do monBlock (a proteção continua ativa)');
     const serialized = JSON.stringify(menu).toLowerCase();
-    expect(serialized).not.toMatch(/\b(quit|exit|sair|desativar|encerrar)\b/);
+    expect(serialized).not.toMatch(/\b(desativar|pausar)\b/);
 
     // Acionamento dos handlers
     menu.find((i) => i.id === 'quick-add')?.click?.();
@@ -122,12 +124,14 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     menu.find((i) => i.id === 'request-unblock')?.click?.();
     menu.find((i) => i.id === 'enter-token')?.click?.();
     menu.find((i) => i.id === 'open-dashboard')?.click?.();
+    menu.find((i) => i.id === 'quit')?.click?.();
 
     expect(handlers.onQuickAdd).toHaveBeenCalledTimes(1);
     expect(handlers.onBlockActiveTab).toHaveBeenCalledTimes(1);
     expect(handlers.onRequestUnblock).toHaveBeenCalledTimes(1);
     expect(handlers.onEnterToken).toHaveBeenCalledTimes(1);
     expect(handlers.onOpenDashboard).toHaveBeenCalledTimes(1);
+    expect(handlers.onQuit).toHaveBeenCalledTimes(1);
   });
 
   it('handleWindowCloseEvent deve ocultar a janela ao fechar sem encerrar a proteção (RN-LIFE-01)', () => {
@@ -142,7 +146,7 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(hide).toHaveBeenCalledTimes(1);
 
-    // Act — Fechamento durante desinstalação autorizada pelo Ajudante
+    // Act — Fechamento durante o quit do app (Sair, Cmd+Q, desinstalação autorizada)
     handleWindowCloseEvent({ preventDefault }, { hide }, true);
     expect(preventDefault).toHaveBeenCalledTimes(1);
   });
@@ -155,6 +159,7 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
       onRequestUnblock: noop,
       onEnterToken: noop,
       onOpenDashboard: noop,
+      onQuit: noop,
     };
 
     const pauseMenu = buildTrayMenuTemplate(
