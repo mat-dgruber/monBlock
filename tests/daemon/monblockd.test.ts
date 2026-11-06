@@ -958,6 +958,26 @@ describe('MonBlockDaemon — watchdog (tick) e detecção de inatividade (spec �
     return d;
   }
 
+  it('expõe browserProfileInstalled: null antes do watchdog e o valor checado depois', async () => {
+    // Arrange
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath,
+      firefoxPlistPath: path.join(tmpDir, 'ff.plist'),
+      commandExecutor: async () => undefined,
+    });
+    const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
+    const d = new MonBlockDaemon({ store, enforcer, clock, checkBrowserProfile: async () => false });
+    const before = await d.handleCommand({ type: 'GET_STATE' });
+
+    // Act
+    await d.tick();
+    const after = await d.handleCommand({ type: 'GET_STATE' });
+
+    // Assert
+    expect('state' in before && before.state.browserProfileInstalled).toBeNull();
+    expect('state' in after && after.state.browserProfileInstalled).toBe(false);
+  });
+
   it('aplica as regras no boot, sem precisar de comando', async () => {
     const d = await paired();
     fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');

@@ -54,6 +54,8 @@ export interface PublicSanitizedState {
   temporaryGrants: TemporaryGrant[];
   updatedAtMs: number;
   tamperLockdown: boolean;
+  /** Perfil dos navegadores aprovado? `null` = ainda não verificado ou falha na verificação. */
+  browserProfileInstalled: boolean | null;
   partner: {
     paired: boolean;
     telegramChatId?: string;
@@ -303,6 +305,8 @@ export interface MonBlockDaemonOptions {
   telegramClient?: TelegramPartnerClient;
   /** Chamado depois da limpeza autorizada: o entry root dispara o `uninstall.sh` desacoplado. */
   onUninstalled?: () => void;
+  /** Checagem do perfil dos navegadores no watchdog (`checkBrowserProfileInstalled` no entry root). */
+  checkBrowserProfile?: () => Promise<boolean | null>;
 }
 
 export class MonBlockDaemon {
@@ -312,6 +316,8 @@ export class MonBlockDaemon {
   private clockRestored = false;
   private readonly telegramClient?: TelegramPartnerClient;
   private readonly onUninstalled?: () => void;
+  private readonly checkBrowserProfile?: () => Promise<boolean | null>;
+  private browserProfileInstalled: boolean | null = null;
   private pendingPairing: PendingPairingState | null = null;
   private isCheckingPairing = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
@@ -324,6 +330,7 @@ export class MonBlockDaemon {
       new TrustedClock(options.nowFn ? { wallNow: options.nowFn, monoNowMs: options.nowFn } : {});
     this.telegramClient = options.telegramClient;
     this.onUninstalled = options.onUninstalled;
+    this.checkBrowserProfile = options.checkBrowserProfile;
   }
 
   /**
@@ -339,6 +346,7 @@ export class MonBlockDaemon {
       temporaryGrants: state.temporaryGrants.map((g) => ({ ...g })),
       updatedAtMs: state.updatedAtMs,
       tamperLockdown: Boolean(state.tamperLockdown),
+      browserProfileInstalled: this.browserProfileInstalled,
       partner: {
         paired: state.paired,
         telegramChatId: maskTelegramChatId(state.partnerCredentials?.telegramChatId),
@@ -394,13 +402,19 @@ export class MonBlockDaemon {
    * Watchdog (a cada 60 s no daemon root): ancora o relógio, reaplica as regras, detecta
    * adulteração e inatividade, grava heartbeat e o snapshot do relógio. Serializado com os comandos.
    */
-  public tick(): Promise<{ drift: string[] }> {
+  public async tick(): Promise<{ drift: string[] }> {
     const next = this.commandQueue.then(
       () => this.runTick(),
       () => this.runTick()
     );
     this.commandQueue = next.catch(() => undefined);
-    return next;
+    // Fora da fila: o `profiles` pode levar até 5 s e não deve segurar os comandos da UI.
+    const [result] = await Promise.all([next, this.refreshBrowserProfile()]);
+    return result;
+  }
+
+  private async refreshBrowserProfile(): Promise<void> {
+    if (this.checkBrowserProfile) this.browserProfileInstalled = await this.checkBrowserProfile();
   }
 
   /** Marca desligamento limpo (`SIGTERM`), para não acusar inatividade no próximo boot. */

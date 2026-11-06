@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { createIpcServer, type IpcServer } from './ipc-server.js';
 import { MonBlockDaemon } from './monblockd.js';
 import { TrustedClock } from './trusted-clock.js';
-import { CHROMIUM_BUNDLE_IDS, MacOSPlatformEnforcer } from '../enforcers/platform-enforcer.js';
+import { CHROMIUM_BUNDLE_IDS, MacOSPlatformEnforcer, checkBrowserProfileInstalled } from '../enforcers/platform-enforcer.js';
 import { createMonBlockHttpServer } from '../server/block-server.js';
 import { TripleStateStore } from '../storage/state-store.js';
 
@@ -139,6 +139,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
     enforcer,
     clock: new TrustedClock(),
     onUninstalled: options.onUninstalled,
+    checkBrowserProfile: () => checkBrowserProfileInstalled(),
   });
 
   const tick = async (): Promise<void> => {
