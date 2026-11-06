@@ -52,6 +52,9 @@ const api = Object.freeze({
   reinstallService() {
     return ipcRenderer.invoke('monblock:reinstall-service');
   },
+  openProfileSettings() {
+    return ipcRenderer.invoke('monblock:open-profile-settings');
+  },
   onDaemonStatus(callback) {
     if (typeof callback !== 'function') return;
     ipcRenderer.on('monblock:daemon-status', (_event, status) => callback(status));

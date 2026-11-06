@@ -692,6 +692,13 @@
       border-radius: 0.75rem;
     }
 
+    .profile-banner-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
         animation-duration: 0.01ms !important;
@@ -787,6 +794,16 @@
 
     <main class="app-main" id="main-content">
       <div id="actionFeedback" class="action-feedback" role="status" aria-live="polite" hidden></div>
+
+      <!-- Perfil dos navegadores ainda não aprovado (fora dos 5 estados: aparece junto de qualquer um) -->
+      <section id="profileBanner" class="ccat-alert-partial" role="status" aria-live="polite" hidden>
+        <h2>Falta 1 passo para proteger os navegadores</h2>
+        <p>Aprove o perfil do monBlock em Ajustes do Sistema &gt; Geral &gt; Gerenciamento de Dispositivos. Sem ele, Chrome, Brave e Edge podem ignorar o bloqueio.</p>
+        <div class="profile-banner-actions">
+          <button type="button" id="openProfileSettingsBtn" class="ccat-btn ccat-btn-primary">Abrir Ajustes</button>
+          <button type="button" id="showProfileStepsBtn" class="ccat-btn">Ver passos</button>
+        </div>
+      </section>
 
       <!-- ==================================================================
            5 ESTADOS VISUAIS OBRIGATÓRIOS (loading, empty, error, partial, active)
@@ -1449,6 +1466,21 @@
 
       <div style="display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap;">
         <button type="button" class="ccat-btn" id="closePartnerDialogBtn">Voltar às categorias</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="profileStepsDialog" aria-labelledby="profile-steps-title">
+    <div class="dialog-content">
+      <h2 id="profile-steps-title">Como aprovar o perfil dos navegadores</h2>
+      <ol>
+        <li>Clique em <strong>Abrir Ajustes</strong>. O monBlock abre Ajustes do Sistema &gt; Geral &gt; Gerenciamento de Dispositivos.</li>
+        <li>Dê dois cliques em <strong>monBlock — Proteção dos navegadores</strong>.</li>
+        <li>Clique em <strong>Instalar…</strong> e confirme com a senha de administrador.</li>
+      </ol>
+      <p class="ccat-field-hint">Este aviso some sozinho em até um minuto depois da aprovação.</p>
+      <div class="profile-banner-actions">
+        <button type="button" class="ccat-btn" id="closeProfileStepsBtn">Fechar</button>
       </div>
     </div>
   </dialog>

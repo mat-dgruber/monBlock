@@ -286,6 +286,13 @@
   }
 
   const reinstallServiceBtn = document.getElementById('reinstallServiceBtn');
+  const profileBanner = document.getElementById('profileBanner');
+  const profileStepsDialog = document.getElementById('profileStepsDialog');
+
+  // Só `false` mostra o aviso: `null` (não verificado/falha) não incomoda o usuário.
+  function renderProfileBanner(state) {
+    if (profileBanner) profileBanner.hidden = state?.browserProfileInstalled !== false;
+  }
 
   async function loadState() {
     let result;
@@ -293,6 +300,7 @@
       result = await bridge.getState();
       if (!result || result.status !== 200 || !result.state) throw new Error(result?.detail || 'O estado da proteção não pôde ser consultado.');
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = true;
+      renderProfileBanner(result.state);
       currentRules = result.state.rules || currentRules;
       renderCategories(currentRules.enabledCategories || []);
       renderActiveRulesTable();
@@ -310,6 +318,7 @@
       status.textContent = daemonOffline ? 'Proteção não verificada' : 'Não foi possível conferir a proteção';
       status.dataset.status = 'error';
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = !daemonOffline;
+      renderProfileBanner(null);
       document.getElementById('problemDetailsTitle').textContent = daemonOffline ? 'Proteção não verificada' : 'Estado indisponível';
       document.getElementById('problemDetailsDetail').textContent = error.message || 'Abra novamente o aplicativo para tentar consultar o estado.';
       return false;
@@ -585,6 +594,22 @@
     await execute(reinstallServiceBtn, () => bridge.reinstallService(), 'Instalador aberto. Siga as instruções e volte ao monBlock.');
   });
   if (bridge?.onDaemonStatus) bridge.onDaemonStatus(() => void loadState());
+
+  document.getElementById('openProfileSettingsBtn')?.addEventListener('click', (event) =>
+    execute(event.currentTarget, () => bridge.openProfileSettings(), 'Ajustes abertos em Gerenciamento de Dispositivos.')
+  );
+  document.getElementById('showProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.showModal());
+  document.getElementById('closeProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.close());
+  // Enquanto o aviso estiver visível, confere a cada 30 s só ele (sem re-renderizar o painel).
+  setInterval(async () => {
+    if (!profileBanner || profileBanner.hidden) return;
+    try {
+      const result = await bridge.getState();
+      if (result?.status === 200) renderProfileBanner(result.state);
+    } catch {
+      // Falha de consulta: mantém o aviso; o loadState trata o daemon offline.
+    }
+  }, 30_000);
 
   if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => switchView(viewId, true));
   switchView('categories');

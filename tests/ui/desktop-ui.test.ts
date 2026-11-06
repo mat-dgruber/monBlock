@@ -290,6 +290,20 @@ describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
 describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo (src/renderer/index.html)', () => {
   const htmlPath = path.resolve(__dirname, '../../src/renderer/index.html');
 
+  it('aviso do perfil dos navegadores: escondido por padrão, anunciado e com passos em <dialog>', () => {
+    // Arrange & Act
+    const html = fs.readFileSync(htmlPath, 'utf-8');
+    const banner = html.match(/<section id="profileBanner"[^>]*>/)?.[0] ?? '';
+
+    // Assert
+    expect(banner).toContain('role="status"');
+    expect(banner).toContain('hidden');
+    expect(banner).not.toContain('data-state-panel');
+    expect(html).toContain('id="openProfileSettingsBtn"');
+    expect(html).toContain('<dialog id="profileStepsDialog" aria-labelledby="profile-steps-title">');
+    expect(html).toContain('Gerenciamento de Dispositivos');
+  });
+
   it('deve conter os 4 temas CCAT, os 5 estados visuais, as 4 views, as 11 categorias e Zero-Roxo', () => {
     // Arrange & Act
     const html = fs.readFileSync(htmlPath, 'utf-8');
