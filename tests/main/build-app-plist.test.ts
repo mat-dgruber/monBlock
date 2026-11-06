@@ -16,3 +16,18 @@ describe('watcher: falha de leitura da aba', () => {
     await expect(adapter.getActiveTab()).resolves.toBeNull();
   });
 });
+
+describe('watcher: Dia', () => {
+  it('lê e redireciona a aba do Dia (mesmo dicionário AppleScript do Chromium)', async () => {
+    const { SUPPORTED_MACOS_BROWSERS, OsascriptBrowserTabAdapter } = await import('../../src/enforcers/macos-watcher.js');
+    expect(SUPPORTED_MACOS_BROWSERS).toContain('Dia');
+    const calls: string[][] = [];
+    const adapter = new OsascriptBrowserTabAdapter(async (_cmd, args) => {
+      calls.push(args as string[]);
+      return { stdout: 'Dia\nhttps://exemplo.com/\nTitulo\n', stderr: '' };
+    });
+    expect(await adapter.getActiveTab()).toEqual({ browser: 'Dia', url: 'https://exemplo.com/', title: 'Titulo' });
+    expect(await adapter.redirectActiveTab('Dia', 'http://127.0.0.1:49152/blocked?domain=x.com')).toBe(true);
+    expect(calls.map((c) => c[1]).join('\n')).toContain('tell application "Dia"');
+  });
+});

@@ -6,6 +6,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 ### Adicionado
+- Watcher (palavras-chave e redirecionamento para a página de bloqueio) passa a reconhecer o navegador Dia, que usa o mesmo dicionário AppleScript do Chromium.
 - Rota inicial do app por pareamento (Primeiros passos se não pareado, Categorias se pareado; "Agora não" persiste), revisão de contraste, estados honestos (cabeçalho, "Tentar novamente", "Proteção parcial"), onboarding acessível (stepper com setas, passo 4 só após o pareamento), CSS externo com CSP `style-src 'self'`, motion calmo com `prefers-reduced-motion` e sublinhado animado no passo ativo do stepper (spec `docs/ai/specs/2026-11-06-rota-inicial-e-revisao-telas-design.md`).
 - Título da tray sinaliza o estado da proteção no macOS (`?` não verificado, `!` perfil dos navegadores pendente).
 - Aprovação guiada do perfil dos navegadores: página de conclusão no Instalador, `postinstall` abre Ajustes > Geral > Gerenciamento de Dispositivos, e o app mostra um aviso com "Abrir Ajustes" enquanto o daemon não encontrar o perfil (`browserProfileInstalled` no `GET_STATE`).
