@@ -23,10 +23,12 @@ import {
   sanitizeAndNormalizeUrl,
   validateBatchDomains,
 } from '../domain/rule-engine.js';
+import { PREDEFINED_CATEGORIES } from '../domain/categories.js';
 import type { PlatformEnforcer } from '../enforcers/platform-enforcer.js';
 import type {
   CooldownState,
   MonBlockPersistentState,
+  PartnerCredentials,
   ProtectionRuleset,
   TemporaryGrant,
   TripleStateStore,
@@ -110,6 +112,13 @@ export type DaemonCommand =
       password?: string;
       challengeCode?: string;
       token?: string;
+    }
+  | {
+      /** RN-DAEMON-10: estado lido pelo Electron dos cofres de userland. Não confiável. */
+      type: 'MIGRATE_LEGACY_STATE';
+      format: 'MBV1' | 'LEGACY_JSON';
+      migrationId: string;
+      state: unknown;
     };
 
 /** Respostas tipadas de sucesso dos comandos IPC. */
@@ -159,7 +168,8 @@ export type DaemonSuccessResponse =
   | {
       status: 200;
       uninstalled: true;
-    };
+    }
+  | { status: 200; migrated: true; format: 'MBV1' | 'LEGACY_JSON'; paired: boolean };
 
 export type DaemonResponse = DaemonSuccessResponse | ProblemDetailsResponse;
 
@@ -176,6 +186,7 @@ export const DAEMON_COMMAND_TYPES = [
   'TRIGGER_EMERGENCY_COOLDOWN',
   'REVOKE_GRANTS_ON_SLEEP',
   'UNINSTALL_AUTHORIZED',
+  'MIGRATE_LEGACY_STATE',
 ] as const satisfies ReadonlyArray<DaemonCommand['type']>;
 const _allCommandTypesListed: Exclude<DaemonCommand['type'], (typeof DAEMON_COMMAND_TYPES)[number]> extends never
   ? true
@@ -205,6 +216,65 @@ function carriesPartnerCredential(cmd: DaemonCommand): boolean {
   const keys = ['token', 'code', 'currentPartnerPassword'];
   if (cmd.type !== 'PAIR_PARTNER') keys.push('password');
   return keys.some((k) => typeof c[k] === 'string' && (c[k] as string).length > 0);
+}
+
+const KNOWN_CATEGORY_IDS: ReadonlySet<string> = new Set(PREDEFINED_CATEGORIES.map((c) => c.id));
+
+function isStringArray(v: unknown, maxItems: number, maxLen: number): v is string[] {
+  return Array.isArray(v) && v.length <= maxItems && v.every((s) => typeof s === 'string' && s.length <= maxLen);
+}
+
+/**
+ * Valida o estado vindo de userland (RN-DAEMON-10). Só extrai o que pode **endurecer** a proteção
+ * (categorias, domínios, palavras) e, se pedido, as credenciais do Ajudante. Allowlist, concessões
+ * e cooldown são descartados: afrouxariam ou permitiriam forjar uma espera já cumprida.
+ */
+function parseLegacyState(
+  raw: unknown,
+  withCredentials: boolean
+): { categories: string[]; domains: string[]; keywords: string[]; credentials?: PartnerCredentials } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { rules, partnerCredentials: c } = raw as { rules?: unknown; partnerCredentials?: unknown };
+  if (!rules || typeof rules !== 'object') return null;
+  const r = rules as Record<string, unknown>;
+  if (
+    !isStringArray(r.enabledCategories, 100, 64) ||
+    !isStringArray(r.blockedDomains, 10_000, 2048) ||
+    !isStringArray(r.keywords, 1_000, 200)
+  ) {
+    return null;
+  }
+  // Mesma regra do `normalizeDomainList` do enforcer: quebra de linha descarta a entrada (não é "limpa").
+  const domains = r.blockedDomains
+    .filter((d) => !/[\r\n]/.test(d))
+    .map((d) => sanitizeAndNormalizeUrl(d)?.domain)
+    .filter((d): d is string => Boolean(d));
+  const parsed = {
+    categories: r.enabledCategories.filter((id) => KNOWN_CATEGORY_IDS.has(id)),
+    domains,
+    keywords: r.keywords.map((k) => k.trim()).filter(Boolean),
+  };
+  if (!withCredentials || c === undefined || c === null) return parsed;
+  const cr = c as Record<string, unknown>;
+  const valid =
+    typeof cr.passwordHash === 'string' && cr.passwordHash.startsWith('scrypt$') && cr.passwordHash.length <= 512 &&
+    typeof cr.salt === 'string' && cr.salt.length <= 256 &&
+    typeof cr.hmacSecret === 'string' && cr.hmacSecret.length > 0 && cr.hmacSecret.length <= 512 &&
+    isStringArray(cr.recoveryCodeHashes, 10, 512) &&
+    isStringArray(cr.usedTokens, 10_000, 512) &&
+    (cr.telegramChatId === undefined || (typeof cr.telegramChatId === 'string' && /^-?\d{1,20}$/.test(cr.telegramChatId)));
+  if (!valid) return null;
+  return {
+    ...parsed,
+    credentials: {
+      passwordHash: cr.passwordHash as string,
+      salt: cr.salt as string,
+      hmacSecret: cr.hmacSecret as string,
+      recoveryCodeHashes: cr.recoveryCodeHashes as string[],
+      usedTokens: cr.usedTokens as string[],
+      ...(cr.telegramChatId ? { telegramChatId: cr.telegramChatId as string } : {}),
+    },
+  };
 }
 
 function maskTelegramChatId(chatId?: string): string | undefined {
@@ -1024,6 +1094,69 @@ export class MonBlockDaemon {
           revokedCount,
           temporaryGrants: [],
         };
+      }
+
+      case 'MIGRATE_LEGACY_STATE': {
+        const instance = '/ipc/monblockd/migrate-legacy-state';
+        if (state.migration && state.migration.id === cmd.migrationId) {
+          return { status: 200, migrated: true, format: state.migration.format, paired: state.migration.paired };
+        }
+        if (
+          typeof cmd.migrationId !== 'string' ||
+          cmd.migrationId.length === 0 ||
+          cmd.migrationId.length > 128 ||
+          (cmd.format !== 'MBV1' && cmd.format !== 'LEGACY_JSON')
+        ) {
+          return buildProblem(400, 'Migração Inválida', 'Informe `format` e `migrationId` válidos.', instance);
+        }
+        if (state.migration || state.partnerCredentials || this.store.readTombstone()) {
+          return buildProblem(
+            409,
+            'Migração Recusada (RN-DAEMON-10)',
+            'O serviço protegido já tem um Ajudante ou já recebeu uma migração.',
+            instance
+          );
+        }
+        // JSON legado: chave de integridade pública, então as credenciais não provam nada.
+        const legacy = parseLegacyState(cmd.state, cmd.format === 'MBV1');
+        if (!legacy) {
+          return buildProblem(400, 'Estado Legado Malformado', 'Os cofres antigos não têm o formato esperado.', instance);
+        }
+
+        const union = (a: string[], b: string[]) => Array.from(new Set([...a, ...b]));
+        const credentials = legacy.credentials;
+        const paired = Boolean(credentials);
+        const nextState: MonBlockPersistentState = {
+          ...state,
+          version: state.version + 1,
+          paired: paired || state.paired,
+          rules: {
+            enabledCategories: union(state.rules.enabledCategories, legacy.categories),
+            blockedDomains: union(state.rules.blockedDomains, legacy.domains),
+            allowlistDomains: state.rules.allowlistDomains,
+            keywords: union(state.rules.keywords, legacy.keywords),
+            lockIncognito: true,
+          },
+          ...(credentials ? { partnerCredentials: credentials } : {}),
+          migration: { id: cmd.migrationId, format: cmd.format, paired },
+          updatedAtMs: now,
+        };
+
+        this.save(nextState);
+        if (credentials) {
+          this.store.writeTombstone({ pairedAtMs: trustedNow, telegramChatId: credentials.telegramChatId });
+        }
+        await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
+
+        // ponytail: aviso só informativo. Ele vai ao chatId do próprio payload migrado, então um
+        // "não reconheço" não protegeria contra um payload forjado (risco aceito na ADR-0007).
+        if (credentials?.telegramChatId) {
+          await this.telegramFor(credentials.telegramChatId).sendAlert(
+            '🛡️ O monBlock passou para o modo protegido (serviço do sistema) e o seu vínculo como Ajudante foi mantido.',
+            credentials.telegramChatId
+          );
+        }
+        return { status: 200, migrated: true, format: cmd.format, paired };
       }
 
       case 'UNINSTALL_AUTHORIZED': {

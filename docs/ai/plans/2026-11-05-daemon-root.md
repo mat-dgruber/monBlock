@@ -114,6 +114,8 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 **Pronto:** commit `feat(storage): migrar cofres de userland para o daemon root`.
 
+> **Execução (2026-11-06):** (1) Sem o fluxo "Confirmar / Não reconheço": a mensagem vai ao `chatId` do próprio payload migrado, então um payload forjado mandaria a pergunta a quem forjou; o aviso ao Ajudante é só informativo. (2) O HMAC do JSON legado não é verificado (chave pública); dele só migram regras. (3) Entradas com quebra de linha são descartadas antes de normalizar (o `sanitizeAndNormalizeUrl` as "limpava"). (4) Além de 200, o 409 também aposenta `userData/vaults` (renomeia e apaga `vault.key`): com o root já configurado, os cofres antigos só guardariam um `hmacSecret` legível. (5) Uma tentativa por execução do app, na primeira conexão com o daemon. (6) `loadOrCreateVaultKey` saiu do `main.ts`; ficou `readUserVaultKey`, que só lê. (7) Cooldown, concessões e `authFailures` migrados são descartados (permitiriam forjar uma espera já cumprida).
+
 ## Fase 8 — Empacotamento e desinstalação
 
 - **Novo:** `packaging/macos/com.ccat.monblockd.plist`, `packaging/macos/scripts/{preinstall,postinstall}` (cria o grupo `monblock`, adiciona o usuário do console, `launchctl bootstrap system`), `packaging/macos/uninstall.sh`, `scripts/build-daemon-sea.sh` (SEA por arquitetura, entitlement `com.apple.security.cs.allow-jit`, `lipo -create`), `packaging/macos/monblock-browsers.mobileconfig` (gerado a partir das categorias), `scripts/build-pkg.sh` (`pkgbuild` + `productbuild`).
