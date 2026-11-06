@@ -10,6 +10,7 @@ import { buildBrowserPolicies } from '../../src/enforcers/browser-policy-enforce
 import { execFileSync } from 'node:child_process';
 import {
   MacOSPlatformEnforcer,
+  checkBrowserProfileInstalled,
   defaultCommandExecutor,
   generateBrowserMobileconfig,
   generateChromiumAndSafariPlist,
@@ -301,5 +302,34 @@ describe('PlatformEnforcer — imposição no sistema (Fase 4, ADR-0007)', () =>
   it('executor padrão propaga erro quando roda como root e engole em userland', async () => {
     await expect(defaultCommandExecutor(true)('/nonexistent/monblock-cmd', [])).rejects.toThrow();
     await expect(defaultCommandExecutor(false)('/nonexistent/monblock-cmd', [])).resolves.toBeUndefined();
+  });
+});
+
+describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
+  const listed = '_computerlevel[3] attribute: profileIdentifier: com.ccat.monblock.browsers\n';
+
+  it('true quando `profiles list -all` lista o perfil do monBlock', async () => {
+    // Arrange
+    const calls: string[][] = [];
+    const run = async (cmd: string, args: string[]) => (calls.push([cmd, ...args]), listed);
+
+    // Act
+    const result = await checkBrowserProfileInstalled(run);
+
+    // Assert
+    expect(result).toBe(true);
+    expect(calls).toEqual([['/usr/bin/profiles', 'list', '-all']]);
+  });
+
+  it('false quando o perfil não está na lista', async () => {
+    const result = await checkBrowserProfileInstalled(async () => 'There are no configuration profiles installed\n');
+    expect(result).toBe(false);
+  });
+
+  it('null quando o comando falha (ex.: timeout), sem lançar', async () => {
+    const result = await checkBrowserProfileInstalled(async () => {
+      throw new Error('timeout');
+    });
+    expect(result).toBeNull();
   });
 });

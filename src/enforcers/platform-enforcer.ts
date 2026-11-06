@@ -199,6 +199,23 @@ export function defaultCommandExecutor(isRoot: boolean): (cmd: string, args: str
 
 // MARK: - Contrato PlatformEnforcer
 
+/**
+ * O perfil `.mobileconfig` dos navegadores está aprovado? Precisa de root: sem ele o
+ * `profiles` só lista perfis do usuário. `null` = não deu para verificar (a UI não avisa).
+ */
+export async function checkBrowserProfileInstalled(
+  run: (cmd: string, args: string[]) => Promise<string> = async (cmd, args) =>
+    (await execFileAsync(cmd, args, { timeout: 5000 })).stdout
+): Promise<boolean | null> {
+  try {
+    const out = await run('/usr/bin/profiles', ['list', '-all']);
+    return out.includes('profileIdentifier: com.ccat.monblock.browsers');
+  } catch (err) {
+    console.error('[monblockd] falha ao verificar o perfil dos navegadores:', (err as Error).message);
+    return null;
+  }
+}
+
 export interface PlatformEnforcer {
   applyWebRules(
     rules: ProtectionRuleset,
