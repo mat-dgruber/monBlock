@@ -106,6 +106,7 @@
     h1 { font-family: var(--font-display); font-size: clamp(1.3rem, 1.8vw, 1.7rem); }
     h2 { font-size: var(--text-xl); font-weight: 700; }
     h3 { font-size: var(--text-base); font-weight: 600; }
+    #profileBanner h3, #serviceUpdateBanner h3, [data-state-panel] > h3 { font-size: var(--text-lg); font-weight: 700; }
     h4 { font-size: var(--text-sm); font-weight: 600; }
     p { max-width: 72ch; }
 
@@ -634,7 +635,7 @@
     /* Em erro só "Ajudante e recuperação" segue acessível; as demais views dependem do estado do daemon. */
     html[data-ui-state="error"] [data-view]:not([data-view="partner"]) { display: none; }
     html[data-ui-state="partial"] [data-state-panel]:not([data-state-panel="partial"]) { display: none; }
-    [data-view][hidden] { display: none !important; }
+    [data-view][hidden], .ccat-btn[hidden] { display: none !important; }
 
     /* Modal de Pausa Consciente */
     dialog#partnerAuthDialog,
@@ -781,10 +782,10 @@
       <div class="theme-control">
         <label for="themeSelect">Aparência</label>
         <select id="themeSelect" aria-label="Aparência">
-          <option data-theme-select="capycro-ivory" value="capycro-ivory" aria-pressed="true">Padrão</option>
-          <option data-theme-select="dark-tech" value="dark-tech" aria-pressed="false">Escuro</option>
-          <option data-theme-select="light-fintech" value="light-fintech" aria-pressed="false">Claro</option>
-          <option data-theme-select="high-contrast-aaa" value="high-contrast-aaa" aria-pressed="false">Alto contraste</option>
+          <option data-theme-select="capycro-ivory" value="capycro-ivory">Padrão</option>
+          <option data-theme-select="dark-tech" value="dark-tech">Escuro</option>
+          <option data-theme-select="light-fintech" value="light-fintech">Claro</option>
+          <option data-theme-select="high-contrast-aaa" value="high-contrast-aaa">Alto contraste</option>
         </select>
       </div>
     </div>
@@ -794,7 +795,7 @@
   <div class="app-content-wrapper">
     <header class="app-header">
       <div>
-        <h2>Painel de Proteção e Foco</h2>
+        <h3>Painel de Proteção e Foco</h3>
         <p class="app-subtitle">Seu espaço de foco, protegido com ajuda de quem você confia.</p>
       </div>
       <div id="quickStatsHeader" class="tabular-nums" style="font-size: var(--text-xs); color: var(--ccat-text-secondary);">
@@ -807,7 +808,7 @@
 
       <!-- Perfil dos navegadores ainda não aprovado (fora dos 5 estados: aparece junto de qualquer um) -->
       <section id="profileBanner" class="ccat-alert-partial" role="status" aria-live="polite" hidden>
-        <h2>Falta 1 passo para proteger os navegadores</h2>
+        <h3>Falta 1 passo para proteger os navegadores</h3>
         <p>Aprove o perfil do monBlock em Ajustes do Sistema &gt; Geral &gt; Gerenciamento de Dispositivos. Sem ele, Chrome, Brave e Edge podem ignorar o bloqueio.</p>
         <div class="profile-banner-actions">
           <button type="button" id="openProfileSettingsBtn" class="ccat-btn ccat-btn-primary">Abrir Ajustes</button>
@@ -817,7 +818,7 @@
 
       <!-- Daemon de versão anterior (sem browserProfileInstalled no estado): pede atualização do serviço -->
       <section id="serviceUpdateBanner" class="ccat-alert-partial" role="status" aria-live="polite" hidden>
-        <h2>Atualize o serviço do monBlock</h2>
+        <h3>Atualize o serviço do monBlock</h3>
         <p>O serviço instalado é de uma versão anterior e não confere o perfil dos navegadores. Reinstale o serviço para receber a verificação.</p>
         <div class="profile-banner-actions">
           <button type="button" id="updateServiceBtn" class="ccat-btn ccat-btn-primary">Reinstalar serviço</button>
@@ -866,7 +867,7 @@
         aria-live="polite"
       >
         <h2>Proteção local disponível</h2>
-        <p>Se o Telegram estiver indisponível, combine com seu Ajudante o uso de um código de liberação offline (HMAC-SHA256). A proteção continua ativa.</p>
+        <p>Se o Telegram estiver indisponível, combine com seu Ajudante o uso de um código de liberação offline. A proteção continua ativa.</p>
       </section>
 
       <!-- Estado 5: Active (Dashboard Populado com as 4 Views da Jornada) -->
@@ -887,7 +888,7 @@
               <span class="step-number">1</span> Propósito
             </button>
             <button type="button" class="stepper-step" id="stepIndicator2" data-onboarding-step-tab="2" role="tab" aria-controls="onboardingStepPanel2" aria-selected="false" tabindex="-1">
-              <span class="step-number">2</span> Escudo Base
+              <span class="step-number">2</span> Primeira proteção
             </button>
             <button type="button" class="stepper-step" id="stepIndicator3" data-onboarding-step-tab="3" role="tab" aria-controls="onboardingStepPanel3" aria-selected="false" tabindex="-1">
               <span class="step-number">3</span> Ajudante Telegram
@@ -912,7 +913,7 @@
                 <span style="font-size: 1.75rem;" aria-hidden="true">🛡️</span>
                 <div>
                   <h3>Como o monBlock protege o seu foco?</h3>
-                  <p class="app-subtitle">Tecnologia de compromisso baseada na Catraca Unidirecional (*One-Way Ratchet*).</p>
+                  <p class="app-subtitle">Tecnologia de compromisso baseada na Catraca Unidirecional: o bloqueio só é retirado com autorização do seu Ajudante.</p>
                 </div>
               </div>
               <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
@@ -926,12 +927,12 @@
                 </div>
               </div>
               <div style="display: flex; justify-content: flex-end;">
-                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep2Btn">Avançar: Escudo Base →</button>
+                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep2Btn">Avançar: Primeira proteção →</button>
               </div>
             </div>
           </div>
 
-          <!-- PAINEL 2: Escudo Base Recomendado -->
+          <!-- PAINEL 2: Primeira proteção recomendada -->
           <div class="onboarding-step-panel" id="onboardingStepPanel2" data-panel-step="2" role="tabpanel" aria-labelledby="stepIndicator2" hidden>
             <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1rem;">
               <h3>Selecione o Escudo Inicial Recomendado</h3>
@@ -1125,7 +1126,7 @@
                   <span class="category-tag-chip category-tag-chip--domain">🌐 stake.com</span>
                   <span class="category-tag-chip category-tag-chip--domain">🌐 betano.com</span>
                   <span class="category-tag-chip category-tag-chip--domain">🌐 sportingbet.com</span>
-                  <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: cassino,online</span>
+                  <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: cassino + online</span>
                   <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: roleta,aposta</span>
                   <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: slot,bonus</span>
                 </div>
@@ -1351,7 +1352,7 @@
               <input id="urlCheckerInput" type="text" class="ccat-input" placeholder="Ex.: twitch.tv ou betano.com ou termo suspeito..." />
               <button type="button" id="urlCheckerBtn" class="ccat-btn">Verificar</button>
             </div>
-            <div id="urlCheckerResult" class="url-checker-result" style="display: none;"></div>
+            <div id="urlCheckerResult" class="url-checker-result" role="status" style="display: none;"></div>
           </div>
 
           <!-- ADIÇÃO DE DOMÍNIOS EM LOTE -->

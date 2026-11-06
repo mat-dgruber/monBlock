@@ -55,7 +55,6 @@ export interface TrayStatusSnapshot {
 
 export interface TrayActionHandlers {
   onQuickAdd: () => void;
-  onBlockActiveTab: () => void;
   onRequestUnblock: () => void;
   onEnterToken: () => void;
   onOpenDashboard: () => void;
@@ -156,16 +155,16 @@ export function validateNavigationUrl(rawUrl: string, allowedFileRoot?: string):
 export function buildTrayMenuTemplate(
   state: TrayStatusSnapshot,
   handlers: TrayActionHandlers,
-  icons?: Partial<Record<'quick-add' | 'block-active-tab' | 'request-unblock' | 'enter-token' | 'open-dashboard', Electron.NativeImage>>
+  icons?: Partial<Record<'quick-add' | 'request-unblock' | 'enter-token' | 'open-dashboard', Electron.NativeImage>>
 ): TrayMenuItem[] {
-  let headerLabel = 'monBlock — Estado não verificado';
-  if (state.active) headerLabel = 'monBlock — Estado da proteção carregado';
+  let headerLabel = 'monBlock — Proteção não verificada';
+  if (state.active) headerLabel = 'monBlock — Proteção ativa';
   if (state.temporaryUnlockRemainingFormatted) {
     headerLabel = `monBlock — Pausa temporária (${state.temporaryUnlockRemainingFormatted})`;
   } else if (state.cooldownRemainingFormatted) {
     headerLabel = `monBlock — Espera de 72h (${state.cooldownRemainingFormatted})`;
   } else if (state.partnerName) {
-    headerLabel = `monBlock — Estado carregado • Ajudante: ${state.partnerName}`;
+    headerLabel = `monBlock — Proteção ativa • Ajudante: ${state.partnerName}`;
   }
 
   return [
@@ -180,12 +179,6 @@ export function buildTrayMenuTemplate(
       label: 'Bloquear site ou palavra-chave...',
       icon: icons?.['quick-add'],
       click: () => handlers.onQuickAdd(),
-    },
-    {
-      id: 'block-active-tab',
-      label: 'Adicionar site manualmente...',
-      icon: icons?.['block-active-tab'],
-      click: () => handlers.onBlockActiveTab(),
     },
     { type: 'separator' },
     {
@@ -313,7 +306,6 @@ export async function bootstrapElectronRuntime(): Promise<void> {
       },
       {
         onQuickAdd: () => navigateMainWindow('rules'),
-        onBlockActiveTab: () => navigateMainWindow('rules'),
         onRequestUnblock: () => navigateMainWindow('partner'),
         onEnterToken: () => navigateMainWindow('partner'),
         onOpenDashboard: () => navigateMainWindow('categories'),
@@ -321,7 +313,6 @@ export async function bootstrapElectronRuntime(): Promise<void> {
       },
       process.platform === 'darwin' && hasMenuSymbol ? {
         'quick-add': (nativeImage as any).createMenuSymbol('plus.circle'),
-        'block-active-tab': (nativeImage as any).createMenuSymbol('globe'),
         'request-unblock': (nativeImage as any).createMenuSymbol('person.crop.circle.badge.questionmark'),
         'enter-token': (nativeImage as any).createMenuSymbol('key'),
         'open-dashboard': (nativeImage as any).createMenuSymbol('square.grid.2x2'),

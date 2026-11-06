@@ -89,3 +89,24 @@ describe('onboarding acessível e honesto (F2)', () => {
     expect(html).toContain('dialog#profileStepsDialog {');
   });
 });
+
+describe('higiene (F3)', () => {
+  const js = fs.readFileSync(rendererPath, 'utf8');
+  it('sem aria-pressed inválido em <option>, sem jargão cru e com tema persistido', () => {
+    expect(html).not.toMatch(/<option[^>]*aria-pressed/);
+    expect(html).not.toContain('One-Way Ratchet');
+    expect(html).not.toContain('Escudo Base');
+    expect(js).toContain("localStorage.setItem('monblock.theme'");
+  });
+  it('faixas e estados usam h3 (sem h2 concorrendo com as views) e o Raio-X anuncia o resultado', () => {
+    for (const id of ['profileBanner', 'serviceUpdateBanner']) {
+      const sec = html.slice(html.indexOf(`<section id="${id}"`), html.indexOf('</section>', html.indexOf(`<section id="${id}"`)));
+      expect(sec).toContain('<h3>');
+      expect(sec).not.toContain('<h2>');
+    }
+    expect(html).toMatch(/id="urlCheckerResult"[^>]*role="status"/);
+  });
+  it('tray de "Bloquear site" foca o campo de sites', () => {
+    expect(js).toContain("if (viewId === 'rules') document.getElementById('batchDomainsTextarea')?.focus();");
+  });
+});

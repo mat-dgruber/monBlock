@@ -195,7 +195,7 @@ globalThis.monblockRenderer = { pickInitialView };
       for (const kw of cat.keywords) {
         if (!query || kw.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
           rows.push({
-            item: kw,
+            item: kw.replaceAll(',', ' + '),
             type: 'Palavra-chave',
             origin: `Categoria: ${cat.namePt}`,
             status: '🔒 Protegido',
@@ -220,7 +220,7 @@ globalThis.monblockRenderer = { pickInitialView };
     for (const kw of currentRules.keywords || []) {
       if (!query || kw.toLowerCase().includes(query)) {
         rows.push({
-          item: kw,
+          item: kw.replaceAll(',', ' + '),
           type: 'Palavra-chave',
           origin: 'Adicionado Manualmente',
           status: '🔒 Protegido',
@@ -373,9 +373,16 @@ globalThis.monblockRenderer = { pickInitialView };
   // Seletor de Tema
   const themeSelect = document.getElementById('themeSelect');
   if (themeSelect) {
+    try {
+      const saved = localStorage.getItem('monblock.theme');
+      if (saved && Array.from(themeSelect.options).some((o) => o.value === saved)) {
+        htmlEl.dataset.theme = saved;
+        themeSelect.value = saved;
+      }
+    } catch { /* localStorage indisponível */ }
     themeSelect.addEventListener('change', () => {
       htmlEl.dataset.theme = themeSelect.value;
-      for (const option of themeSelect.options) option.setAttribute('aria-pressed', String(option.selected));
+      try { localStorage.setItem('monblock.theme', themeSelect.value); } catch { /* sem persistência: volta ao padrão */ }
     });
   }
 
@@ -683,6 +690,7 @@ globalThis.monblockRenderer = { pickInitialView };
   if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => {
     userNavigated = true;
     switchView(viewId, true);
+    if (viewId === 'rules') document.getElementById('batchDomainsTextarea')?.focus();
   });
   switchView('categories');
   void loadState();

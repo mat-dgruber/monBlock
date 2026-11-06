@@ -68,7 +68,6 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     // Arrange
     const handlers = {
       onQuickAdd: vi.fn(),
-      onBlockActiveTab: vi.fn(),
       onRequestUnblock: vi.fn(),
       onEnterToken: vi.fn(),
       onOpenDashboard: vi.fn(),
@@ -88,20 +87,18 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     const ids = menu.filter((item) => item.id).map((item) => item.id);
     expect(ids).toContain('status-header');
     expect(ids).toContain('quick-add');
-    expect(ids).toContain('block-active-tab');
+    expect(ids).not.toContain('block-active-tab');
     expect(ids).toContain('request-unblock');
     expect(ids).toContain('enter-token');
     expect(ids).toContain('open-dashboard');
 
     const header = menu.find((i) => i.id === 'status-header');
-    expect(header?.label).toContain('Estado carregado');
+    expect(header?.label).toContain('Proteção ativa');
+    expect(header?.label).toContain('Ajudante: Ana');
     expect(header?.enabled).toBe(false);
 
     expect(menu.find((i) => i.id === 'quick-add')?.label).toBe(
       'Bloquear site ou palavra-chave...'
-    );
-    expect(menu.find((i) => i.id === 'block-active-tab')?.label).toBe(
-      'Adicionar site manualmente...'
     );
     expect(menu.find((i) => i.id === 'request-unblock')?.label).toBe(
       'Solicitar desbloqueio ao Ajudante...'
@@ -120,14 +117,12 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
 
     // Acionamento dos handlers
     menu.find((i) => i.id === 'quick-add')?.click?.();
-    menu.find((i) => i.id === 'block-active-tab')?.click?.();
     menu.find((i) => i.id === 'request-unblock')?.click?.();
     menu.find((i) => i.id === 'enter-token')?.click?.();
     menu.find((i) => i.id === 'open-dashboard')?.click?.();
     menu.find((i) => i.id === 'quit')?.click?.();
 
     expect(handlers.onQuickAdd).toHaveBeenCalledTimes(1);
-    expect(handlers.onBlockActiveTab).toHaveBeenCalledTimes(1);
     expect(handlers.onRequestUnblock).toHaveBeenCalledTimes(1);
     expect(handlers.onEnterToken).toHaveBeenCalledTimes(1);
     expect(handlers.onOpenDashboard).toHaveBeenCalledTimes(1);
@@ -155,7 +150,6 @@ describe('MOD-04: Processo Principal Electron & Menu da Tray macOS (src/main/mai
     const noop = vi.fn();
     const handlers = {
       onQuickAdd: noop,
-      onBlockActiveTab: noop,
       onRequestUnblock: noop,
       onEnterToken: noop,
       onOpenDashboard: noop,
