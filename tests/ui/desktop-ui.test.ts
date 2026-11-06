@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PREDEFINED_CATEGORIES } from '../../src/domain/categories.js';
 import {
   buildTrayMenuTemplate,
+  trayTitleFor,
   createSecureWindowOptions,
   handleWindowCloseEvent,
   validateNavigationUrl,
@@ -577,5 +578,14 @@ describe('MOD-04: Controlador do Renderer (src/renderer/app.ts)', () => {
     const filtered = getActiveRulesList(state, 'custom');
     expect(filtered.length).toBe(1);
     expect(filtered[0]?.item).toBe('custom-distraction.com');
+  });
+});
+
+describe('trayTitleFor', () => {
+  it('sinaliza estado não verificado e perfil pendente; vazio quando tudo certo', () => {
+    expect(trayTitleFor(null)).toBe(' ?');
+    expect(trayTitleFor({ browserProfileInstalled: false })).toBe(' !');
+    expect(trayTitleFor({ browserProfileInstalled: true })).toBe('');
+    expect(trayTitleFor({ browserProfileInstalled: null })).toBe('');
   });
 });
