@@ -23,6 +23,7 @@
       --ccat-text-muted: #7A847E;
       --ccat-brand-primary: #005A64;
       --ccat-brand-primary-hover: #00464E;
+      --ccat-on-brand: #FFFFFF;
       --ccat-brand-accent: #C84B31;
       --ccat-focus-ring: #005A64;
       --ccat-card-shadow: 0 4px 16px -4px rgba(31, 36, 33, 0.06);
@@ -39,6 +40,7 @@
       --ccat-text-muted: #64748B;
       --ccat-brand-primary: #22D3EE;
       --ccat-brand-primary-hover: #06B6D4;
+      --ccat-on-brand: #0B0F17;
       --ccat-brand-accent: #F97316;
       --ccat-focus-ring: #22D3EE;
       --ccat-card-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.4);
@@ -55,6 +57,7 @@
       --ccat-text-muted: #64748B;
       --ccat-brand-primary: #0F766E;
       --ccat-brand-primary-hover: #115E59;
+      --ccat-on-brand: #FFFFFF;
       --ccat-brand-accent: #0284C7;
       --ccat-focus-ring: #0F766E;
       --ccat-card-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.05);
@@ -71,6 +74,7 @@
       --ccat-text-muted: #CCCCCC;
       --ccat-brand-primary: #FFD60A;
       --ccat-brand-primary-hover: #E5BE00;
+      --ccat-on-brand: #000000;
       --ccat-brand-accent: #00FFFF;
       --ccat-focus-ring: #FFD60A;
       --ccat-card-shadow: none;
@@ -221,7 +225,7 @@
     .sidebar-nav-btn[aria-current="page"],
     .sidebar-nav-btn.ccat-btn-primary {
       background: var(--ccat-brand-primary);
-      color: #FFFFFF;
+      color: var(--ccat-on-brand);
       box-shadow: 0 2px 6px -1px rgba(0, 90, 100, 0.25);
     }
     .sidebar-nav-btn svg {
@@ -610,7 +614,7 @@
       z-index: var(--z-toast, 1000);
       padding: 0.625rem 1.25rem;
       background: var(--ccat-brand-primary);
-      color: #FFFFFF;
+      color: var(--ccat-on-brand);
       border-radius: 9999px;
       font-weight: 600;
       text-decoration: none;
@@ -624,7 +628,9 @@
     html[data-ui-state="active"] [data-state-panel]:not([data-state-panel="active"]) { display: none; }
     html[data-ui-state="loading"] [data-state-panel]:not([data-state-panel="loading"]) { display: none; }
     html[data-ui-state="empty"] [data-state-panel]:not([data-state-panel="empty"]) { display: none; }
-    html[data-ui-state="error"] [data-state-panel]:not([data-state-panel="error"]) { display: none; }
+    html[data-ui-state="error"] [data-state-panel]:not([data-state-panel="error"]):not([data-state-panel="active"]) { display: none; }
+    /* Em erro só "Ajudante e recuperação" segue acessível; as demais views dependem do estado do daemon. */
+    html[data-ui-state="error"] [data-view]:not([data-view="partner"]) { display: none; }
     html[data-ui-state="partial"] [data-state-panel]:not([data-state-panel="partial"]) { display: none; }
     [data-view][hidden] { display: none !important; }
 
@@ -670,7 +676,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #FFFFFF;
+      color: var(--ccat-on-brand);
       font-weight: 700;
       font-size: 1.25rem;
       transition: transform 4s ease-in-out;
@@ -687,7 +693,7 @@
     .ccat-alert-partial {
       border: 2px solid var(--warning-color);
       background: var(--warning-surface);
-      color: var(--warning-color);
+      color: var(--ccat-text-primary);
       padding: 1rem 1.25rem;
       border-radius: 0.75rem;
     }
@@ -788,7 +794,7 @@
         <p class="app-subtitle">Seu espaço de foco, protegido com ajuda de quem você confia.</p>
       </div>
       <div id="quickStatsHeader" class="tabular-nums" style="font-size: var(--text-xs); color: var(--ccat-text-secondary);">
-        Proteção Contínua Ativa
+        Conferindo proteção...
       </div>
     </header>
 
@@ -842,7 +848,10 @@
         <h2>Não foi possível concluir a ação</h2>
         <p id="problemDetailsTitle"><strong>Confira o que aconteceu e tente novamente.</strong></p>
         <p id="problemDetailsDetail">A proteção existente permanece ativa.</p>
-        <button type="button" id="reinstallServiceBtn" class="ccat-btn ccat-btn-primary" hidden>Reinstalar serviço</button>
+        <div class="profile-banner-actions">
+          <button type="button" id="retryStateBtn" class="ccat-btn ccat-btn-primary">Tentar novamente</button>
+          <button type="button" id="reinstallServiceBtn" class="ccat-btn" hidden>Reinstalar serviço</button>
+        </div>
       </section>
 
       <!-- Estado 4: Partial / Degraded (Modo Offline / Desafio-Resposta HMAC-SHA256) -->
@@ -864,6 +873,7 @@
           <div class="section-intro">
             <h2 id="onboarding-heading" tabindex="-1">Primeiros passos</h2>
             <p>Configure seu guardião de foco e pareie seu Ajudante de forma simples e guiada.</p>
+            <button type="button" id="skipOnboardingBtn" class="ccat-btn">Agora não, ir às categorias</button>
           </div>
 
           <!-- Stepper Tabs -->

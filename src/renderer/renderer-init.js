@@ -1,5 +1,12 @@
 'use strict';
 
+// Rota inicial (spec 2026-11-06-rota-inicial): só `paired` decide; sem estado ou depois de navegar, não decide.
+function pickInitialView(state, { dismissed = false, userNavigated = false } = {}) {
+  if (!state || userNavigated) return null;
+  return state.paired === true || dismissed ? 'categories' : 'onboarding';
+}
+globalThis.monblockRenderer = { pickInitialView };
+
 (function bootstrapDesktopRenderer() {
   if (typeof document === 'undefined') return;
 
@@ -91,6 +98,13 @@
   ];
 
   let pairingPollInterval = null;
+  let userNavigated = false;
+  let initialViewPicked = false;
+  const DISMISS_KEY = 'monblock.onboardingDismissed';
+  // localStorage é só conveniência de UI: indisponível = não dispensou.
+  const readDismissed = () => {
+    try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch { return false; }
+  };
 
   function stopPairingPoll() {
     if (pairingPollInterval) {
@@ -285,6 +299,7 @@
     startCooldownBtn.disabled = true;
   }
 
+  const quickStats = document.getElementById('quickStatsHeader');
   const reinstallServiceBtn = document.getElementById('reinstallServiceBtn');
   const profileBanner = document.getElementById('profileBanner');
   const serviceUpdateBanner = document.getElementById('serviceUpdateBanner');
@@ -304,6 +319,11 @@
       if (!result || result.status !== 200 || !result.state) throw new Error(result?.detail || 'O estado da proteção não pôde ser consultado.');
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = true;
       renderProfileBanner(result.state);
+      if (!initialViewPicked) {
+        initialViewPicked = true;
+        const initial = pickInitialView(result.state, { dismissed: readDismissed(), userNavigated });
+        if (initial) switchView(initial);
+      }
       currentRules = result.state.rules || currentRules;
       renderCategories(currentRules.enabledCategories || []);
       renderActiveRulesTable();
@@ -311,6 +331,7 @@
       updateCooldown();
       status.textContent = result.state.tamperLockdown ? 'Estado carregado — modo de segurança' : 'Estado da proteção carregado';
       status.dataset.status = result.state.tamperLockdown ? 'error' : 'loaded';
+      if (quickStats) quickStats.textContent = result.state.tamperLockdown ? 'Modo de segurança' : 'Proteção ativa';
       partnerStatus.textContent = result.state.paired ? 'Ajudante pareado' : 'Ajudante ainda não pareado';
       htmlEl.dataset.uiState = 'active';
       return true;
@@ -320,6 +341,7 @@
       const daemonOffline = result?.status === 503;
       status.textContent = daemonOffline ? 'Proteção não verificada' : 'Não foi possível conferir a proteção';
       status.dataset.status = 'error';
+      if (quickStats) quickStats.textContent = 'Proteção não verificada';
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = !daemonOffline;
       renderProfileBanner(null);
       document.getElementById('problemDetailsTitle').textContent = daemonOffline ? 'Proteção não verificada' : 'Estado indisponível';
@@ -356,7 +378,17 @@
   }
 
   // Navegação Principal da Sidebar
-  for (const btn of navBtns) btn.addEventListener('click', () => switchView(btn.dataset.navTarget, true));
+  for (const btn of navBtns) {
+    btn.addEventListener('click', () => {
+      userNavigated = true;
+      switchView(btn.dataset.navTarget, true);
+    });
+  }
+  document.getElementById('retryStateBtn')?.addEventListener('click', () => void loadState());
+  document.getElementById('skipOnboardingBtn')?.addEventListener('click', () => {
+    try { localStorage.setItem(DISMISS_KEY, '1'); } catch { /* sem persistência: volta ao onboarding na próxima abertura */ }
+    switchView('categories', true);
+  });
   document.getElementById('goToCategoriesBtn')?.addEventListener('click', () => switchView('categories', true));
   document.getElementById('addFirstDomainBtn')?.addEventListener('click', () => {
     switchView('rules', true);
@@ -617,7 +649,10 @@
     }
   }, 15_000);
 
-  if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => switchView(viewId, true));
+  if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => {
+    userNavigated = true;
+    switchView(viewId, true);
+  });
   switchView('categories');
   void loadState();
   setInterval(updateCooldown, 1000);
