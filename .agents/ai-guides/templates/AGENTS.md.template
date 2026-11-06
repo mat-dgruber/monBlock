@@ -83,7 +83,6 @@ Consulte e siga os guias canônicos em `.agents/ai-guides/guides/` para cada tar
 - **Segurança Defensiva & Anti-Cheat:** Siga `.agents/ai-guides/guides/game-development/guia-seguranca-defensiva-anti-cheat-multiplayer.md` (autoridade estrita do servidor, validação cinemática anti-speedhack/anti-noclip, transações econômicas anti-dupe e zero segredos em binários `.pck`).
 - **Game Design, HUD & Acessibilidade:** Siga `.agents/ai-guides/guides/game-development/guia-game-design-hud-ergonomia-acessibilidade.md` (Estado de Flow, *Coyote Time*, *Input Buffering*, HUD diegética, ergonomia Gamepad/Touch e acessibilidade universal).
 - **Suíte de Testes de Jogos:** Siga `.agents/ai-guides/guides/testing/games/README.md` (slug `testing-games`) para pirâmide de testes de jogos (Unitários de `Resource` sem `SceneTree`, Testes de Cena/Física e E2E Headless).
-
 ---
 
 ## 📂 Artefatos de IA em `docs/ai/`

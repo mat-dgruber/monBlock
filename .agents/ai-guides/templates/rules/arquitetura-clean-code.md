@@ -9,9 +9,9 @@ Regra always-on: aplique este checklist em code review, RFCs e aprovação de PR
 Utilize este checklist em sessões de revisão de design técnico (RFCs) e aprovação de Pull Requests críticos:
 
 ### A. Soberania do Domínio e Fronteiras
-- [ ] As entidades do domínio são puras e não dependem de decorators ou classes de ORMs (ex.: TypeORM, SQLAlchemy, Eloquent)?
+- [ ] As entidades do domínio são puras e não dependem de decorators ou classes de ORMs (ex.: TypeORM, SQLAlchemy, Eloquent)? *(Não se aplica quando o projeto adota o estilo enxuto (`backend_style: enxuto` no manifesto, ou ADR `ddd-pragmatico` sem estilo declarado no manifesto; manifesto `purista` mantém o item): prevalece `.agents/rules/ddd-pragmatico.md`; no modelo híbrido o modelo ORM é a entidade de domínio.)*
 - [ ] A regra de dependência incondicional está sendo preservada (as camadas internas desconhecem a infraestrutura externa)?
-- [ ] Mapeadores de fronteira (Mappers) traduzem explicitamente os DTOs de entrada e modelos do banco para entidades de domínio?
+- [ ] Mapeadores de fronteira (Mappers) traduzem explicitamente os DTOs de entrada e modelos do banco para entidades de domínio? *(Não se aplica quando o projeto adota o estilo enxuto (`backend_style: enxuto` no manifesto, ou ADR `ddd-pragmatico` sem estilo declarado no manifesto; manifesto `purista` mantém o item): prevalece `.agents/rules/ddd-pragmatico.md`; schemas na borda e modelo ORM no núcleo bastam.)*
 
 ### B. Rigor em Princípios de Design e Clean Code
 - [ ] Cada classe ou use case possui um único ator como razão para mudar (SRP)?

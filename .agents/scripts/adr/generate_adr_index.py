@@ -4,107 +4,97 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+import unicodedata
+
+IGNORADOS = {"README.md", "TEMPLATE.md"}
+LISTA_LEGADAS = os.path.join(".agents", "scripts", "adr", "adrs-legadas.txt")
 
 
-def resolver_diretorio_adrs(caminho=None) -> Path:  # raiz do git (ou cwd); docs/adr legado prevalece, senão docs/adrs (padrão desde a v2.7.4)
-    if caminho:
-        return Path(caminho)
+def resolver_raiz():  # raiz do git (ou cwd)
     try:
         raiz = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, encoding="utf-8").stdout.strip()
     except OSError:
         raiz = ""
-    base = Path(raiz) if raiz else Path.cwd()
-    legado = base / "docs" / "adr"
-    return legado if legado.is_dir() else base / "docs" / "adrs"
+    return raiz or os.getcwd()
 
 
-def extrair_metadados_adr(caminho_arquivo: Path) -> dict:
-    conteudo = caminho_arquivo.read_text(encoding="utf-8")
-    nome_arquivo = caminho_arquivo.name
-
-    # Extrai o número sequencial de 4 dígitos
-    num_match = re.match(r"^(\d{4})-", nome_arquivo)
-    num = num_match.group(1) if num_match else "0000"
-
-    # Extrai o título principal (# ADR 0000: ...)
-    titulo_match = re.search(r"^# ADR \d{4}:\s*(.+)$", conteudo, re.MULTILINE)
-    titulo = titulo_match.group(1).strip() if titulo_match else nome_arquivo
-
-    # Extrai o Status e a Data (com regex flexível que tolere negrito e maiúsculas/minúsculas)
-    status_match = re.search(
-        r"\*{0,2}Status\*{0,2}\s*\|\s*(\*\*[^*]+\*\*|\[[^\]]+\]|[A-Za-zÀ-ÿ]+)\s*(?:\(([^)]+)\))?",
-        conteudo,
-        re.IGNORECASE,
-    )
-    if status_match:
-        status_raw = status_match.group(1).replace("*", "").replace("[", "").replace("]", "").strip()
-        data_str = status_match.group(2).strip() if status_match.group(2) else "-"
-    else:
-        status_raw = "Proposta"
-        data_str = "-"
-
-    # Extrai o número de revisões no log de manutenção HTML
-    revisoes = len(re.findall(r"^\d{4}-\d{2}-\d{2}\s*\|", conteudo, re.MULTILINE))
-
-    return {
-        "numero": num,
-        "arquivo": nome_arquivo,
-        "titulo": titulo,
-        "status": status_raw,
-        "data": data_str,
-        "revisoes": revisoes,
-    }
+def resolver_diretorio_adrs():  # docs/adr legado prevalece, senão docs/adrs (padrão desde a v2.7.4)
+    raiz = resolver_raiz()
+    legado = os.path.join(raiz, "docs", "adr")
+    return legado if os.path.isdir(legado) else os.path.join(raiz, "docs", "adrs")
 
 
-def gerar_indice_adrs(diretorio_adrs=None):
-    adr_dir = resolver_diretorio_adrs(diretorio_adrs)
-    readme_path = adr_dir / "README.md"
+def normalizar(nome):  # NFC nos dois lados: macOS devolve nomes em NFD, o editor grava NFC
+    return unicodedata.normalize("NFC", nome.strip())
 
-    if not adr_dir.exists():
-        adr_dir.mkdir(parents=True, exist_ok=True)
 
-    arquivos_adr = sorted(
-        [f for f in adr_dir.glob("*.md") if f.name != "README.md" and re.match(r"^\d{4}-.*\.md$", f.name)]
-    )
+def caminho_legadas(raiz):
+    return os.path.join(raiz, LISTA_LEGADAS)
+
+
+def ler_legadas(raiz):  # nomes NFC, sem linhas vazias/comentários; só compara com listdir, nunca abre o nome como caminho
+    caminho = caminho_legadas(raiz)
+    if not os.path.isfile(caminho):
+        return set()
+    with open(caminho, "r", encoding="utf-8-sig") as f:
+        nomes = (normalizar(linha) for linha in f.read().splitlines())
+        return {n for n in nomes if n and not n.startswith("#")}
+
+
+def numero_legada(nome):  # "ADR-008-ddd.md" -> "ADR-008"; sem dígitos, o nome sem .md
+    m = re.match(r"^(.*?\d+)", nome)
+    return m.group(1) if m else re.sub(r"\.md$", "", nome)
+
+
+def gerar_indice_adrs():
+    adr_dir = resolver_diretorio_adrs()
+    readme_path = os.path.join(adr_dir, "README.md")
+    existentes = os.listdir(adr_dir)
+    arquivos = sorted([f for f in existentes if re.match(r"^\d{4}-.*\.md$", f)])
+    listadas = ler_legadas(resolver_raiz())  # congeladas: listadas antes das novas, na ordem de nome
+    legadas = sorted([f for f in existentes if f.endswith(".md") and f not in IGNORADOS and normalizar(f) in listadas
+                      and f not in arquivos])
 
     linhas = [
-        "# 📚 Repositório Canônico de ADRs (Architecture Decision Records)",
+        "# 📚 Repositório de Architecture Decision Records (ADRs)",
         "",
-        "> **Governança Arquitetural:** Índice consolidado das decisões arquiteturais tomadas no repositório, ordenadas cronologicamente por data de origem.",
+        "> Índice gerado automaticamente com o status consolidado das decisões arquiteturais.",
         "",
-        "| ADR | Título da Decisão | Status | Data de Origem | Revisões no Changelog |",
-        "| :---: | :--- | :---: | :---: | :---: |",
+        "| ADR | Título | Status | Data |",
+        "| :---: | :--- | :---: | :---: |",
     ]
 
-    for arq in arquivos_adr:
-        meta = extrair_metadados_adr(arq)
-        badge_status = f"`{meta['status']}`"
-        revisoes_str = f"{meta['revisoes']} evento(s)" if meta["revisoes"] > 0 else "Inicial"
-        linhas.append(
-            f"| [{meta['numero']}]({meta['arquivo']}) | **{meta['titulo']}** | {badge_status} | {meta['data']} | {revisoes_str} |"
-        )
+    for arq in legadas:
+        with open(os.path.join(adr_dir, arq), "r", encoding="utf-8") as f:
+            conteudo = f.read()
+        titulo_match = re.search(r"^#\s+(.+)$", conteudo, re.MULTILINE)
+        status_match = re.search(r"\*\*Status\*\*\s*\|\s*\*\*([^*]+)\*\*\s*\(([^)]+)\)", conteudo)
+        titulo = titulo_match.group(1).strip() if titulo_match else arq
+        status = status_match.group(1) if status_match else "Legada"
+        data = status_match.group(2) if status_match else "-"
+        linhas.append(f"| [{numero_legada(arq)}]({arq}) | **{titulo}** | `{status}` | {data} |")
 
-    linhas.append("")
-    linhas.append("---")
-    linhas.append(
-        "_Índice gerado automaticamente conforme diretrizes do padrão canônico v2.0.0._"
-    )
+    for arq in arquivos:
+        caminho = os.path.join(adr_dir, arq)
+        with open(caminho, "r", encoding="utf-8") as f:
+            conteudo = f.read()
 
-    readme_path.write_text("\n".join(linhas) + "\n", encoding="utf-8")
+        num = arq.split("-")[0]
+        titulo_match = re.search(r"^# ADR \d{4}:\s*(.+)$", conteudo, re.MULTILINE)
+        status_match = re.search(r"\*\*Status\*\*\s*\|\s*\*\*([^*]+)\*\*\s*\(([^)]+)\)", conteudo)
+
+        titulo = titulo_match.group(1) if titulo_match else arq
+        status = status_match.group(1) if status_match else "Desconhecido"
+        data = status_match.group(2) if status_match else "-"
+
+        linhas.append(f"| [{num}]({arq}) | **{titulo}** | `{status}` | {data} |")
+
+    with open(readme_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(linhas) + "\n")
     print(f"Índice {readme_path} atualizado com sucesso!")
 
 
-gerar_indice = gerar_indice_adrs
-
-
 if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")  # Windows: pipe em cp1252 não tem ✅/⚠️/→ e o print quebraria
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8")
-    if len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h"):
-        print("Uso: python3 generate_adr_index.py [caminho_para_o_diretorio_de_adrs]")
-        sys.exit(0)
-    caminho = Path(sys.argv[1]) if len(sys.argv) > 1 else None
-    gerar_indice_adrs(caminho)
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows: pipe em cp1252 não tem ✅/⚠️/→ e o print quebraria
+    sys.stderr.reconfigure(encoding="utf-8")
+    gerar_indice_adrs()

@@ -1,8 +1,8 @@
 ---
 title: Guia Completo do Fluxo de Desenvolvimento, Commit, Documentação e Sincronização de Memórias
 description: Manual autossuficiente do ciclo determinístico de desenvolvimento, micro-commits, governança de ADRs, navegação por Graphify e sincronização de memória persistente entre Claude Code e Gemini CLI para projetos modernos.
-version: 1.6.2
-date: 2026-10-14
+version: 1.6.3
+date: 2026-10-21
 ---
 
 <!--
@@ -68,6 +68,9 @@ Data       | Autor          | Descrição da Alteração
 2026-10-14 | Eduardo Batista| v1.6.2 — HARNESS-08 silencia o stderr do `when` (settings ausente
            |                | é o estado "a instalar"); --migrate exige o GEMINI.md inteiro quando
            |                | ele não está versionado e idêntico a HEAD. Bloco na versão 7.
+2026-10-21 | Eduardo Batista| v1.6.3 — HARNESS-06 reprova o CLAUDE.md stub com seção que só
+           |                | repete o AGENTS.md, e o --migrate a remove (seções com linha
+           |                | exclusiva do Claude ficam inteiras). Bloco segue na versão 7.
 ================================================================================
 -->
 

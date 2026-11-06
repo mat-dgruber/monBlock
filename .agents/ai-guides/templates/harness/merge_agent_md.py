@@ -15,7 +15,9 @@ template sem alvo no Makefile.
 (`git rm` se versionado, senão `unlink`). Recusa (exit 1, nada tocado) se faltar no AGENTS.md qualquer linha não
 vazia do primário (CLAUDE.md legado, senão GEMINI.md; o título `# ` da 1ª linha não conta) ou qualquer heading `## `
 do secundário — ou qualquer linha dele, se o GEMINI.md não estiver versionado e idêntico a HEAD. Imprime `migrado` ou
-`completo`. Com --check: exit 1 se o CLAUDE.md não tem a linha `@AGENTS.md`, se o GEMINI.md ainda existe ou se falta
+`completo`. Com o CLAUDE.md já stub, as seções abaixo do `@AGENTS.md` que só repetem o AGENTS.md saem (as que
+têm qualquer linha exclusiva do Claude ficam inteiras). Com --check: exit 1 se o CLAUDE.md não tem a linha
+`@AGENTS.md`, se alguma seção dele só repete o AGENTS.md, se o GEMINI.md ainda existe ou se falta
 no AGENTS.md (ou no CLAUDE.md atual) algo do que HEAD tinha nos arquivos legados; sem git/HEAD, isso é vacuamente ok.
 Nas comparações com HEAD, `docs/adr` e `docs/adrs` são a mesma linha (a migração de ADRs do /setup reescreve isso).
 Fonte: templates/harness/merge_agent_md.py — HARNESS-05 (merge) e HARNESS-06 (--migrate).
@@ -176,6 +178,26 @@ def faltas(primario: str | None, secundario: str | None, tem: set[str], secundar
     return corpo(primario) + sec
 
 
+def poda(c: str, modelo: set[str], tem: set[str]) -> tuple[list[str], list[str]]:
+    """CLAUDE.md stub → (linhas que ficam abaixo do stub, 1ª linha de cada seção que só repete o AGENTS.md).
+    Seção = heading `#` até o próximo (o `#` dentro de bloco ``` não conta); o trecho antes do 1º heading também."""
+    secoes, cerca = [[]], False
+    for l in c.splitlines():
+        if l.lstrip().startswith("```"):
+            cerca = not cerca
+        elif re.match(r"#+ ", l) and not cerca:
+            secoes.append([])
+        secoes[-1].append(l)
+    fica, repetidas = [], []
+    for sec in secoes:
+        corpo = [l for l in sec if l.strip() and linha(l) not in modelo]
+        if corpo and all(linha(l) in tem for l in corpo):
+            repetidas.append(corpo[0].strip())
+        elif corpo:
+            fica += [l for l in sec if not (l.strip() and linha(l) in modelo)]
+    return fica, repetidas
+
+
 def migrate(stub_tpl: Path, agents: Path, check: bool) -> int:
     """HARNESS-06: CLAUDE.md vira stub `@AGENTS.md` e GEMINI.md da raiz sai, só se nada do primário nem nenhum
     heading do secundário (ou o secundário inteiro, se o git não o guarda) faltar no AGENTS.md."""
@@ -184,15 +206,17 @@ def migrate(stub_tpl: Path, agents: Path, check: bool) -> int:
     tem = conjunto(a) | conjunto(ler(stub_tpl))  # o stub nunca conta como conteúdo do primário perdido
     inteiro = g is not None and not recuperavel(pasta)
     stub = c is not None and STUB in conjunto(c)
+    fica, repetidas = poda(c, conjunto(ler(stub_tpl)) | {STUB}, tem) if stub else ([], [])
     if check:
         prim, sec = fontes(atual(pasta, "CLAUDE.md", c), g if g is not None else head(pasta, "GEMINI.md"))
         erros = ([] if stub else ["CLAUDE.md sem a linha @AGENTS.md"]) \
             + (["GEMINI.md ainda existe na raiz"] if g is not None else []) \
+            + [f"CLAUDE.md repete o AGENTS.md abaixo do @AGENTS.md: {x} (rode o --migrate)" for x in repetidas] \
             + [f"falta no AGENTS.md: {x}" for x in faltas(prim, sec, tem | (conjunto(c) if stub else set()), inteiro)]
         for e in erros:
             print(e, file=sys.stderr)
         return 1 if erros else 0
-    if stub and g is None:
+    if stub and g is None and not repetidas:
         print("completo")
         return 0
     if a is None:
@@ -203,8 +227,9 @@ def migrate(stub_tpl: Path, agents: Path, check: bool) -> int:
         for x in falta:
             print(f"recusado, falta no AGENTS.md: {x}", file=sys.stderr)
         return 1
-    if not stub:  # stub já presente: preserva as linhas exclusivas do Claude abaixo dele
-        claude.write_text(stub_tpl.read_text(encoding="utf-8"), encoding="utf-8")
+    if not stub or repetidas:  # stub já presente: preserva as seções exclusivas do Claude abaixo dele
+        resto = "\n".join(fica).strip("\n")
+        claude.write_text(stub_tpl.read_text(encoding="utf-8") + (f"\n{resto}\n" if resto else ""), encoding="utf-8")
     if g is not None:
         versionado = subprocess.run(["git", "ls-files", "--error-unmatch", "GEMINI.md"], cwd=pasta, capture_output=True).returncode == 0
         if versionado:

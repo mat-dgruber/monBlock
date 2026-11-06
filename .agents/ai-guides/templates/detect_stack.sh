@@ -32,6 +32,12 @@ match() {
   done
 }
 
+node_proj() {  # package.json que é só `{"type": "…"}` (mods/ do MODS-02) marca ESM, não é projeto
+  find_manifest package.json | while read -r f; do
+    tr -d '[:space:]' < "$f" | grep -Eqx '\{"type":"[a-z]+"\}' || dirname "$f"
+  done
+}
+
 PY_WEB='fastapi|django|flask|starlette|litestar|sanic|tornado|aiohttp'
 NODE_API='"(express|fastify|@nestjs/core|koa|hono|@hapi/hapi)"'
 NODE_UI='"(react|react-dom|vue|@angular/core|svelte|next|nuxt|solid-js|astro|preact|lit)"'
@@ -88,7 +94,7 @@ legado() {
 
 case "$alvo" in
   python)   dirs=$(match pyproject.toml; match requirements.txt; match setup.py) ;;
-  node)     dirs=$(match package.json) ;;
+  node)     dirs=$(node_proj) ;;
   php)      dirs=$(match composer.json) ;;
   go)       dirs=$(match go.mod) ;;
   rust)     dirs=$(match Cargo.toml) ;;

@@ -22,27 +22,6 @@
           { "type": "command", "command": "(jq -r '.tool_response.filePath // .tool_input.file_path' | grep -E '\\.py$' && make format && make lint) || true", "statusMessage": "Formatação e lint zero-turn (Ruff)..." }
         ]
       }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; for d in \"$ROOT/.claude\" \"$ROOT/hooks\" .claude hooks; do [ -f \"$d/token_economy_runtime.py\" ] && exec python3 \"$d/token_economy_runtime.py\" session-start; done; exit 0" }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; for d in \"$ROOT/.claude\" \"$ROOT/hooks\" .claude hooks; do [ -f \"$d/token_economy_runtime.py\" ] && exec python3 \"$d/token_economy_runtime.py\" subagent-start; done; exit 0" }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "ROOT=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; for d in \"$ROOT/.claude\" \"$ROOT/hooks\" .claude hooks; do [ -f \"$d/token_economy_runtime.py\" ] && exec python3 \"$d/token_economy_runtime.py\" prompt-submit; done; exit 0" }
-        ]
-      }
     ]
   }
 }

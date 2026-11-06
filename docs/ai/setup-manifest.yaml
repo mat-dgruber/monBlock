@@ -1,4 +1,4 @@
-ai_guides_version: 2.11.1
+ai_guides_version: 2.13.0
 project:
   purpose: desktop
   stack:
@@ -11,6 +11,12 @@ project:
   - ux
   - product
   - api-dx
+  backend_style: enxuto
+  backend_blocks:
+  - use_cases
+  - uow
+  stores:
+  - relacional
 guides:
   1password-credentials:
     version: 2
@@ -149,8 +155,8 @@ guides:
       GRAPH-08: pass
       GRAPH-09: pass
   padrao-criacao-adrs:
-    version: 4
-    applied_at: '2026-11-04T11:09:27'
+    version: 5
+    applied_at: '2026-11-06T02:20:17+00:00'
     status: pass
     heuristics:
       ADR-01: pass
@@ -162,8 +168,8 @@ guides:
       ADR-07: pass
       ADR-08: pass
   arquitetura-clean-code:
-    version: 6
-    applied_at: '2026-11-04T11:09:30'
+    version: 7
+    applied_at: '2026-11-06T02:20:18+00:00'
     status: pass
     heuristics:
       ARCH-01: pass
@@ -262,9 +268,31 @@ guides:
       DSK-03: pass
   testing-desktop:
     version: 1
-    applied_at: '2026-11-04T11:09:33'
+    applied_at: '2026-11-06T02:21:13+00:00'
     status: pass
     heuristics:
       TDSK-01: pass
       TDSK-02: pass
-      TDSK-03: pass
+      TDSK-03: skip
+  engenharia-banco-dados:
+    version: 1
+    applied_at: '2026-11-06T02:20:13+00:00'
+    status: pass
+    heuristics:
+      DBENG-01: pass
+      DBENG-02: pass
+      DBENG-03: pass
+      DBENG-04: skip
+      DBENG-05: pass
+      DBENG-06: pass
+  ddd-pragmatico:
+    version: 1
+    applied_at: '2026-11-06T02:20:18+00:00'
+    status: pass
+    heuristics:
+      DDDP-00: pass
+      DDDP-01: pass
+      DDDP-02: pass
+      DDDP-03: skip
+      DDDP-04: skip
+      DDDP-05: pass

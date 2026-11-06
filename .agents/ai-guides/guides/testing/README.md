@@ -21,6 +21,7 @@ guides/testing/
 ├── backend/    ──> 🐍 Testes de Backend: Pytest, Pest, JUnit, in-memory fixtures e mocks
 ├── frontend/   ──> 🌐 Testes de Frontend: Karma, Jasmine, Angular Signals, Playwright E2E e Acessibilidade
 ├── mobile/     ──> 📱 Testes de Mobile: Compose, SwiftUI, Flutter test, React Native Testing Library e Maestro E2E
+├── desktop/    ──> 🖥️ Testes de Desktop: Vitest Main/IPC, SQLite in-memory, Playwright Electron e Xvfb
 └── games/      ──> 🎮 Testes de Jogos: GUT, gdUnit4, Unity UTF, testes de Resource puro, física headless e netcode
 ```
 
@@ -28,7 +29,7 @@ guides/testing/
 
 ## ⚙️ Heurísticas Executáveis
 
-Cada suíte tem um bloco `yaml heuristics` no seu `README.md` — slugs `testing-backend` (`TESTB-01..08`), `testing-frontend` (`TESTF-01..08`), `testing-mobile` (`TMOB-01..03`) e `testing-games` (`TGAM-01..03`) — aplicado pelo `/setup` via `setup-testing-backend`, `setup-testing-frontend`, `setup-testing-mobile` e `setup-testing-games` e provado por `verify_setup.py`. Os 4 guias internos de cada suíte (standards, execution, modernization, troubleshooting) são o conteúdo normativo que as heurísticas referenciam.
+Cada suíte tem um bloco `yaml heuristics` no seu `README.md` — slugs `testing-backend` (`TESTB-01..08`), `testing-frontend` (`TESTF-01..08`), `testing-mobile` (`TMOB-01..03`), `testing-desktop` (`TDSK-01..03`) e `testing-games` (`TGAM-01..03`) — aplicado pelo `/setup` via `setup-testing-backend`, `setup-testing-frontend`, `setup-testing-mobile`, `setup-testing-desktop` e `setup-testing-games` e provado por `verify_setup.py`. Os 4 guias internos de cada suíte (standards, execution, modernization, troubleshooting) são o conteúdo normativo que as heurísticas referenciam.
 
 ---
 
@@ -40,6 +41,7 @@ Cada suíte tem um bloco `yaml heuristics` no seu `README.md` — slugs `testing
 | [`frontend/`](frontend/README.md) | **Frontend & UI/E2E**<br>(Karma, Jasmine, Playwright, Vitest) | Padrões para componentes e Signals, testes de acessibilidade com `axe-core`, testes E2E resilientes, execução e troubleshooting. |
 | [`mobile/`](mobile/README.md) | **Mobile & Telas/E2E**<br>(Compose, Flutter, RNTL, Maestro) | Padrões AAA para ViewModels e Widgets, isolamento sem chamadas de rede reais, execução em emuladores headless e Maestro E2E. |
 | [`games/`](games/README.md) | **Jogos & Simulação em Tempo Real**<br>(Godot 4 GUT/gdUnit4, Unity UTF, Unreal) | Padrões AAA para `Resource`/Estado puro em microssegundos, testes de cena/colisão e sinais, execução `--headless` em CI e eliminação de *Orphan Nodes*. |
+| [`desktop/`](desktop/README.md) | **Desktop Multiplataforma**<br>(Playwright Electron, Vitest IPC/Main, Spectron Migration) | Padrões AAA para processos Main/Renderer/utilityProcess, isolamento com in-memory SQLite, testes E2E headless via Xvfb e troubleshooting multi-OS. |
 
 ---
 

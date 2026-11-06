@@ -19,7 +19,8 @@
 [Descreva a arquitetura server-side baseada em DDD e Clean Architecture.]
 
 *   **Camada de Apresentação / Borda:** Controllers, Handlers de Mensagens/Eventos, definição de Rotas e Middlewares de validação/autenticação.
-*   **Camada de Aplicação:** Casos de Uso (Use Cases), Application Services, orquestração de operações e comandos/consultas.
+*   **Camada de Aplicação:** Application Services, orquestração de operações e comandos/consultas.
+*   **Casos de Uso (se adotado):** Use Cases como bloco opcional (ver `guia-ddd-pragmatico-unit-of-work-use-cases.md`); em projeto enxuto, o Service coeso faz o papel.
 *   **Camada de Domínio:** Entidades de Negócio, Agregados, Value Objects, Regras e Invariantes Centrais, Domain Services e Domain Events.
 *   **Camada de Infraestrutura e Persistência:** Implementações de Repositórios, Gateways, Adapters de Banco de Dados (SQL/NoSQL) e mensageria externa.
 *   **Contratos e DTOs Tipados Formais:** Definição de contratos formais de entrada e saída via OpenAPI 3.1, Schemas JSON ou interfaces/tipos estritos da linguagem.
@@ -28,6 +29,8 @@
 
 ## 3. Acesso a Dados, Persistência e Transacionalidade
 [Descreva a estratégia de queries parametrizadas (Prepared Statements / ORM seguro), índices necessários para performance e controle de transações ACID.]
+
+*   **Fronteira Transacional por store (se adotado Unit of Work):** para cada store (SQL, Mongo, cache, BigQuery), informe se há UoW (sim/não) e por quê; UoW nunca atravessa stores, transações curtas sem I/O externo, consistência entre stores via Outbox.
 
 ---
 

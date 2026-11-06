@@ -301,6 +301,10 @@ def main(argv: list[str] | None = None) -> int:
     if cmd in ("status", "--status"):
         s_cfg, p_cfg = ensure_configs(force_ultra=False)
         budget = _read_json(_stoneage_dir() / "session-budget.json")
+        if budget and "mode" in budget:
+            s_cfg["activeMode"] = budget["mode"]
+        if budget and "ponytailMode" in budget:
+            s_cfg["ponytailMode"] = budget["ponytailMode"]
         print(json.dumps({"stoneage": s_cfg, "ponytail": p_cfg, "budget": budget}, indent=2, ensure_ascii=False))
         return 0
     if cmd == "subagent-start":

@@ -2,8 +2,8 @@
 
 title: Guia Definitivo de Arquitetura de Software, Design Patterns e Clean Code
 description: Manual técnico e framework de engenharia de software para arquiteturas resilientes, Clean Architecture, Hexagonal, Monólitos Modulares, princípios SOLID rigorosos, Clean Code e padrões de refatoração contínua.
-version: 1.2.5
-date: 2026-09-28
+version: 1.3.0
+date: 2026-10-28
 author: Comitê Corporativo de Arquitetura & Engenharia de Software
 ---
 
@@ -32,6 +32,9 @@ LOG DE MANUTENÇÃO E ALTERAÇÕES DO DOCUMENTO
 | 2026-09-28    | Eduardo Batista                                            | v1.2.5 — ARCH-02 faz pre-flight (ruff check --select); com violação e lint verde no     |
 |               |                                                            | baseline, não liga a regra (⚠️ com motivo): o setup não quebra CI que passava.         |
 | 2026-10-14    | Eduardo Batista                                            | AGENTS.md como instrução única: referência ARCH-05 passa a ser verificada no AGENTS.md. Bloco na versão 6. |
+| 2026-10-28    | Eduardo Batista                                            | v1.3.0 — Reconhece a variante enxuta `ddd-pragmatico`: callout na §5.3.1, ressalvas no |
+|               |                                                            | Anemic (§10.6) e nos itens A.1/A.3 (§12), linha de UoW/Outbox na §11 e ARCH-03 com      |
+|               |                                                            | `containers` quando `ddd_detect.sh adotado`. Bloco na versão 7.                         |
 
 =================================================================================
 -->
@@ -46,7 +49,7 @@ Bloco lido pelo `/setup` e por `skills/setup/scripts/verify_setup.py`. `when`/`v
 
 ```yaml heuristics
 guide: arquitetura-clean-code
-version: 6
+version: 7
 requires: [padrao-criacao-adrs]
 heuristics:
   - id: ARCH-01
@@ -87,16 +90,46 @@ heuristics:
       sqlalchemy, requests e httpx — nunca com o pacote raiz inteiro (ex.: `src.app`) em source_modules: routers e
       repositories importam o framework por definição, e a dívida vira falsa. Adicione import-linter às dependências de
       desenvolvimento.
+      Estilo DDD enxuto: se `sh "$AI_GUIDES_RUNTIME/templates/architecture/ddd_detect.sh" adotado` sair 0 (projeto adota o
+      estilo enxuto: backend_style enxuto no manifesto, ou ADR ddd-pragmatico sem estilo declarado no manifesto; manifesto
+      purista não adota), o contrato é type = "layers" com `containers` por módulo (vertical slices) e a ordem canônica
+      `router > use_cases > service | policies > repository > models | schemas > exceptions`, ajustada às camadas reais do
+      projeto e decidida pelo pre-flight. Forma completa (o arquivo precisa da tabela [tool.importlinter] com root_packages,
+      o pacote raiz importável, prefixo de todos os containers: `["src"]` para módulos `src.app.<modulo>`; sem a chave o
+      lint-imports falha com KeyError. containers lista cada pacote de módulo, não o pacote raiz: os nomes em layers são
+      relativos a cada container; `src.app.<modulo>` é placeholder, liste cada módulo real):
+        [tool.importlinter]
+        root_packages = ["src"]
+
+        [[tool.importlinter.contracts]]
+        name = "Camadas por módulo (ddd-pragmatico)"
+        type = "layers"
+        containers = ["src.app.<modulo-a>", "src.app.<modulo-b>"]
+        layers = ["router", "(use_cases)", "service | (policies)", "repository", "models | schemas", "(exceptions)"]
+      Camada que não existe em algum módulo, inclusive uma irmã dentro de `|`: tire-a de layers ou marque-a opcional com
+      parênteses, como `(use_cases)` (sem os parênteses o lint-imports aborta com "Missing layer"). `|` separa irmãs
+      independentes dentro de uma mesma camada: irmãs (`|`) não se importam entre si, então `schemas` que importa `models`
+      (enums e tipos, convenção comum) quebra o contrato. Se essa é a convenção do projeto, o pre-flight põe `schemas` como
+      camada própria acima de `models` (`"schemas", "models", "(exceptions)"`): é ajuste às camadas reais, não dívida.
+      `exceptions` fica abaixo de `models` porque o modelo levanta as exceções de domínio do próprio módulo.
+      Se o import-linter instalado rejeitar a forma, o pre-flight falha: ajuste (ex.: um contrato por módulo) antes de
+      gravar qualquer coisa. Saída diferente de 0: contrato clássico acima.
       Pre-flight (obrigatório, antes de gravar o contrato): grave-o com a ferramenta de edição em
-      .importlinter-preflight.toml (formato [tool.importlinter]; contrato forbidden com pacote externo exige
-      include_external_packages = true) e rode com o runner e o PYTHONPATH do projeto, sem instalar nada no ambiente
-      global — ex.: `PYTHONPATH=src uv run --with import-linter lint-imports --config .importlinter-preflight.toml`
-      (poetry: `poetry run`; sem runner: `uvx --from import-linter lint-imports`). Apague o arquivo depois.
+      .importlinter-preflight.toml (tabela [tool.importlinter] com root_packages = ["<pacote raiz importável>"], também no
+      contrato clássico; contrato forbidden com pacote externo exige include_external_packages = true) e rode com o runner
+      e o PYTHONPATH do projeto, sem instalar nada no ambiente global — ex.:
+      `PYTHONPATH=. uv run --with import-linter lint-imports --config .importlinter-preflight.toml` (o diretório atual já
+      está no sys.path: `src` como pacote raiz resolve assim; se o pacote raiz fica dentro de `src/`, ex. `app`, use
+      `PYTHONPATH=src`; poetry: `poetry run`; sem runner: `uvx --from import-linter lint-imports`). Apague o arquivo depois.
+      Saída ≠ 0 com contratos "broken" é o sinal esperado de violações (siga o ramo "Há violações"), não é falha da
+      ferramenta: não repita o comando nem trate como erro de execução.
       Sem a saída desse comando NÃO registre ADR de dívida nem afirme violações: reporte que o pre-flight não rodou.
       NUNCA grave no projeto um contrato que o código atual viole.
       - Passou limpo: grave [tool.importlinter] no pyproject.toml e inclua lint-imports no alvo de lint.
       - Há violações: não grave o contrato ativo nem o ligue ao lint/CI. Registre a dívida numa ADR
-        NNNN-debito-contrato-camadas-python.md no diretório de ADRs do projeto (docs/adr/ se existir, senão docs/adrs/; próximo número, template de ADR do projeto) com o contrato
+        NNNN-debito-contrato-camadas-python.md no diretório de ADRs do projeto (docs/adr/ se existir, senão docs/adrs/;
+        próximo número, template de ADR do projeto; nome e estrutura do padrão do guia padrao-criacao-adrs — o
+        python3 .agents/scripts/adr/validate_adrs.py tem de seguir passando) com o contrato
         proposto e, copiadas da saída do pre-flight, as linhas `a.b -> c.d (l.N)` de cada import violador (o ARCH-06
         confere); deixe o contrato comentado no pyproject.toml apontando para a ADR. Não afrouxe o
         domínio nem refatore o código do usuário para passar. Enquanto a dívida existir, esta heurística fica ⚠️ e o
@@ -117,7 +150,9 @@ heuristics:
       ao projeto (pre-flight):
       - Passou limpo: crie o script "lint:deps": "depcruise src" e inclua-o no lint.
       - Há violações: não ligue lint:deps ao lint/CI; registre a dívida numa ADR
-        NNNN-debito-contrato-camadas-js.md no diretório de ADRs do projeto (docs/adr/ se existir, senão docs/adrs/; próximo número, template de ADR do projeto) com cada import
+        NNNN-debito-contrato-camadas-js.md no diretório de ADRs do projeto (docs/adr/ se existir, senão docs/adrs/;
+        próximo número, template de ADR do projeto; nome e estrutura do padrão do guia padrao-criacao-adrs — o
+        python3 .agents/scripts/adr/validate_adrs.py tem de seguir passando) com cada import
         violador e reporte ⚠️. Se a ADR já existe e ainda há violações, não mude nada.
     verify: |
       sh "$AI_GUIDES_RUNTIME/templates/in_each.sh" --all node "ls .dependency-cruiser.* >/dev/null 2>&1"
@@ -711,6 +746,8 @@ No desenvolvimento de serviços de backend, a arquitetura concêntrica garante q
              └─────────────────────────────────────────────────┘
                            LADO DRIVEN (Outbound)
 ```
+
+> **Variante Enxuta Sancionada (`ddd-pragmatico`):** backends com invariantes locais a uma entidade, um store transacional dominante, banco estável e equipe pequena/média podem adotar o estilo DDD enxuto: vertical slices (`router`, `service`, `repository`, `models`, `schemas`, `policies`, `exceptions`), o modelo ORM como entidade de domínio (sem Mappers obrigatórios) e, opcionalmente, Use Cases e Unit of Work. A variante só vale quando o projeto adota o estilo enxuto (`backend_style: enxuto` no manifesto, ou ADR `ddd-pragmatico` sem estilo declarado no manifesto; manifesto `purista` mantém o item), e tem gatilhos de graduação de volta ao purista (invariantes entre entidades, regras que não cabem no modelo ORM, domínio que exige banco para ser testado, segundo adaptador de persistência). Critérios na [Matriz de Escolha (§1.1)](guia-ddd-pragmatico-unit-of-work-use-cases.md#11-matriz-de-escolha) e gatilhos em [§1.2](guia-ddd-pragmatico-unit-of-work-use-cases.md#12-gatilhos-de-graduação-para-o-purista); o modelo híbrido está na [§3](guia-ddd-pragmatico-unit-of-work-use-cases.md#3-modelo-híbrido-orm-como-entidade-de-domínio) e a fronteira transacional (UoW com critério, persistência poliglota, Outbox) na [§6](guia-ddd-pragmatico-unit-of-work-use-cases.md#6-uow-com-critério-fronteira-transacional-persistência-poliglota-e-performance). Guia completo: `guia-ddd-pragmatico-unit-of-work-use-cases.md`.
 
 ##### 5.3.2. Clean Architecture no Frontend (Client-side)
 
@@ -1680,6 +1717,8 @@ Criar estruturas complexas de herança, fábricas genéricas e classes abstratas
 #### 6. Anemic Domain Model (Modelo de Domínio Anêmico)
 Entidades de negócio são reduzidas a sacos passivos de dados contendo apenas *getters* e *setters*, enquanto toda a lógica e validações de negócio são sequestradas por classes monolíticas de "Serviço" (`OrderService` com 4.000 linhas). Viola os princípios básicos da orientação a objetos e destrói o encapsulamento.
 
+> **Ressalva (variante `ddd-pragmatico`):** Quando o projeto adota o estilo enxuto (`backend_style: enxuto` no manifesto, ou ADR `ddd-pragmatico` sem estilo declarado no manifesto; manifesto `purista` mantém o item), a regra de negócio morando em um *service* coeso e testável é trade-off aceito, não anti-padrão, desde que o modelo ORM mantenha as invariantes locais (modelo híbrido). Vira dívida quando o service cresce até virar *God Service* (múltiplos atores de negócio, regra duplicada entre services, arquivo inavegável): é o sinal para extrair domain service/agregado ou graduar o módulo ao purista (gatilhos na [§1.2](guia-ddd-pragmatico-unit-of-work-use-cases.md#12-gatilhos-de-graduação-para-o-purista) do guia `ddd-pragmatico`).
+
 #### 7. Distributed Monolith (Monólito Distribuído)
 Um sistema fragmentado em dezenas de microsserviços que compartilham o mesmo banco de dados relacional e dependem de cadeias síncronas de chamadas HTTP para completar qualquer transação. Reúne o pior dos dois mundos: toda a complexidade operacional da rede com todo o acoplamento do pior monólito.
 
@@ -1699,6 +1738,7 @@ Esta matriz atua como manual de diagnóstico rápido para Tech Leads identificar
 | Erros de "NullReferenceException" ou "TypeError: cannot read properties of undefined" frequentes em produção. | Ausência de validação em fronteiras e uso permissivo de valores nulos. | **Value Objects** auto-validados + **Null Object Pattern** + Tipos Opcionais. |
 | Dificuldade extrema para escrever testes unitários sem levantar Docker e bancos reais. | Núcleo de domínio acoplado a frameworks e bibliotecas concretas de persistência (DIP violado). | **Hexagonal Architecture (Ports & Adapters)** com inversão de dependências. |
 | Código monolítico legado inavegável, mas o negócio não pode parar as entregas. | Débito técnico acumulado e risco fatal de uma reescrita Big Bang. | **Strangler Fig Pattern** com roteamento gradual via API Gateway. |
+| Transação longa (HTTP externo ou e-mail com a sessão aberta) ou Unit of Work atravessando stores distintos (relacional + BigQuery/Mongo/Redis). | Fronteira transacional sem critério: o UoW virou "sessão global" e o ganho de atomicidade só existe dentro de um único recurso transacional. | **Unit of Work com critério** (curto, um store por UoW, `commit` só no Use Case/service) + **Transactional Outbox** para consistência entre stores (guia `ddd-pragmatico`, [§6](guia-ddd-pragmatico-unit-of-work-use-cases.md#6-uow-com-critério-fronteira-transacional-persistência-poliglota-e-performance)). |
 
 ---
 
@@ -1707,9 +1747,9 @@ Esta matriz atua como manual de diagnóstico rápido para Tech Leads identificar
 Utilize este checklist em sessões de revisão de design técnico (RFCs) e aprovação de Pull Requests críticos:
 
 #### A. Soberania do Domínio e Fronteiras
-- [ ] As entidades do domínio são puras e não dependem de decorators ou classes de ORMs (ex.: TypeORM, SQLAlchemy, Eloquent)?
+- [ ] As entidades do domínio são puras e não dependem de decorators ou classes de ORMs (ex.: TypeORM, SQLAlchemy, Eloquent)? *(Não se aplica quando o projeto adota o estilo enxuto (`backend_style: enxuto` no manifesto, ou ADR `ddd-pragmatico` sem estilo declarado no manifesto; manifesto `purista` mantém o item): no modelo híbrido o modelo ORM é a entidade de domínio.)*
 - [ ] A regra de dependência incondicional está sendo preservada (as camadas internas desconhecem a infraestrutura externa)?
-- [ ] Mapeadores de fronteira (Mappers) traduzem explicitamente os DTOs de entrada e modelos do banco para entidades de domínio?
+- [ ] Mapeadores de fronteira (Mappers) traduzem explicitamente os DTOs de entrada e modelos do banco para entidades de domínio? *(Não se aplica quando o projeto adota o estilo enxuto (`backend_style: enxuto` no manifesto, ou ADR `ddd-pragmatico` sem estilo declarado no manifesto; manifesto `purista` mantém o item): schemas na borda e modelo ORM no núcleo bastam; o Mapper só entra onde houver ganho real.)*
 
 #### B. Rigor em Princípios de Design e Clean Code
 - [ ] Cada classe ou use case possui um único ator como razão para mudar (SRP)?

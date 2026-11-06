@@ -31,6 +31,7 @@ Data       | Autor          | Descrição
            |                | ADR-08 pergunta se o projeto com docs/adr/ quer migrar; "manter"
            |                | fica registrado no CLAUDE.md. Bloco de heurísticas na versão 3.
 2026-10-14 | Eduardo Batista| AGENTS.md como instrução única: referência ADR-07/ADR-08 passa a ser verificada no AGENTS.md. Bloco na versão 4.
+2026-10-29 | Eduardo Batista| v2.3.0 — ADRs legadas com convenção própria congeladas em .agents/scripts/adr/adrs-legadas.txt (ADR-04 pergunta manter × reescrever); índice inclui legadas; ADR-03 atualiza cópias sem a lista. Bloco na versão 5.
 ================================================================================
 -->
 
@@ -38,7 +39,7 @@ Data       | Autor          | Descrição
 
 | Metadado | Detalhe |
 | :--- | :--- |
-| **Versão** | 2.2.0 (SemVer) |
+| **Versão** | 2.3.0 (SemVer) |
 | **Status** | **Ativo / Normativo** |
 | **Escopo** | Governança Arquitetural, Engenharia de Software, IA e Compliance |
 | **Diretório Canônico de ADRs** | `docs/adrs/` (projetos que já usam `docs/adr/` permanecem nele) |
@@ -57,7 +58,7 @@ Bloco lido pelo `/setup` e por `skills/setup/scripts/verify_setup.py`. `when`/`v
 
 ```yaml heuristics
 guide: padrao-criacao-adrs
-version: 4
+version: 5
 requires: [harness-commit-memoria]
 heuristics:
   - id: ADR-01
@@ -77,19 +78,33 @@ heuristics:
 
   - id: ADR-03
     title: Scripts de índice e validação de ADRs em .agents/scripts/adr/
-    when: "! test -f .agents/scripts/adr/validate_adrs.py || ! test -f .agents/scripts/adr/generate_adr_index.py || { grep -q 'fonte: guia-padrao-criacao-adrs.md' .agents/scripts/adr/validate_adrs.py && ! grep -q 'resolver_diretorio_adrs' .agents/scripts/adr/validate_adrs.py; }"
+    when: "! test -f .agents/scripts/adr/validate_adrs.py || ! test -f .agents/scripts/adr/generate_adr_index.py || { grep -q 'fonte: guia-padrao-criacao-adrs.md' .agents/scripts/adr/validate_adrs.py && ! grep -q 'adrs-legadas.txt' .agents/scripts/adr/validate_adrs.py; } || { grep -q 'fonte: guia-padrao-criacao-adrs.md' .agents/scripts/adr/generate_adr_index.py && ! grep -q 'adrs-legadas.txt' .agents/scripts/adr/generate_adr_index.py; }"
     do: |
       mkdir -p .agents/scripts/adr
-      cp "$AI_GUIDES_RUNTIME/templates/adr/generate_adr_index.py" "$AI_GUIDES_RUNTIME/templates/adr/validate_adrs.py" .agents/scripts/adr/
-    verify: "python3 -m py_compile .agents/scripts/adr/validate_adrs.py .agents/scripts/adr/generate_adr_index.py && { grep -q 'resolver_diretorio_adrs' .agents/scripts/adr/validate_adrs.py || ! grep -q 'fonte: guia-padrao-criacao-adrs.md' .agents/scripts/adr/validate_adrs.py; }"
+      for f in generate_adr_index.py validate_adrs.py; do
+        d=".agents/scripts/adr/$f"
+        if ! test -f "$d" || grep -q 'fonte: guia-padrao-criacao-adrs.md' "$d"; then cp "$AI_GUIDES_RUNTIME/templates/adr/$f" "$d"; fi
+      done
+    verify: "python3 -m py_compile .agents/scripts/adr/validate_adrs.py .agents/scripts/adr/generate_adr_index.py && for f in .agents/scripts/adr/validate_adrs.py .agents/scripts/adr/generate_adr_index.py; do grep -q 'adrs-legadas.txt' \"$f\" || ! grep -q 'fonte: guia-padrao-criacao-adrs.md' \"$f\" || exit 1; done"
 
   - id: ADR-04
-    title: Todas as ADRs conformes (nome 0000-kebab.md, log de manutenção, título e seção 2)
+    title: Todas as ADRs conformes (nome 0000-kebab.md, log de manutenção, título e seção 2), exceto as legadas congeladas
     when: "(test -d docs/adr || test -d docs/adrs) && ! python3 .agents/scripts/adr/validate_adrs.py >/dev/null 2>&1"
     do: |
-      agent: Rode python3 .agents/scripts/adr/validate_adrs.py e corrija cada ADR reportada conforme a seção 5
-      (anatomia canônica em 8 seções) deste guia: renomeie para 0000-slug-kebab.md, adicione o cabeçalho HTML
-      "LOG DE MANUTENÇÃO", o título "# ADR 0000: ..." e a seção "## 2. Decisão de Arquitetura". Repita até exit 0.
+      agent: Rode python3 .agents/scripts/adr/validate_adrs.py. Se reprovar ADRs que já existiam antes do setup e ainda não há
+      .agents/scripts/adr/adrs-legadas.txt, pergunte com AskUserQuestion (single; se o /setup já perguntou, use a resposta dada):
+      "Manter as legadas (Recomendado)" · "Reescrever no padrão".
+      - Manter as legadas (Recomendado): não edite nem renomeie nenhuma ADR existente; congele-as com
+        python3 .agents/scripts/adr/validate_adrs.py --congelar-legadas (grava a lista uma única vez, com as ADRs que hoje
+        reprovam; as conformes continuam validadas). As ADRs novas seguem o padrão e continuam a numeração do projeto
+        (a última legada é ADR-066: a próxima é 0067-slug.md). Sem AskUserQuestion (headless): mantenha, que não é destrutivo.
+      - Reescrever no padrão: corrija cada ADR reportada conforme a seção 5 (anatomia canônica em 8 seções) deste guia:
+        renomeie para 0000-slug-kebab.md, adicione o cabeçalho HTML "LOG DE MANUTENÇÃO", o título "# ADR 0000: ..." e a
+        seção "## 2. Decisão de Arquitetura". Repita até exit 0.
+      Em reexecução (projeto já configurado), ADRs que um setup anterior criou fora do padrão também reprovam e entram no
+      congelamento: tudo que reprova no momento da decisão é legado. Reporte na saída final quantas ADRs foram congeladas.
+      Com a lista já existente, cada ADR reprovada é nova: corrija-a conforme a seção 5; nunca a acrescente à lista e
+      nunca apague nem edite a lista para o validador passar. Repita até exit 0.
       Templates (arquivos com "template" no nome, como template-adr.md) não são ADRs: nunca os renomeie, edite ou apague.
     verify: "python3 .agents/scripts/adr/validate_adrs.py"
     depends_on: [ADR-01, ADR-03]
@@ -196,6 +211,8 @@ Uma ADR **DEVE** ser redigida sempre que uma mudança de arquitetura ou engenhar
 Todas as ADRs do projeto residem obrigatoriamente no diretório centralizado `docs/adrs/`.
 
 > **Retrocompatibilidade:** projetos que já mantêm ADRs em `docs/adr/` continuam nele — não renomeie. Os scripts da seção 7 e as heurísticas do `/setup` usam `docs/adr/` quando ele existe e `docs/adrs/` caso contrário. Ao encontrar só `docs/adr/`, o `/setup` e o `/setup-padrao-criacao-adrs` (ADR-08) perguntam se o projeto quer migrar (`git mv docs/adr docs/adrs` e atualização das referências); quem escolhe manter fica registrado no `AGENTS.md` e não é perguntado de novo.
+
+> **ADRs legadas com convenção própria:** projetos que já têm ADRs fora deste padrão (ex.: `ADR-066-slug.md`) não precisam reescrevê-las. Os nomes dessas ADRs ficam em `.agents/scripts/adr/adrs-legadas.txt` (um por linha), gravada uma única vez por `python3 .agents/scripts/adr/validate_adrs.py --congelar-legadas` com as ADRs que reprovam no momento da decisão; o validador as ignora, o índice as lista como `Legada` e todas as demais continuam validadas. ADRs novas seguem o padrão desta seção e continuam a numeração (a legada `ADR-066` é seguida por `0067-slug.md`), e o diretório fica misto. Apagar a lista desfaz o congelamento.
 
 ```text
 docs/
@@ -505,6 +522,8 @@ Ao redigir ou revisar uma ADR, certifique-se de seguir as regras abaixo:
 
 Para manter o repositório de ADRs organizado e consistente em escala, utilizam-se dois scripts utilitários de automação em Python:
 
+O validador ignora as ADRs legadas listadas em `.agents/scripts/adr/adrs-legadas.txt` (gravada uma única vez por `python3 .agents/scripts/adr/validate_adrs.py --congelar-legadas`) e o índice inclui essas ADRs como `Legada`; ver o parágrafo "ADRs legadas com convenção própria" na seção 3.
+
 #### 7.1 Script de Geração Automática do Índice (`docs/adrs/README.md`)
 
 ```python
@@ -514,22 +533,56 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
+
+IGNORADOS = {"README.md", "TEMPLATE.md"}
+LISTA_LEGADAS = os.path.join(".agents", "scripts", "adr", "adrs-legadas.txt")
 
 
-def resolver_diretorio_adrs():  # raiz do git (ou cwd); docs/adr legado prevalece, senão docs/adrs (padrão desde a v2.7.4)
+def resolver_raiz():  # raiz do git (ou cwd)
     try:
         raiz = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, encoding="utf-8").stdout.strip()
     except OSError:
         raiz = ""
-    raiz = raiz or os.getcwd()
+    return raiz or os.getcwd()
+
+
+def resolver_diretorio_adrs():  # docs/adr legado prevalece, senão docs/adrs (padrão desde a v2.7.4)
+    raiz = resolver_raiz()
     legado = os.path.join(raiz, "docs", "adr")
     return legado if os.path.isdir(legado) else os.path.join(raiz, "docs", "adrs")
+
+
+def normalizar(nome):  # NFC nos dois lados: macOS devolve nomes em NFD, o editor grava NFC
+    return unicodedata.normalize("NFC", nome.strip())
+
+
+def caminho_legadas(raiz):
+    return os.path.join(raiz, LISTA_LEGADAS)
+
+
+def ler_legadas(raiz):  # nomes NFC, sem linhas vazias/comentários; só compara com listdir, nunca abre o nome como caminho
+    caminho = caminho_legadas(raiz)
+    if not os.path.isfile(caminho):
+        return set()
+    with open(caminho, "r", encoding="utf-8-sig") as f:
+        nomes = (normalizar(linha) for linha in f.read().splitlines())
+        return {n for n in nomes if n and not n.startswith("#")}
+
+
+def numero_legada(nome):  # "ADR-008-ddd.md" -> "ADR-008"; sem dígitos, o nome sem .md
+    m = re.match(r"^(.*?\d+)", nome)
+    return m.group(1) if m else re.sub(r"\.md$", "", nome)
 
 
 def gerar_indice_adrs():
     adr_dir = resolver_diretorio_adrs()
     readme_path = os.path.join(adr_dir, "README.md")
-    arquivos = sorted([f for f in os.listdir(adr_dir) if re.match(r"^\d{4}-.*\.md$", f)])
+    existentes = os.listdir(adr_dir)
+    arquivos = sorted([f for f in existentes if re.match(r"^\d{4}-.*\.md$", f)])
+    listadas = ler_legadas(resolver_raiz())  # congeladas: listadas antes das novas, na ordem de nome
+    legadas = sorted([f for f in existentes if f.endswith(".md") and f not in IGNORADOS and normalizar(f) in listadas
+                      and f not in arquivos])
 
     linhas = [
         "# 📚 Repositório de Architecture Decision Records (ADRs)",
@@ -539,6 +592,16 @@ def gerar_indice_adrs():
         "| ADR | Título | Status | Data |",
         "| :---: | :--- | :---: | :---: |",
     ]
+
+    for arq in legadas:
+        with open(os.path.join(adr_dir, arq), "r", encoding="utf-8") as f:
+            conteudo = f.read()
+        titulo_match = re.search(r"^#\s+(.+)$", conteudo, re.MULTILINE)
+        status_match = re.search(r"\*\*Status\*\*\s*\|\s*\*\*([^*]+)\*\*\s*\(([^)]+)\)", conteudo)
+        titulo = titulo_match.group(1).strip() if titulo_match else arq
+        status = status_match.group(1) if status_match else "Legada"
+        data = status_match.group(2) if status_match else "-"
+        linhas.append(f"| [{numero_legada(arq)}]({arq}) | **{titulo}** | `{status}` | {data} |")
 
     for arq in arquivos:
         caminho = os.path.join(adr_dir, arq)
@@ -569,22 +632,29 @@ if __name__ == "__main__":
 #### 7.2 Validador de Conformidade em CI/CD (Linter de ADRs)
 
 ```python
-# Fonte canônica: templates/adr/validate_adrs.py (instalado em .agents/scripts/adr/ por ADR-03; ignora README.md, TEMPLATE.md e templates legados como template-adr.md)
+# Fonte canônica: templates/adr/validate_adrs.py (instalado em .agents/scripts/adr/ por ADR-03; ignora README.md, TEMPLATE.md, templates legados como template-adr.md e as ADRs listadas em adrs-legadas.txt)
 # Validador de CI para garantir integridade e formato das ADRs
+import argparse
 import os
 import re
 import subprocess
 import sys
+import unicodedata
 
 IGNORADOS = {"README.md", "TEMPLATE.md"}
+LISTA_LEGADAS = os.path.join(".agents", "scripts", "adr", "adrs-legadas.txt")
 
 
-def resolver_diretorio_adrs():  # raiz do git (ou cwd); docs/adr legado prevalece, senão docs/adrs (padrão desde a v2.7.4)
+def resolver_raiz():  # raiz do git (ou cwd)
     try:
         raiz = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, encoding="utf-8").stdout.strip()
     except OSError:
         raiz = ""
-    raiz = raiz or os.getcwd()
+    return raiz or os.getcwd()
+
+
+def resolver_diretorio_adrs():  # docs/adr legado prevalece, senão docs/adrs (padrão desde a v2.7.4)
+    raiz = resolver_raiz()
     legado = os.path.join(raiz, "docs", "adr")
     return legado if os.path.isdir(legado) else os.path.join(raiz, "docs", "adrs")
 
@@ -593,36 +663,98 @@ def eh_template(nome):  # template legado (ex.: template-adr.md) não é ADR e n
     return "template" in nome.lower() and not re.match(r"^\d{4}-", nome)
 
 
-def validar_adrs():
-    adr_dir = resolver_diretorio_adrs()
+def normalizar(nome):  # NFC nos dois lados: macOS devolve nomes em NFD, o editor grava NFC
+    return unicodedata.normalize("NFC", nome.strip())
+
+
+def caminho_legadas(raiz):
+    return os.path.join(raiz, LISTA_LEGADAS)
+
+
+def ler_legadas(raiz):  # nomes NFC, sem linhas vazias/comentários; só compara com listdir, nunca abre o nome como caminho
+    caminho = caminho_legadas(raiz)
+    if not os.path.isfile(caminho):
+        return set()
+    with open(caminho, "r", encoding="utf-8-sig") as f:
+        nomes = (normalizar(linha) for linha in f.read().splitlines())
+        return {n for n in nomes if n and not n.startswith("#")}
+
+
+def listar_adrs(adr_dir):
+    return [f for f in (os.listdir(adr_dir) if os.path.isdir(adr_dir) else []) if f.endswith(".md") and f not in IGNORADOS and not eh_template(f)]
+
+
+def erros_da_adr(adr_dir, adr):
     erros = []
-    adrs = [f for f in (os.listdir(adr_dir) if os.path.isdir(adr_dir) else []) if f.endswith(".md") and f not in IGNORADOS and not eh_template(f)]
+    if not re.match(r"^\d{4}-[a-z0-9-]+\.md$", adr):
+        erros.append(f"Nome inválido: {adr} (deve seguir 0000-kebab-case.md)")
 
-    for adr in adrs:
-        if not re.match(r"^\d{4}-[a-z0-9-]+\.md$", adr):
-            erros.append(f"Nome inválido: {adr} (deve seguir 0000-kebab-case.md)")
+    with open(os.path.join(adr_dir, adr), "r", encoding="utf-8") as f:
+        texto = f.read()
 
-        with open(os.path.join(adr_dir, adr), "r", encoding="utf-8") as f:
-            texto = f.read()
+    if "LOG DE MANUTENÇÃO" not in texto:
+        erros.append(f"{adr}: Cabeçalho HTML de log de manutenção ausente.")
+    if not re.search(r"^# ADR \d{4}:", texto, re.MULTILINE):
+        erros.append(f"{adr}: Título principal não segue o padrão '# ADR 0000:'.")
+    if "## 2. Decisão de Arquitetura" not in texto:
+        erros.append(f"{adr}: Seção '## 2. Decisão de Arquitetura' ausente.")
+    return erros
 
-        if "LOG DE MANUTENÇÃO" not in texto:
-            erros.append(f"{adr}: Cabeçalho HTML de log de manutenção ausente.")
-        if not re.search(r"^# ADR \d{4}:", texto, re.MULTILINE):
-            erros.append(f"{adr}: Título principal não segue o padrão '# ADR 0000:'.")
-        if "## 2. Decisão de Arquitetura" not in texto:
-            erros.append(f"{adr}: Seção '## 2. Decisão de Arquitetura' ausente.")
 
+def validar_adrs():
+    raiz = resolver_raiz()
+    adr_dir = resolver_diretorio_adrs()
+    legadas = ler_legadas(raiz)
+    erros = []
+    ignoradas = 0
+
+    for adr in listar_adrs(adr_dir):
+        if normalizar(adr) in legadas:
+            ignoradas += 1
+            continue
+        erros.extend(erros_da_adr(adr_dir, adr))
+
+    if ignoradas:
+        print(f"{ignoradas} ADR(s) legada(s) ignorada(s) (lista em .agents/scripts/adr/adrs-legadas.txt)")
     if erros:
         print("\n".join(erros))
         sys.exit(1)
     print("Todas as ADRs estão em conformidade!")
 
 
+def congelar_legadas():
+    raiz = resolver_raiz()
+    caminho = caminho_legadas(raiz)
+    if os.path.exists(caminho):
+        print("lista de legadas já existe: ADR nova não se congela — corrija-a conforme a seção 5 do guia", file=sys.stderr)
+        return 2
+    adr_dir = resolver_diretorio_adrs()
+    reprovadas = sorted(normalizar(a) for a in listar_adrs(adr_dir) if erros_da_adr(adr_dir, a))
+    if not reprovadas:
+        print("nada a congelar")
+        return 0
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    cabecalho = ["# ADRs legadas congeladas pelo /setup (guia padrao-criacao-adrs, ADR-04): ignoradas pelo validador.",
+                 "# ADR nova não entra aqui: corrija-a. Apagar este arquivo volta a validar todas."]
+    with open(caminho, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(cabecalho + reprovadas) + "\n")
+    print(f"{len(reprovadas)} ADR(s) congelada(s) em .agents/scripts/adr/adrs-legadas.txt")
+    return 0
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")  # Windows: pipe em cp1252 não tem ✅/⚠️/→ e o print quebraria
     sys.stderr.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Valida as ADRs do projeto.")
+    parser.add_argument("--congelar-legadas", action="store_true",
+                        help="grava .agents/scripts/adr/adrs-legadas.txt com as ADRs que hoje reprovam (uma única vez)")
+    args = parser.parse_args()
+    if args.congelar_legadas:
+        sys.exit(congelar_legadas())
     validar_adrs()
 ```
+
+Para customizar os scripts copiados para `.agents/scripts/adr/`, remova a linha `fonte: guia-padrao-criacao-adrs.md` da docstring; senão o ADR-03 os substitui na próxima atualização do guia.
 
 #### 7.3 Recuperação Forense em Repositórios Existentes (Débito de ADRs)
 

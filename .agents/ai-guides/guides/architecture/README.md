@@ -21,6 +21,7 @@ guides/architecture/
 ├── guia-system-design-sistemas-distribuidos.md    ──> Macro-arquitetura distribuída, CDN/Edge, Sharding, CAP/PACELC e Alta Escala (Front & Back)
 ├── guia-padroes-resiliencia-defensiva.md          ──> Circuit Breaker, Retries com Jitter, Bulkhead e Handshake Resiliente (Front & Back)
 ├── guia-seguranca-defensiva-zero-trust.md         ──> Diretrizes Zero-Trust, OWASP Top 10 e OWASP LLM Top 10 (Front & Back)
+├── guia-ddd-pragmatico-unit-of-work-use-cases.md  ──> DDD enxuto (vertical slices), Use Cases e Unit of Work opcionais, persistência poliglota (Backend)
 └── domain-documentation-standards.md              ──> Modelagem DDD Bounded Context, Transição de Estados e RBAC/ABAC (Front & Back)
 ```
 
@@ -28,7 +29,7 @@ guides/architecture/
 
 ## 📋 Detalhamento dos Guias
 
-> ⚙️ Os 5 guias deste diretório têm **Heurísticas Executáveis** aplicadas pelo `/setup`: `arquitetura-clean-code` (ARCH-01..06, requer `padrao-criacao-adrs`), `system-design-distribuidos` (SYSD-01..03, requer `padrao-criacao-adrs`), `resiliencia-defensiva` (RESIL-01..05), `seguranca-zero-trust` (ZT-01..07 — `.env`/`.env.example`/sandbox já cobertos por `construcao-harness`, `1password-credentials` e `ai-jail-sandbox`) e `domain-documentation-standards` (DOM-01..04). Cada um instala seu checklist em `.agents/rules/<slug>.md`, fiscaliza com linters quando a stack permite e referencia o guia no `CLAUDE.md`.
+> ⚙️ Os 6 guias deste diretório têm **Heurísticas Executáveis** aplicadas pelo `/setup`: `arquitetura-clean-code` (ARCH-01..06, requer `padrao-criacao-adrs`), `system-design-distribuidos` (SYSD-01..03, requer `padrao-criacao-adrs`), `resiliencia-defensiva` (RESIL-01..05), `seguranca-zero-trust` (ZT-01..07 — `.env`/`.env.example`/sandbox já cobertos por `construcao-harness`, `1password-credentials` e `ai-jail-sandbox`), `domain-documentation-standards` (DOM-01..04) e `ddd-pragmatico` (DDDP-00..05 — condicionais: só disparam quando o backend declara o estilo DDD enxuto no manifesto do `/setup` ou em ADR; requer `arquitetura-clean-code` e `padrao-criacao-adrs`). Cada um instala seu checklist em `.agents/rules/<slug>.md`, fiscaliza com linters quando a stack permite e referencia o guia no `CLAUDE.md`.
 
 | Guia Técnico | Descrição & Propósito |
 | :--- | :--- |
@@ -37,6 +38,7 @@ guides/architecture/
 | [`guia-padroes-resiliencia-defensiva.md`](guia-padroes-resiliencia-defensiva.md) ⚙️ `resiliencia-defensiva` | Padrões de resiliência e tolerância a falhas simétrica: UI Boundaries, rollback otimista e cancelamento de requisições no Frontend; Circuit Breaker, Retries com Full Jitter, Bulkhead, Outbox defensivo e Handshake Resiliente no Backend. |
 | [`guia-seguranca-defensiva-zero-trust.md`](guia-seguranca-defensiva-zero-trust.md) ⚙️ `seguranca-zero-trust` | Diretrizes canônicas de segurança defensiva e arquitetura Zero-Trust: princípios Never Trust, Always Verify, mitigação exaustiva de OWASP Top 10 e LLM Top 10, sanitização rigorosa de inputs, proteção de credenciais e conformidade LGPD/GDPR/PII no Frontend e Backend. |
 | [`domain-documentation-standards.md`](domain-documentation-standards.md) ⚙️ `domain-documentation-standards` | Metodologia unificada para documentação de regras de negócio, modelagem de Bounded Contexts em Domain-Driven Design (DDD), diagramas de transição de estados Mermaid e matrizes de permissão RBAC/ABAC para Frontend e Backend. |
+| [`guia-ddd-pragmatico-unit-of-work-use-cases.md`](guia-ddd-pragmatico-unit-of-work-use-cases.md) ⚙️ `ddd-pragmatico` | Estilo sancionado de DDD enxuto ao lado do purista (ADR 0007): vertical slices, modelo ORM como entidade (modelo híbrido) e gatilhos de graduação para Clean/Hexagonal; Use Cases e Unit of Work como blocos opcionais e independentes; UoW nunca atravessa stores (OLTP relacional sim, Mongo por atomicidade de documento, BigQuery via query services, consistência entre stores por Outbox/saga); fiscalização por `check_ddd_pragmatico.py`. |
 
 ---
 
