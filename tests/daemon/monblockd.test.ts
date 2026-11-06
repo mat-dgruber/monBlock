@@ -9,9 +9,10 @@ import { TripleStateStore } from '../../src/storage/state-store.js';
 import { MonBlockDaemon } from '../../src/daemon/monblockd.js';
 import { TrustedClock } from '../../src/daemon/trusted-clock.js';
 
-// Gerados por execução: senha de teste fixa no código é indistinguível de segredo real para scanners.
-const TEST_PASSWORD = `t-${crypto.randomBytes(9).toString('base64url')}`;
-const OTHER_TEST_PASSWORD = `o-${crypto.randomBytes(9).toString('base64url')}`;
+// Gerados por execução: credencial de teste fixa no código é indistinguível de segredo real para scanners.
+const freshTestCredential = (): string => crypto.randomBytes(12).toString('base64url');
+const TEST_PASSWORD = freshTestCredential();
+const OTHER_TEST_PASSWORD = freshTestCredential();
 
 describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
   let tmpDir: string;
