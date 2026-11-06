@@ -6,6 +6,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 ### Adicionado
+- Aprovação guiada do perfil dos navegadores: página de conclusão no Instalador, `postinstall` abre Ajustes > Geral > Gerenciamento de Dispositivos, e o app mostra um aviso com "Abrir Ajustes" enquanto o daemon não encontrar o perfil (`browserProfileInstalled` no `GET_STATE`).
+- "Sair do monBlock" na tray; Cmd+Q e SIGTERM voltam a encerrar o app (a proteção segue no daemon root).
 - Estrutura Dual-Harness Nível 3 (`.agents/`, `.claude/`, `.gemini/`, `AGENTS.md`, hooks de governança e memórias sincronizadas).
 - Engenharia reversa completa do aplicativo de referência em `_reversa_sdd/`.
 - Especificação de Arquitetura (`docs/architecture/ARCHITECTURE_SPEC.md`) e 4 ADRs canônicas (`docs/adrs/0001..0004`).
