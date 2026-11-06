@@ -414,3 +414,22 @@ describe('MOD-02: TelegramPartnerClient (Bot API, Resiliência, Raio-X e Callbac
     expect(failRes.error).toBe('ETIMEDOUT');
   });
 });
+
+describe('TelegramPartnerClient — âncora de tempo (RN-DAEMON-08)', () => {
+  it('repassa o cabeçalho Date da resposta para onServerDate', async () => {
+    // Arrange
+    const dates: string[] = [];
+    const client = new TelegramPartnerClient({
+      botToken: 'test-token',
+      pairedChatId: '12345678',
+      transport: { send: async () => ({ ok: true, status: 200, body: { ok: true }, serverDate: 'Thu, 05 Nov 2026 12:00:00 GMT' }) },
+      onServerDate: (d) => dates.push(d),
+    });
+
+    // Act
+    await client.sendPairingInvitation({ partnerName: 'Alice' });
+
+    // Assert
+    expect(dates).toEqual(['Thu, 05 Nov 2026 12:00:00 GMT']);
+  });
+});

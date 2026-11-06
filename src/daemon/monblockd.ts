@@ -9,6 +9,7 @@
 
 import crypto from 'node:crypto';
 import { TelegramPartnerClient } from './telegram-client.js';
+import { TrustedClock } from './trusted-clock.js';
 import {
   canMutateProtectionRule,
   evaluateEmergencyCooldown,
@@ -199,14 +200,17 @@ export interface PendingPairingState {
 export interface MonBlockDaemonOptions {
   store: TripleStateStore;
   enforcer: PlatformEnforcer;
+  /** Atalho de teste: relógio em que parede e monotônico coincidem. Produção usa `clock`. */
   nowFn?: () => number;
+  clock?: TrustedClock;
   telegramClient?: TelegramPartnerClient;
 }
 
 export class MonBlockDaemon {
   private readonly store: TripleStateStore;
   private readonly enforcer: PlatformEnforcer;
-  private readonly nowFn: () => number;
+  private readonly clock: TrustedClock;
+  private clockRestored = false;
   private readonly telegramClient?: TelegramPartnerClient;
   private pendingPairing: PendingPairingState | null = null;
   private isCheckingPairing = false;
@@ -216,7 +220,9 @@ export class MonBlockDaemon {
   constructor(options: MonBlockDaemonOptions) {
     this.store = options.store;
     this.enforcer = options.enforcer;
-    this.nowFn = options.nowFn ?? (() => Date.now());
+    this.clock =
+      options.clock ??
+      new TrustedClock(options.nowFn ? { wallNow: options.nowFn, monoNowMs: options.nowFn } : {});
     this.telegramClient = options.telegramClient;
   }
 
@@ -276,6 +282,13 @@ export class MonBlockDaemon {
     return false;
   }
 
+  private readonly onServerDate = (date: string): void => this.clock.ingestServerDate(date);
+
+  /** Persiste o estado junto com o snapshot do relógio confiável. */
+  private save(state: MonBlockPersistentState): void {
+    this.store.save({ ...state, clock: this.clock.snapshot() });
+  }
+
   /**
    * Enfileira e serializa a execução dos comandos IPC para evitar race conditions em disco.
    */
@@ -292,9 +305,15 @@ export class MonBlockDaemon {
    * Processa de forma determinística um comando IPC recebido pelo daemon.
    */
   private async processCommand(cmd: DaemonCommand): Promise<DaemonResponse> {
-    const now = this.nowFn();
     const reconciled = this.store.loadAndReconcile({ expectPaired: this.wasPaired });
     const { state } = reconciled;
+    if (!this.clockRestored) {
+      if (state.clock) this.clock.restore(state.clock);
+      this.clockRestored = true;
+    }
+    // `now` (expiração, updatedAtMs) nunca recua; `trustedNow` (cooldown) ignora a parede.
+    const now = this.clock.nowForExpiry();
+    const trustedNow = this.clock.trustedNow();
 
     if (state.paired) {
       this.wasPaired = true;
@@ -305,7 +324,7 @@ export class MonBlockDaemon {
     if (grantsExpired) {
       state.temporaryGrants = activeGrants;
       state.updatedAtMs = now;
-      this.store.save(state);
+      this.save(state);
     }
     if (grantsExpired || reconciled.tamperDetected) {
       await this.enforcer.applyWebRules(state.rules, state.temporaryGrants);
@@ -358,7 +377,7 @@ export class MonBlockDaemon {
 
         const client =
           this.telegramClient ??
-          new TelegramPartnerClient({ pairedChatId: telegramChatId });
+          new TelegramPartnerClient({ pairedChatId: telegramChatId, onServerDate: this.onServerDate });
         await client.sendPairingInvitation({
           partnerName,
           chatId: telegramChatId,
@@ -409,7 +428,10 @@ export class MonBlockDaemon {
         try {
           const client =
             this.telegramClient ??
-            new TelegramPartnerClient({ pairedChatId: this.pendingPairing.telegramChatId });
+            new TelegramPartnerClient({
+              pairedChatId: this.pendingPairing.telegramChatId,
+              onServerDate: this.onServerDate,
+            });
 
           const pollRes = await client.pollUpdates({
             offset: this.pendingPairing.lastUpdateOffset,
@@ -449,7 +471,7 @@ export class MonBlockDaemon {
                 };
 
                 this.wasPaired = true;
-                this.store.save(nextState);
+                this.save(nextState);
                 await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
                 // Envia os 5 códigos de emergência exclusivamente ao Telegram do Ajudante
@@ -549,7 +571,7 @@ export class MonBlockDaemon {
         };
 
         this.wasPaired = true;
-        this.store.save(nextState);
+        this.save(nextState);
         await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
@@ -638,7 +660,7 @@ export class MonBlockDaemon {
           updatedAtMs: now,
         };
 
-        this.store.save(nextState);
+        this.save(nextState);
         await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
@@ -702,7 +724,7 @@ export class MonBlockDaemon {
           updatedAtMs: now,
         };
 
-        this.store.save(nextState);
+        this.save(nextState);
         await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
@@ -764,7 +786,7 @@ export class MonBlockDaemon {
           updatedAtMs: now,
         };
 
-        this.store.save(nextState);
+        this.save(nextState);
         await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
@@ -776,10 +798,10 @@ export class MonBlockDaemon {
       }
 
       case 'TRIGGER_EMERGENCY_COOLDOWN': {
-        const startedAtMs = state.cooldown.startedAtMs ?? now;
+        const startedAtMs = state.cooldown.startedAtMs ?? trustedNow;
         const cooldownEval = evaluateEmergencyCooldown(
           new Date(startedAtMs).toISOString(),
-          now
+          trustedNow
         );
 
         const nextState: MonBlockPersistentState = {
@@ -789,7 +811,7 @@ export class MonBlockDaemon {
           updatedAtMs: now,
         };
 
-        this.store.save(nextState);
+        this.save(nextState);
 
         return {
           status: 200,
@@ -808,7 +830,7 @@ export class MonBlockDaemon {
           updatedAtMs: now,
         };
 
-        this.store.save(nextState);
+        this.save(nextState);
         await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
@@ -830,7 +852,7 @@ export class MonBlockDaemon {
           state.cooldown.startedAtMs !== null &&
           evaluateEmergencyCooldown(
             new Date(state.cooldown.startedAtMs).toISOString(),
-            now
+            trustedNow
           ).unlocked;
 
         if (!authorizedByPartner && !authorizedByCooldown) {
@@ -844,7 +866,7 @@ export class MonBlockDaemon {
 
         await this.enforcer.restoreSystemCleanState();
         this.wasPaired = false;
-        this.store.save({
+        this.save({
           ...state,
           version: state.version + 1,
           temporaryGrants: [],

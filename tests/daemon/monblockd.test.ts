@@ -6,6 +6,7 @@ import { generateChallengeToken } from '../../src/domain/partner-guard.js';
 import { MacOSPlatformEnforcer } from '../../src/enforcers/platform-enforcer.js';
 import { TripleStateStore } from '../../src/storage/state-store.js';
 import { MonBlockDaemon } from '../../src/daemon/monblockd.js';
+import { TrustedClock } from '../../src/daemon/trusted-clock.js';
 
 describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
   let tmpDir: string;
@@ -638,5 +639,95 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
     // Act 6: Testar CANCEL_PAIRING
     const cancelRes = await daemonWithTelegram.handleCommand({ type: 'CANCEL_PAIRING' });
     expect(cancelRes.status).toBe(200);
+  });
+});
+
+describe('MonBlockDaemon com TrustedClock (RN-DAEMON-08)', () => {
+  let tmpDir: string;
+  let hostsPath: string;
+  let daemon: MonBlockDaemon;
+  let store: TripleStateStore;
+  const t = { wall: 1_700_000_000_000, mono: 0 };
+  const H = 3600_000;
+
+  beforeEach(() => {
+    t.wall = 1_700_000_000_000;
+    t.mono = 0;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-clock-'));
+    hostsPath = path.join(tmpDir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    store = new TripleStateStore({
+      primaryPath: path.join(tmpDir, 'a.json'),
+      keychainPath: path.join(tmpDir, 'b.json'),
+      sealPath: path.join(tmpDir, 'c.seal'),
+      integrityKey: 'clock-test-key',
+    });
+    daemon = buildDaemon();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function buildDaemon(): MonBlockDaemon {
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath,
+      chromiumPlistPath: path.join(tmpDir, 'chrome.plist'),
+      firefoxPoliciesPath: path.join(tmpDir, 'policies.json'),
+      commandExecutor: async () => undefined,
+    });
+    const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
+    return new MonBlockDaemon({ store, enforcer, clock });
+  }
+
+  it('adiantar o relógio do sistema 72h não conclui o cooldown', async () => {
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: 's' });
+    await daemon.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
+
+    t.wall += 72 * H;
+    t.mono += 60_000;
+    const res = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('o cooldown conclui após 72h reais (monotônico)', async () => {
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: 's' });
+    await daemon.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
+
+    t.mono += 72 * H;
+    const res = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED' });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('atrasar o relógio do sistema não prolonga uma concessão de 15 min', async () => {
+    const secret = 'clock-grant-secret';
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: secret });
+    const challenge = 'MB-4444-C1';
+    await daemon.handleCommand({
+      type: 'VERIFY_OFFLINE_TOKEN',
+      challengeCode: challenge,
+      token: generateChallengeToken(secret, challenge, '15m'),
+      target: 'instagram.com',
+    });
+
+    t.wall -= H;
+    t.mono += 16 * 60_000;
+    const res = await daemon.handleCommand({ type: 'GET_STATE' });
+
+    expect(res.status === 200 && 'state' in res && res.state.temporaryGrants).toEqual([]);
+  });
+
+  it('reinício do daemon com relógio adiantado não acelera o cooldown', async () => {
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: 's' });
+    await daemon.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
+
+    t.mono = 0; // reboot zera o monotônico
+    t.wall += 72 * H;
+    const rebooted = buildDaemon();
+    const res = await rebooted.handleCommand({ type: 'UNINSTALL_AUTHORIZED' });
+
+    expect(res.status).toBe(403);
   });
 });

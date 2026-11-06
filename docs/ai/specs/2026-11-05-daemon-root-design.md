@@ -130,7 +130,7 @@ Regra assimétrica: **o relógio só pode trabalhar a favor da restrição.**
 1. **Âncora de servidor:** cada resposta HTTPS do Telegram (`getUpdates` já é feito pelo daemon) traz o cabeçalho `Date`. O daemon guarda `(serverTimeMs, monotonicNs)` como âncora.
 2. **Entre âncoras:** `agora ≈ serverTimeMs + (monotonicNs_atual − monotonicNs_âncora)`. `process.hrtime.bigint()` no macOS usa `mach_absolute_time`, que **para durante o sono** e **zera no reboot** — logo, offline, o tempo só avança enquanto a máquina está acordada. Isso é conservador (o cooldown nunca termina antes; pode demorar mais offline). Aceito.
 3. **Reboot sem rede:** o daemon persiste `trustedNowMs` a cada 60 s; após reboot recomeça dele (perde, no máximo, o tempo desligado — de novo conservador). Na primeira âncora de servidor, corrige para frente.
-4. **Sanidade:** âncora que retrocede mais de 5 min em relação ao último `trustedNowMs` é ignorada (resposta velha/replay).
+4. **Âncora sempre vence (revisto na Fase 2):** a resposta vem por TLS do servidor, então a âncora substitui o valor atual mesmo que recue. Recuar só atrasa o cooldown (a favor da restrição); ignorar âncoras "velhas" impediria corrigir um relógio adiantado antes da instalação.
 
 `ponytail:` NTP próprio ou Roughtime ficam de fora; o `Date` do Telegram já vem por TLS de um servidor que o daemon precisa contatar de qualquer forma.
 
