@@ -302,6 +302,10 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     expect(html).toContain('id="openProfileSettingsBtn"');
     expect(html).toContain('<dialog id="profileStepsDialog" aria-labelledby="profile-steps-title">');
     expect(html).toContain('Gerenciamento de Dispositivos');
+    const update = html.match(/<section id="serviceUpdateBanner"[^>]*>/)?.[0] ?? '';
+    expect(update).toContain('role="status"');
+    expect(update).toContain('hidden');
+    expect(html).toContain('id="updateServiceBtn"');
   });
 
   it('deve conter os 4 temas CCAT, os 5 estados visuais, as 4 views, as 11 categorias e Zero-Roxo', () => {
