@@ -856,3 +856,9 @@ dialog[open] .breathing-circle { animation: breathe 8s ease-in-out infinite; }
   --primary-hover: var(--ccat-brand-primary-hover);
   --primary-foreground: var(--ccat-on-brand);
 }
+
+/* Sublinhado do passo ativo do onboarding: cresce da esquerda (transform, sem layout). */
+.stepper-step { position: relative; }
+.stepper-step::after { content: ""; position: absolute; left: 0.75rem; right: 0.75rem; bottom: 0; height: 2px; border-radius: 2px; background: var(--ccat-brand-primary); transform: scaleX(0); transform-origin: left; transition: transform var(--dur-base) var(--ease-fluid, ease-out); }
+.stepper-step.active::after { transform: scaleX(1); }
+@media (prefers-reduced-motion: reduce) { .stepper-step::after { transition: none; } }

@@ -152,3 +152,10 @@ describe('regressão: recuperação após erro', () => {
     expect(js.indexOf("htmlEl.dataset.uiState = 'active';")).toBeLessThan(js.indexOf('const initial = pickInitialView('));
   });
 });
+
+describe('stepper: sublinhado do passo ativo', () => {
+  it('anima só transform e respeita reduced-motion', () => {
+    expect(css).toContain('.stepper-step.active::after { transform: scaleX(1); }');
+    expect(css).toMatch(/prefers-reduced-motion: reduce\) \{ \.stepper-step::after \{ transition: none; \}/);
+  });
+});
