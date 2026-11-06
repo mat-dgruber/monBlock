@@ -1,7 +1,8 @@
 # Spec — Daemon privilegiado `monblockd` como root (launchd)
 
 - **Data:** 2026-11-05
-- **Status:** Aprovada (2026-11-05)
+- **Status:** v2 aprovada (2026-11-05), após spikes
+- **Spikes:** `docs/ai/reports/2026-11-05-spikes-daemon-root.md`
 - **ADRs:** implementa ADR-0001; revisa partes de ADR-0004 e ADR-0006; propõe **ADR-0007** (§11)
 - **Plano:** `docs/ai/plans/2026-11-05-daemon-root.md`
 - **Domínio:** `docs/domains/daemon_persistence/`
@@ -138,7 +139,7 @@ Implementação: um módulo `src/daemon/trusted-clock.ts` com `nowForExpiry()` e
 ## 7. Persistência root, segredos e tombstone (P1, P4)
 
 - **Chave:** `vault.key` = 32 bytes de `crypto.randomBytes`, criada pelo daemon no primeiro boot, `0600 root`. Keychain não acrescenta proteção contra root/Admin, então não guarda a chave (só o cofre 2, por diversidade de local). `hmacSecret` continua dentro dos cofres cifrados; nunca cruza o IPC.
-- **3 cofres:** mesmo `TripleStateStore` (`MBV1.`, HMAC, quórum, self-healing) com os caminhos da §4.1. O cofre 2 passa a ser um adaptador real do System Keychain via `execFile('/usr/bin/security', [...])` sem shell (hoje é um arquivo que só se chama "keychain").
+- **3 cofres:** mesmo `TripleStateStore` (`MBV1.`, HMAC, quórum, self-healing) com os caminhos da §4.1. O cofre 2 passa a ser um adaptador real do System Keychain via `/usr/bin/security -i` com os comandos por **stdin** (nunca o cofre no argv: `-w <valor>` aparece no `ps` para qualquer usuário — achado do S5) (hoje é um arquivo que só se chama "keychain").
 - **Tombstone (`/var/db/monblock/tombstone`, `uchg`):** gravado no primeiro pareamento concluído. Conteúdo: `{ pairedAtMs, chatIdHash: sha256(telegramChatId), lastChatIdEnc }`, cifrado com a mesma chave. Uma cópia vai também como atributo do item do Keychain. Substitui `wasPaired` em memória: `loadAndReconcile({ expectPaired: tombstoneExists })`.
 - **Gravação:** escrita atômica `.tmp` + `fsync` + `rename` (já existe), com `chflags nouchg` → escreve → `chflags uchg` nos arquivos `uchg`.
 
@@ -179,8 +180,8 @@ UI em "Proteção não verificada", sem fallback em processo (ver §5). Confirma
 | Alvo | Caminho | Notas / risco a validar no spike |
 |---|---|---|
 | hosts | `/etc/hosts` | Só o bloco entre `# BEGIN monBlock` e `# END monBlock` é gerenciado; linhas do usuário preservadas. `uchg` após escrever. `dscacheutil -flushcache` + `killall -HUP mDNSResponder`. |
-| Chrome / Brave / Edge | `/Library/Managed Preferences/{com.google.Chrome,com.brave.Browser,com.microsoft.Edge}.plist` | 🟡 O macOS pode limpar arquivos não-MDM dessa pasta no boot. A reaplicação no boot + a cada 60 s compensa; o spike mede. Alternativa: perfil `.mobileconfig` (exige aprovação manual do usuário em Ajustes). |
-| Firefox | `/Library/Preferences/org.mozilla.firefox.plist` (`EnterprisePoliciesEnabled`) ou `Firefox.app/Contents/Resources/distribution/policies.json` | 🟡 Spike decide qual funciona sem quebrar a assinatura do Firefox. |
+| Chrome / Brave / Edge | **Perfil `.mobileconfig`** com os payloads `com.google.Chrome`, `com.brave.Browser` e `com.microsoft.Edge`, instalado no onboarding (aprovação do usuário em Ajustes; remover exige Admin). Reforço: escrita direta em `/Library/Managed Preferences/` reaplicada no boot e a cada 60 s. | S1: plist escrito à mão sem MDM tende a ser removido. Como o perfil só muda quando o usuário aprova de novo, ele contém a lista **de categorias** (estável) e domínios customizados ficam só no hosts. 🟡 medir `chrome://policy` após reboot na CI. |
+| Firefox | `/Library/Preferences/org.mozilla.firefox.plist` (`EnterprisePoliciesEnabled = TRUE`, chaves aninhadas com `__`) | S2 🟢: documentado pela Mozilla, não toca no bundle. |
 | Safari | — | Sem política de bloqueio por domínio; coberto só pelo hosts. |
 
 `MacOSPlatformEnforcer` passa a **propagar** erro de `execFile` quando roda como root (hoje engole em `platform-enforcer.ts:157`), para o daemon saber que a imposição falhou e avisar.
@@ -218,7 +219,7 @@ Feita **uma vez**, iniciada pelo Electron (só ele tem a chave antiga no Keychai
 | Nível | O quê | Como |
 |---|---|---|
 | Unitário (vitest, sem root) | `TrustedClock` (adiantar/atrasar/sono/reboot/âncora velha), rate limit, tombstone + D1, mescla restritiva da migração, bloco gerenciado do hosts (preserva linhas do usuário), validação NDJSON (tamanho, tipo, JSON inválido) | Relógios e `commandExecutor` falsos, `tmpdir` — padrão atual dos testes |
-| Integração (vitest, sem root) | `ipc-server` + `daemon-client` reais num socket em `tmpdir`; reconexão; timeout; 8 conexões; daemon morto → UI "não verificada" | Processo filho com o entry do daemon apontado para paths temporários |
+| Integração (vitest, sem root) — sockets em diretório curto (`sun_path` ≤ 104 bytes, achado do S4) | `ipc-server` + `daemon-client` reais num socket em `tmpdir`; reconexão; timeout; 8 conexões; daemon morto → UI "não verificada" | Processo filho com o entry do daemon apontado para paths temporários |
 | E2E root (CI `macos-latest`, `sudo` sem senha) | Instala `.pkg` (`installer -allowUntrusted` em build de CI), confere `/etc/hosts`, `kill -9` → relançado em < 5 s, usuário Standard criado no runner recebe `EACCES` ao apagar cofres e ao `kill`, desinstala e confere hosts limpo | Script `tests/e2e/root/*.sh` |
 | Manual (checklist) | Gatekeeper/notarização, aviso BTM, Managed Preferences após reboot, Firefox, migração com cofres reais | `docs/ai/reports/` no fim de cada fase |
 

@@ -2,7 +2,7 @@
 
 - **Data:** 2026-11-05
 - **Spec:** `docs/ai/specs/2026-11-05-daemon-root-design.md`
-- **Status:** Aprovado (2026-11-05)
+- **Status:** v2 aprovada (2026-11-05), após spikes
 - **Pré-requisito:** decisões D1–D4 da spec §8 confirmadas. O plano assume as recomendações (D1-B, D2 sim, D3 `.pkg`, D4 sem fallback).
 
 ## Objetivo
@@ -11,9 +11,9 @@ Tirar estado, segredos, relógio e imposição do processo Electron (UID do usu�
 
 ## Restrições
 
-- macOS 13+ (BTM/Itens de Início); só Apple Silicon e Intel com Node 22 SEA.
-- Sem dependência npm nova; sem addon nativo (sem `getpeereid`/audit token).
-- Daemon: `< 50 MB` RSS, `< 1%` CPU em repouso, boot com regras reaplicadas em `< 1 s`.
+- macOS 13+ (BTM/Itens de Início); só Apple Silicon e Intel com Node 24 SEA (um binário por arquitetura, unidos por `lipo -create`).
+- Sem dependência **de runtime** nova (`postject` entra só como `devDependency` de build); sem addon nativo (sem `getpeereid`/audit token).
+- Daemon: `< 120 MB` RSS (S3: um script trivial já usa 44 MB), `< 1%` CPU em repouso, boot com regras reaplicadas em `< 1 s`.
 - IPC: ≤ 64 KiB por mensagem, 5 s de timeout, ≤ 8 conexões; comandos serializados pela `commandQueue` existente (sem corrida em disco entre conexões).
 - Segredos de assinatura/notarização só via `op run --` ou segredos da CI.
 - Contra conta Admin: só atrito + detecção (spec §3.1). Não prometer mais que isso na UI.
@@ -75,7 +75,7 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 ## Fase 4 — Imposição em caminhos reais (P3)
 
 - **Alterar:** `hosts-enforcer.ts` — bloco gerenciado `# BEGIN/END monBlock`, merge que preserva linhas do usuário; `nouchg` → escrita atômica → `uchg`; flush de DNS.
-- **Alterar:** `platform-enforcer.ts` — lista de plists de política (Chrome/Brave/Edge) e caminho do Firefox conforme S1/S2; executor padrão **propaga** erro quando `process.getuid() === 0` (hoje engole); `verifyApplied()` compara o SHA-256 do bloco/arquivos.
+- **Alterar:** `platform-enforcer.ts` — gerador do perfil `.mobileconfig` (categorias → payloads Chrome/Brave/Edge) + escrita direta em `/Library/Managed Preferences/` como reforço (S1); Firefox via `/Library/Preferences/org.mozilla.firefox.plist` com `EnterprisePoliciesEnabled` (S2), substituindo o `policies.json`; executor padrão **propaga** erro quando `process.getuid() === 0` (hoje engole); `verifyApplied()` compara o SHA-256 do bloco/arquivos.
 - **Testes:** merge do hosts (linhas do usuário intactas, bloco substituído, idempotente); erro do executor sobe quando root; `verifyApplied` detecta divergência. Tudo em `tmpdir` com executor falso.
 
 **Pronto:** commit `feat(enforcer): aplicar bloqueio em /etc/hosts e políticas do sistema`.
@@ -84,14 +84,14 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 - **Novo:** `src/daemon/ipc-server.ts` — `net.createServer` no path recebido; NDJSON; linha ≤ 64 KiB; 5 s de ociosidade; ≤ 8 conexões; validação por `type` antes de `daemon.handleCommand`; erros RFC 9457 com `buildProblem`.
 - **Novo:** `src/main/daemon-client.ts` — `call(cmd)` com timeout de 5 s, reconexão com backoff + jitter (250 ms → 30 s), evento `status: 'online' | 'offline'`.
-- **Testes de integração:** servidor + cliente reais em socket temporário: ida e volta; payload > 64 KiB fecha; JSON inválido → 400; servidor morto → cliente `offline` e reconecta quando volta; nona conexão recusada.
+- **Testes de integração:** servidor + cliente reais em socket temporário num diretório curto (`sun_path` ≤ 104 bytes): ida e volta; payload > 64 KiB fecha; JSON inválido → 400; servidor morto → cliente `offline` e reconecta quando volta; nona conexão recusada.
 
 **Pronto:** commit `feat(ipc): socket unix entre electron e monblockd`.
 
 ## Fase 6 — Entry root e corte do Electron
 
 - **Novo:** `src/daemon/entry.ts` — exige `getuid() === 0` (sai com erro caso contrário, exceto `MONBLOCK_DEV_ROOT_DIR` em build de dev); `umask 077`; cria/valida dono e modo dos diretórios da spec §4.1; carrega `vault.key` (cria se não existir), `config.json`; instancia store/enforcer/clock/telegram/daemon/`block-server`; aplica regras no boot; timers: reaplicar + `verifyApplied` a cada 60 s, heartbeat a cada 5 min, persistir `trustedNowMs` a cada 60 s; detecção de inatividade (§3.3); `SIGTERM` → grava shutdown limpo e fecha o socket.
-- **Novo:** adaptador do System Keychain para o cofre 2 (`execFile('/usr/bin/security')`, sem shell), injetado no `TripleStateStore` (o store hoje só lê arquivos: introduzir uma interface mínima `VaultIO { read(); write() }` com 2 implementações, arquivo e keychain).
+- **Novo:** adaptador do System Keychain para o cofre 2 (`/usr/bin/security -i` com comandos por stdin; segredo nunca no argv), injetado no `TripleStateStore` (o store hoje só lê arquivos: introduzir uma interface mínima `VaultIO { read(); write() }` com 2 implementações, arquivo e keychain).
 - **Alterar:** `main.ts` — remover store/enforcer/daemon/`loadOrCreateVaultKey`/`block-server`; `ipcMain.handle` → `daemonClient.call`; estado "Proteção não verificada" na UI quando offline; `MONBLOCK_DEV_INPROC=1` + `!app.isPackaged` mantém o modo antigo só em dev.
 - **Alterar:** renderer — estado offline + botão "Reinstalar serviço" (abre o `.pkg`).
 - **Testes:** entry com `MONBLOCK_DEV_ROOT_DIR` em `tmpdir` sobe, responde `GET_STATE` pelo socket e aplica as regras no executor falso; a UI mostra "não verificada" com o daemon parado.
@@ -108,7 +108,7 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 ## Fase 8 — Empacotamento e desinstalação
 
-- **Novo:** `packaging/macos/com.ccat.monblockd.plist`, `packaging/macos/scripts/{preinstall,postinstall}` (cria o grupo `monblock`, adiciona o usuário do console, `launchctl bootstrap system`), `packaging/macos/uninstall.sh`, `scripts/build-daemon-sea.sh`, `scripts/build-pkg.sh` (`pkgbuild` + `productbuild`).
+- **Novo:** `packaging/macos/com.ccat.monblockd.plist`, `packaging/macos/scripts/{preinstall,postinstall}` (cria o grupo `monblock`, adiciona o usuário do console, `launchctl bootstrap system`), `packaging/macos/uninstall.sh`, `scripts/build-daemon-sea.sh` (SEA por arquitetura, entitlement `com.apple.security.cs.allow-jit`, `lipo -create`), `packaging/macos/monblock-browsers.mobileconfig` (gerado a partir das categorias), `scripts/build-pkg.sh` (`pkgbuild` + `productbuild`).
 - **Alterar:** `UNINSTALL_AUTHORIZED` → limpeza completa + disparo desacoplado do `uninstall.sh` (spec §12).
 - **CI:** job macOS que gera o `.pkg` sem assinatura; assinatura e notarização com segredos do GitHub (Developer ID e notarytool via `op` localmente, nunca no repositório).
 - **Testes:** `shellcheck` nos scripts; teste unitário da sequência de limpeza com executor falso.
