@@ -287,11 +287,14 @@
 
   const reinstallServiceBtn = document.getElementById('reinstallServiceBtn');
   const profileBanner = document.getElementById('profileBanner');
+  const serviceUpdateBanner = document.getElementById('serviceUpdateBanner');
   const profileStepsDialog = document.getElementById('profileStepsDialog');
 
   // Só `false` mostra o aviso: `null` (não verificado/falha) não incomoda o usuário.
   function renderProfileBanner(state) {
     if (profileBanner) profileBanner.hidden = state?.browserProfileInstalled !== false;
+    // Campo ausente = daemon anterior à 0.3.0 (o .app foi atualizado sem reinstalar o serviço).
+    if (serviceUpdateBanner) serviceUpdateBanner.hidden = !state || 'browserProfileInstalled' in state;
   }
 
   async function loadState() {
@@ -597,6 +600,9 @@
 
   document.getElementById('openProfileSettingsBtn')?.addEventListener('click', (event) =>
     execute(event.currentTarget, () => bridge.openProfileSettings(), 'Ajustes abertos em Gerenciamento de Dispositivos.')
+  );
+  document.getElementById('updateServiceBtn')?.addEventListener('click', (event) =>
+    execute(event.currentTarget, () => bridge.reinstallService(), 'Instalador aberto. Siga as instruções e volte ao monBlock.')
   );
   document.getElementById('showProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.showModal());
   document.getElementById('closeProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.close());

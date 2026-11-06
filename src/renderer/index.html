@@ -805,6 +805,15 @@
         </div>
       </section>
 
+      <!-- Daemon de versão anterior (sem browserProfileInstalled no estado): pede atualização do serviço -->
+      <section id="serviceUpdateBanner" class="ccat-alert-partial" role="status" aria-live="polite" hidden>
+        <h2>Atualize o serviço do monBlock</h2>
+        <p>O serviço instalado é de uma versão anterior e não confere o perfil dos navegadores. Reinstale o serviço para receber a verificação.</p>
+        <div class="profile-banner-actions">
+          <button type="button" id="updateServiceBtn" class="ccat-btn ccat-btn-primary">Reinstalar serviço</button>
+        </div>
+      </section>
+
       <!-- ==================================================================
            5 ESTADOS VISUAIS OBRIGATÓRIOS (loading, empty, error, partial, active)
            ================================================================== -->
