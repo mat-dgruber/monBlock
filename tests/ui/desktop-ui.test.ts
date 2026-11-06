@@ -286,7 +286,8 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
 
   it('aviso do perfil dos navegadores: escondido por padrão, anunciado e com passos em <dialog>', () => {
     // Arrange & Act
-    const html = fs.readFileSync(htmlPath, 'utf-8');
+    // HTML + CSS do renderer (o CSS saiu do <style> inline para renderer.css; CSP sem unsafe-inline)
+    const html = fs.readFileSync(htmlPath, 'utf-8') + fs.readFileSync(htmlPath.replace('index.html', 'renderer.css'), 'utf-8');
     const banner = html.match(/<section id="profileBanner"[^>]*>/)?.[0] ?? '';
 
     // Assert
@@ -304,7 +305,7 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
 
   it('deve conter os 4 temas CCAT, os 5 estados visuais, as 4 views, as 11 categorias e Zero-Roxo', () => {
     // Arrange & Act
-    const html = fs.readFileSync(htmlPath, 'utf-8');
+    const html = fs.readFileSync(htmlPath, 'utf-8') + fs.readFileSync(htmlPath.replace('index.html', 'renderer.css'), 'utf-8');
 
     // Assert — Idioma, tema inicial e vínculo com tokens.css
     expect(html).toContain('lang="pt-BR"');
@@ -327,14 +328,13 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     // Assert — 5 Estados Visuais Obrigatórios (loading, empty, error RFC 9457, partial, active)
     expect(html).toContain('data-ui-state=');
     expect(html).toContain('data-state-panel="loading"');
-    expect(html).toContain('data-state-panel="empty"');
+    expect(html).toContain('id="emptyRulesHint"');
     expect(html).toContain('data-state-panel="error"');
     expect(html).toContain('role="alert"');
     expect(html).toContain('aria-live="assertive"');
     expect(html).toContain('RFC 9457');
-    expect(html).toContain('data-state-panel="partial"');
+    expect(html).toContain('id="profileBanner"');
     expect(html).toContain('aria-live="polite"');
-    expect(html).toContain('HMAC-SHA256');
     expect(html).toContain('data-state-panel="active"');
 
     // Assert — 4 Views da Jornada Completa

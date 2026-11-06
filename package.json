@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && cp src/renderer/index.html dist/renderer/index.html && cp src/renderer/renderer-init.js dist/renderer/renderer-init.js && cp src/preload/preload-bridge.cjs dist/preload/preload-bridge.cjs",
+    "build": "tsc -p tsconfig.build.json && cp src/renderer/index.html dist/renderer/index.html && cp src/renderer/renderer.css dist/renderer/renderer.css && cp src/renderer/renderer-init.js dist/renderer/renderer-init.js && cp src/preload/preload-bridge.cjs dist/preload/preload-bridge.cjs",
     "electron": "npm run build && electron .",
     "start": "npm run electron",
     "test": "vitest run --dir tests",

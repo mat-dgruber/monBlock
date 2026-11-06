@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const html = fs.readFileSync(path.join(root, 'src/renderer/index.html'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'src/renderer/renderer.css'), 'utf8');
 const rendererPath = path.join(root, 'src/renderer/renderer-init.js');
 
 async function loadPick() {
@@ -49,14 +50,14 @@ describe('contraste do texto sobre a cor primária (AA 4,5:1)', () => {
   const themes = ['capycro-ivory', 'dark-tech', 'light-fintech', 'high-contrast-aaa'];
   for (const theme of themes) {
     it(`${theme}`, () => {
-      const block = html.match(new RegExp(`\\[data-theme="${theme}"\\][^{]*\\{([^}]*)\\}`))![1]!;
+      const block = css.match(new RegExp(`\\[data-theme="${theme}"\\][^{]*\\{([^}]*)\\}`))![1]!;
       const brand = block.match(/--ccat-brand-primary:\s*(#[0-9A-Fa-f]{6})/)![1]!;
       const on = block.match(/--ccat-on-brand:\s*(#[0-9A-Fa-f]{6})/)![1]!;
       expect(ratio(on, brand)).toBeGreaterThanOrEqual(4.5);
     });
   }
   it('não deixa #FFFFFF fixo sobre o primário', () => {
-    expect(html).not.toMatch(/background: var\(--ccat-brand-primary\);\s*color: #FFFFFF/);
+    expect(css).not.toMatch(/background: var\(--ccat-brand-primary\);\s*color: #FFFFFF/);
   });
 });
 
@@ -86,7 +87,7 @@ describe('onboarding acessível e honesto (F2)', () => {
     expect(html).not.toContain('dialogUnblockReasonInput');
     expect(html).toMatch(/id="closePartnerDialogBtn" autofocus/);
     expect(html).toMatch(/id="closeProfileStepsBtn" autofocus/);
-    expect(html).toContain('dialog#profileStepsDialog {');
+    expect(css).toContain('dialog#profileStepsDialog {');
   });
 });
 
@@ -121,5 +122,23 @@ describe('revisão do PR #5', () => {
     expect(js).toMatch(/userNavigated = true; \/\/ vale mesmo se o localStorage falhar/);
     expect(html).toContain('id="helperReminder"');
     expect(js).toContain("'Proteção parcial'");
+  });
+});
+
+describe('CSP, estilos e motion (F3/F4)', () => {
+  const js = fs.readFileSync(rendererPath, 'utf8');
+  it('sem style inline no HTML/JS e CSP sem unsafe-inline', () => {
+    expect(html).not.toMatch(/\sstyle="/);
+    expect(html).not.toContain('<style>');
+    expect(js).not.toMatch(/style="/);
+    expect(html).toContain("style-src 'self';");
+    expect(html).toContain('href="./renderer.css"');
+  });
+  it('motion só com transform/opacity e com reduced-motion; toast de sucesso some, erro fica', () => {
+    expect(css).toContain('@keyframes enter-up');
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[^}]*\{[^}]*animation: none !important/);
+    expect(css).not.toMatch(/@keyframes[^}]*\b(top|left|width|height)\s*:/);
+    expect(js).toContain('if (!isError) {');
+    expect(js).toContain("feedback.setAttribute('aria-live', isError ? 'assertive' : 'polite');");
   });
 });

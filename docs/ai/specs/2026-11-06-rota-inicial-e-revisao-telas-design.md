@@ -1,7 +1,7 @@
 # Rota inicial e revisão das telas do app — spec de design
 
 - Data: 2026-11-06 · Base: `main` @ `0caf20c` (v0.3.0, PR #4 incluído)
-- Status: **aprovada pelo usuário em 2026-11-06 (D1–D6 como propostas).** F0, F1, F2 e parte da F3 implementadas (PR #5); pendentes: P0-4 (`empty`/`partial`), da F3 a unificação de tokens e a remoção dos `style=""` inline/`unsafe-inline`, e F4. F2: D3 resolvido removendo o campo "Por que..." do dialog de pausa; tela final dispensada (o passo 4 com confirmação manual é o fechamento).
+- Status: **aprovada pelo usuário em 2026-11-06 (D1–D6 como propostas). Implementada no PR #5 (F0–F4).** Desvios: P0-4 resolvido tornando `empty` uma dica em Categorias e removendo o painel `partial` (as faixas cobrem o parcial); tokens: só o botão primário foi alinhado à paleta CCAT (unificação total das duas paletas continua pendente); classes `ux-N` extraídas dos `style=""` são provisórias; live regions: removido o painel `partial` e o `role` do toast deixou de alternar, mas banner e status seguem como regiões separadas; stepper com sublinhado deslizante e variantes do ícone da tray não foram feitos.
 - Escopo: `src/renderer/index.html`, `src/renderer/renderer-init.js`, `src/main/main.ts`, `docs/design/tokens.css`.
 - Relatórios completos das 5 revisões (separados, sem síntese opaca): pasta de notas da sessão, `revisao-1-ux-reviewer.md`, `revisao-2-design.md`, `revisao-3-design-review.md`, `revisao-4-design-critique.md`, `revisao-5-animacao.md`; evidências em `evidencias.md`.
 

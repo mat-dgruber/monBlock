@@ -125,14 +125,23 @@ globalThis.monblockRenderer = { pickInitialView };
       .replace(/'/g, '&#39;');
   }
 
+  let feedbackTimer = null;
   function notify(message, isError = false) {
-    feedback.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" style="background:none; border:none; color:inherit; font-weight:700; cursor:pointer; padding:0 0.5rem; font-size:1rem;" aria-label="Fechar aviso">✕</button>`;
+    feedback.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" class="notice-close" aria-label="Fechar aviso">✕</button>`;
     feedback.hidden = false;
     feedback.dataset.kind = isError ? 'error' : 'success';
-    feedback.setAttribute('role', isError ? 'alert' : 'status');
+    // Uma região fixa (role=status); erro só eleva a urgência, sem trocar o role.
+    feedback.setAttribute('aria-live', isError ? 'assertive' : 'polite');
     feedback.querySelector('button')?.addEventListener('click', () => {
       feedback.hidden = true;
     });
+    clearTimeout(feedbackTimer);
+    // Sucesso some sozinho em 5 s (e espera hover/foco); erro fica até ser fechado.
+    if (!isError) {
+      feedbackTimer = setTimeout(() => {
+        if (!feedback.matches(':hover, :focus-within')) feedback.hidden = true;
+      }, 5000);
+    }
   }
 
   function switchView(targetView, moveFocus = false) {
@@ -233,7 +242,7 @@ globalThis.monblockRenderer = { pickInitialView };
     }
 
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--ccat-text-muted); padding: 1.5rem;">Nenhuma regra corresponde ao filtro.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nenhuma regra corresponde ao filtro.</td></tr>';
       return;
     }
 
@@ -345,6 +354,8 @@ globalThis.monblockRenderer = { pickInitialView };
       }
       isPaired = result.state.paired === true;
       renderOnboardingGate();
+      const emptyHint = document.getElementById('emptyRulesHint');
+      if (emptyHint) emptyHint.hidden = (currentRules.blockedDomains?.length ?? 0) + (currentRules.keywords?.length ?? 0) > 0;
       const reminder = document.getElementById('helperReminder');
       if (reminder) reminder.hidden = isPaired;
       partnerStatus.textContent = result.state.paired ? 'Ajudante pareado' : 'Ajudante ainda não pareado';
