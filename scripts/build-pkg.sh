@@ -33,9 +33,11 @@ plutil -lint "$HELPER/monblock-browsers.mobileconfig"
 xattr -cr "$ROOT" 2>/dev/null || true
 pkgbuild --root "$ROOT" --scripts packaging/macos/scripts --identifier com.ccat.monblock.daemon \
   --version "$VERSION" --install-location / build/monblockd-component.pkg
+# Distribuição com página de conclusão (como aprovar o perfil dos navegadores).
+set -- --distribution packaging/macos/distribution.xml --resources packaging/macos/resources --package-path build
 if [ -n "${MONBLOCK_INSTALLER_ID:-}" ]; then
-  productbuild --package build/monblockd-component.pkg --sign "$MONBLOCK_INSTALLER_ID" build/monblockd.pkg
+  productbuild "$@" --sign "$MONBLOCK_INSTALLER_ID" build/monblockd.pkg
 else
-  productbuild --package build/monblockd-component.pkg build/monblockd.pkg
+  productbuild "$@" build/monblockd.pkg
 fi
 echo "ok: build/monblockd.pkg ($VERSION)"
