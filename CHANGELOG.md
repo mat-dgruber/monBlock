@@ -23,6 +23,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Tombstone de pareamento (RN-DAEMON-07), rate limit persistido de credenciais do Ajudante (RN-DAEMON-09) e migração única dos cofres de userland (`MIGRATE_LEGACY_STATE`, RN-DAEMON-10).
 - Imposição no sistema: `/etc/hosts` com `uchg` e flush de DNS, políticas Chromium (Chrome/Brave/Edge) com perfil `.mobileconfig`, plist do Firefox em `/Library/Preferences` e `verifyApplied`.
 - Instalador `.pkg` com binário Node SEA universal (`npm run build:pkg`), `uninstall.sh` disparado só por desinstalação autorizada, e job de CI que gera o `.pkg` e roda o E2E como root (`tests/e2e/root/run.sh`).
+- `monBlock.app` para macOS (`npm run build:app`, `scripts/build-app.sh`) com o `monblockd.pkg` em `Contents/Resources/`, para o botão "Reinstalar serviço"; a CI gera, assina ad-hoc, roda um smoke e publica o artefato `monBlock-app`.
 
 ### Corrigido
 - Blindagem pós-auditoria `/review max geral` em `MOD-01` a `MOD-04`: remoção de `nowMs` controlado por cliente IPC no Cooldown de 72h (`nowFn` isolado no daemon), exigência de `requirePermanentToken` em `MUTATE_RULES`, reconciliação efetiva de `TemporaryGrant` no `/etc/hosts` e `BrowserPolicies`, diferenciação entre falha de I/O (`ioError`) e adulteração criptográfica no `TripleStateStore`, unificação dos seletores `data-theme` e contraste WCAG 2.2 AA/AAA em `docs/design/tokens.css`, hidratação `initRendererDom` e limite de payload `16 KB` + `Content-Security-Policy` no servidor local `:49152`.
