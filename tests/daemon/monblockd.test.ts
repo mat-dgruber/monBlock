@@ -1129,3 +1129,45 @@ describe('MonBlockDaemon — MIGRATE_LEGACY_STATE (RN-DAEMON-10)', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('MonBlockDaemon — desinstalação autorizada (spec §12)', () => {
+  it('limpa o sistema, apaga o tombstone, avisa o Ajudante e dispara o desinstalador só quando autorizado', async () => {
+    // Arrange
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-uninst-'));
+    const hostsPath = path.join(tmpDir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    const store = new TripleStateStore({
+      primaryPath: path.join(tmpDir, 'a'),
+      keychainPath: path.join(tmpDir, 'b'),
+      sealPath: path.join(tmpDir, 'c'),
+      integrityKey: 'uninst-key',
+    });
+    const alerts: string[] = [];
+    let uninstallerRuns = 0;
+    const daemon = new MonBlockDaemon({
+      store,
+      enforcer: new MacOSPlatformEnforcer({ hostsPath, commandExecutor: async () => undefined }),
+      nowFn: () => 1_700_000_000_000,
+      telegramClient: { sendAlert: async (t: string) => (alerts.push(t), { ok: true }), ping: async () => ({ ok: true }) } as any,
+      onUninstalled: () => {
+        uninstallerRuns++;
+      },
+    });
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', telegramChatId: '111' });
+
+    // Act
+    const denied = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'errada' });
+    const runsAfterDenied = uninstallerRuns;
+    const ok = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'Senha#Forte2026' });
+
+    // Assert
+    expect(denied.status).toBe(403);
+    expect(runsAfterDenied).toBe(0);
+    expect(ok.status).toBe(200);
+    expect(uninstallerRuns).toBe(1);
+    expect(store.readTombstone()).toBeNull();
+    expect(fs.readFileSync(hostsPath, 'utf8')).not.toContain('MONBLOCK');
+    expect(alerts.some((a) => /desinstalad/i.test(a))).toBe(true);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+});

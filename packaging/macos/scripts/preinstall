@@ -1,0 +1,5 @@
+#!/bin/sh
+# Atualização: para o daemon anterior; o estado fica nos cofres e volta no postinstall.
+set -u
+/bin/launchctl bootout system/com.ccat.monblockd 2>/dev/null || true
+exit 0

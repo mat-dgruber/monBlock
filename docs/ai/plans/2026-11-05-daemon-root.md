@@ -125,6 +125,8 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 **Pronto:** commit `build(pkg): instalador macos do monblockd`.
 
+> **Execução (2026-11-06):** (1) Bundle CJS com `esbuild` 0.21.5 fixado como `devDependency` (já vinha do vitest; nada novo baixado); `import.meta.url` vira constante e o `main()` é chamado pelo stdin do bundle. `postject` só no script de build, com versão fixa. (2) **Fatia x86_64** assinada também com `allow-unsigned-executable-memory`: sem ele o V8 aborta com ENOMEM sob hardened runtime no Rosetta (medido); arm64 continua só com `allow-jit`. As duas fatias foram executadas aqui (socket + hosts). Binário universal: 240 MB; RSS em repouso: 54 MB. (3) O perfil `.mobileconfig` leva só a categoria `adult` (nunca sai pela catraca) e o `postinstall` o abre na sessão do usuário para aprovação; demais categorias seguem no hosts + escrita direta. (4) O `.pkg` instala só o daemon; o empacotamento do app Electron (e o `monblockd.pkg` dentro dele, que o botão "Reinstalar serviço" abre) não existe no repositório ainda. (5) `shellcheck` 0.11 sem avisos; entra como passo da CI. (6) Neste ambiente o `pkgbuild` imprime `write: Permission denied` (sandbox da sessão) e os arquivos carregam `com.apple.provenance`, que vira `._*` no payload; o E2E da Fase 9 confere que nada `._*` fica instalado. (7) A entrada no grupo `monblock` pode só valer após novo login; a Fase 9 mede.
+
 ## Fase 9 — E2E root e checklist manual
 
 - `tests/e2e/root/install.sh`, `kill.sh`, `standard-user.sh`, `uninstall.sh` rodando no `macos-latest` (sudo sem senha): critérios BDD da spec §14 que não dependem do Telegram.
