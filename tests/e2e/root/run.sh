@@ -14,7 +14,7 @@ RUN=/var/run/monblock
 SOCK=$RUN/monblockd.sock
 LABEL=system/com.ccat.monblockd
 TEST_USER=mbtest$$
-PASSWORD='Senha#Forte2026'
+PASSWORD="t-$(openssl rand -hex 12)" # gerada por execução, nunca fixa no código
 
 step() { printf '\n== %s\n' "$1"; }
 fail() { echo "FALHOU: $1" >&2; [ -f /var/log/monblockd.log ] && tail -20 /var/log/monblockd.log >&2; exit 1; }
@@ -76,7 +76,8 @@ echo "ok: relançado (pid $OLD_PID → $(daemon_pid))"
 step "5. Usuário Standard não desfaz o bloqueio"
 sysadminctl -addUser "$TEST_USER" -password "$(openssl rand -hex 16)" >/dev/null 2>&1 || fail "criar usuário de teste"
 as_user() { sudo -u "$TEST_USER" sh -c "$1" >/dev/null 2>&1; }
-as_user "rm -rf '$APPSUP'" ; [ -f "$APPSUP/vault.key" ] || fail "Standard apagou os cofres"
+as_user "rm -rf '$APPSUP'" || true # a negação é o esperado; o set -e não pode encerrar aqui
+[ -f "$APPSUP/vault.key" ] || fail "Standard apagou os cofres"
 as_user "kill -9 $(daemon_pid)" && fail "Standard matou o daemon"
 as_user "echo '0.0.0.0 x' >> /etc/hosts" && fail "Standard escreveu no /etc/hosts"
 # Controle positivo: o mesmo comando conecta como root; sem isso, um nc quebrado passaria o teste.
@@ -108,7 +109,7 @@ expect_status 200 "{\"type\":\"PAIR_PARTNER\",\"password\":\"$PASSWORD\"}" "pare
 rm -f "$APPSUP/state.primary" "$DB/state.mirror" "$DB/partner.seal"
 out=$(ipc '{"type":"GET_STATE"}') || fail "daemon offline após apagar cofres"
 echo "$out" | grep -q '"tamperLockdown":true' || fail "sem tamperLockdown: $out"
-expect_status 423 '{"type":"PAIR_PARTNER","password":"OutraSenha#99"}' "novo pareamento após perda dos cofres"
+expect_status 423 "{\"type\":\"PAIR_PARTNER\",\"password\":\"o-$(openssl rand -hex 12)\"}" "novo pareamento após perda dos cofres"
 
 step "Limpeza"
 sh "$HELPER/uninstall.sh"
