@@ -23,3 +23,27 @@ O `monblockd` roda como root e não controla o navegador do usuário: Apple Even
 
 ## Fora de escopo
 Extensão de navegador; suporte a Linux/Windows.
+
+## Objetivo e restrições
+- **Objetivo:** manter palavras-chave e redirecionamento para a página de bloqueio ativos mesmo com o app fechado, sem dar ao daemon root acesso ao navegador do usuário.
+- **Restrições:** sem dependência nova de runtime; consulta ao daemon pelo socket existente (ADR-0007); latência do ciclo ≤ 1,5 s como hoje; Apple Events só na sessão gráfica; permissão de Automação (TCC) é por identidade do processo responsável.
+
+## Casos de borda
+- Sessão sem interface (login remoto, tela bloqueada): o agente não deve acumular tentativas de osascript; pausa o ciclo.
+- Vários usuários no Mac: um agente por usuário, cada um com a permissão própria.
+- Daemon fora do ar: manter as últimas regras conhecidas (fail-closed); nunca "liberar" por falha de consulta.
+- Permissão de Automação negada ou revogada: registrar uma vez em log de arquivo e expor o estado ao app (aviso "Permita o controle do navegador").
+- App e agente rodando juntos: só o agente age (evita redirecionar duas vezes); o app passa a apenas exibir o estado.
+- Navegador sem AppleScript (Firefox): continua só pelo título da janela, sem redirecionamento.
+
+## Resiliência
+- Timeout explícito por chamada de `osascript` (1,5 s como hoje) e fila única (sem sobreposição de ciclos).
+- Backoff com jitter quando o socket do daemon não responde; sem spinner/loop apertado.
+- Idempotência: redirecionar a mesma aba para a mesma URL de bloqueio é inofensivo; o cache `lastCheckedKey` do watcher já evita repetição.
+- Limites: log em arquivo com rotação e URL mascarada (Zero-PII).
+
+## Rollback
+O agente é instalado/removido por plist em `~/Library/LaunchAgents`; reverter = `launchctl bootout gui/<uid> com.ccat.monblock.watcher` e apagar o plist; o watcher dentro do app permanece até o agente ser comprovado em campo (feature flag no app: `watcherMode: embedded | agent`).
+
+## Testes
+Unit do `MacOSBrowserWatcher` com adaptador injetado (já existe); teste de instalação/remoção do plist; teste de que o app não age quando o agente está ativo; verificação manual em Chrome e Dia com o app fechado.
