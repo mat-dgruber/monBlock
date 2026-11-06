@@ -43,6 +43,8 @@ jobs:
           plutil -lint packaging/macos/com.ccat.monblockd.plist
           codesign --verify --strict build/daemon/monblockd
           pkgutil --payload-files build/monblockd.pkg | grep -q 'PrivilegedHelperTools/com.ccat.monblockd/monblockd$'
+          pkgutil --expand build/monblockd.pkg "$RUNNER_TEMP/pkg-expand"
+          test -f "$RUNNER_TEMP/pkg-expand/Resources/conclusion.html"
       # Runner descartável com sudo sem senha: instala o .pkg de verdade (spec §13/§14).
       # O sudo troca o PATH; o node do setup-node precisa ser repassado.
       - name: E2E root
