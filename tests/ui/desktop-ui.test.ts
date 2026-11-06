@@ -408,8 +408,7 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     expect(tokensCss).toContain('min-height: var(--touch-target-min);');
 
     expect(blockedHtml).not.toContain('min-height:2.25rem;');
-    expect(blockedHtml).toContain('aria-pressed');
-    expect(blockedHtml).toContain("['INPUT', 'TEXTAREA', 'SELECT']");
+    expect(blockedHtml).toContain("event.key === 'Escape'");
 
     expect(showcaseHtml).toContain('.input-field:focus-visible');
     expect(showcaseHtml).toContain('aria-live="polite"');

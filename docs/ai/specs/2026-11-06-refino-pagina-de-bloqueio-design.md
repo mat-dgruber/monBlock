@@ -1,7 +1,7 @@
 # Refino da página de bloqueio — spec de design
 
 - Data: 2026-11-06 · Base: `main` @ `4beff65`
-- Status: **rascunho — aguardando `/plan-criticize` e aprovação do usuário. Nada implementado.**
+- Status: **aprovada pelo usuário em 2026-11-06 (D1–D5 como recomendadas) e implementada** (formulário removido, sem campo de código/"Permanente", tom sóbrio, respiração guiada incluída). Pendente: pedido ao Ajudante com `POST /api/unblock-requests` quando houver Ajudante pareado.
 - Escopo: `docs/design/blocked-page.html` (711 linhas, servida em `http://127.0.0.1:49152/blocked` por `src/server/block-server.ts`), `docs/design/tokens.css`, `src/enforcers/macos-watcher.ts` (parâmetros do redirecionamento).
 - Revisões completas e separadas (fan-out, sem síntese opaca): pasta de notas da sessão, `pb-1-design.md` (8 perspectivas) e `pb-2-animacao.md` (4 vertentes); evidências em `evidencias-pagina-bloqueio.md`.
 - Contexto confirmado pelo usuário: no Chrome e no Dia o watcher já leva a aba até esta página.
