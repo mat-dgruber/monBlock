@@ -13,6 +13,9 @@ PLIST="$APP/Contents/Info.plist"
 # Sempre: o .pkg embutido sai da mesma versão do código (o SEA do daemon é reaproveitado).
 sh scripts/build-pkg.sh
 
+# npm sem scripts de instalação (ex.: CI) não baixa o binário do Electron; o install.js do pacote baixa.
+[ -d node_modules/electron/dist/Electron.app ] || node node_modules/electron/install.js
+
 rm -rf "$APP"
 cp -R node_modules/electron/dist/Electron.app "$APP"
 rm -f "$RES/default_app.asar"
