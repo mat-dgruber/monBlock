@@ -5,707 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:49152; object-src 'none'; base-uri 'self';"
+    content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:49152; object-src 'none'; base-uri 'self';"
   />
   <title>monBlock — Painel de Controle &amp; Compromisso Compartilhado (CCAT)</title>
   <link rel="stylesheet" href="../../docs/design/tokens.css" />
-  <style>
-    /* Extensão semântica para os 4 identificadores de tema do domínio desktop_ui_ccat (Zero-Roxo Estrito) */
-    :root,
-    [data-theme="capycro-ivory"] {
-      --ccat-bg-canvas: #F6F4EE;
-      --ccat-bg-surface: #FFFFFF;
-      --ccat-bg-elevated: #EFECE4;
-      --ccat-border: #DDD6C7;
-      --ccat-border-subtle: #E8E3D7;
-      --ccat-text-primary: #1F2421;
-      --ccat-text-secondary: #525B56;
-      --ccat-text-muted: #7A847E;
-      --ccat-brand-primary: #005A64;
-      --ccat-brand-primary-hover: #00464E;
-      --ccat-brand-accent: #C84B31;
-      --ccat-focus-ring: #005A64;
-      --ccat-card-shadow: 0 4px 16px -4px rgba(31, 36, 33, 0.06);
-    }
-
-    [data-theme="dark-tech"] {
-      --ccat-bg-canvas: #0B0F17;
-      --ccat-bg-surface: #131B2E;
-      --ccat-bg-elevated: #1E293B;
-      --ccat-border: #334155;
-      --ccat-border-subtle: #1E293B;
-      --ccat-text-primary: #F8FAFC;
-      --ccat-text-secondary: #94A3B8;
-      --ccat-text-muted: #64748B;
-      --ccat-brand-primary: #22D3EE;
-      --ccat-brand-primary-hover: #06B6D4;
-      --ccat-brand-accent: #F97316;
-      --ccat-focus-ring: #22D3EE;
-      --ccat-card-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.4);
-    }
-
-    [data-theme="light-fintech"] {
-      --ccat-bg-canvas: #F8FAFC;
-      --ccat-bg-surface: #FFFFFF;
-      --ccat-bg-elevated: #F1F5F9;
-      --ccat-border: #CBD5E1;
-      --ccat-border-subtle: #E2E8F0;
-      --ccat-text-primary: #0F172A;
-      --ccat-text-secondary: #475569;
-      --ccat-text-muted: #64748B;
-      --ccat-brand-primary: #0F766E;
-      --ccat-brand-primary-hover: #115E59;
-      --ccat-brand-accent: #0284C7;
-      --ccat-focus-ring: #0F766E;
-      --ccat-card-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.05);
-    }
-
-    [data-theme="high-contrast-aaa"] {
-      --ccat-bg-canvas: #000000;
-      --ccat-bg-surface: #0A0A0A;
-      --ccat-bg-elevated: #171717;
-      --ccat-border: #FFFFFF;
-      --ccat-border-subtle: #888888;
-      --ccat-text-primary: #FFFFFF;
-      --ccat-text-secondary: #E5E5E5;
-      --ccat-text-muted: #CCCCCC;
-      --ccat-brand-primary: #FFD60A;
-      --ccat-brand-primary-hover: #E5BE00;
-      --ccat-brand-accent: #00FFFF;
-      --ccat-focus-ring: #FFD60A;
-      --ccat-card-shadow: none;
-    }
-
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    /* Trava de rolagem da janela inteira: elimina scroll externo e fixa a sidebar */
-    html, body {
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    body {
-      font-family: var(--font-sans);
-      background: var(--ccat-bg-canvas);
-      color: var(--ccat-text-primary);
-      display: flex;
-      flex-direction: row;
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    h1, h2, h3, h4 { line-height: 1.25; text-wrap: balance; }
-    h1 { font-family: var(--font-display); font-size: clamp(1.3rem, 1.8vw, 1.7rem); }
-    h2 { font-size: var(--text-xl); font-weight: 700; }
-    h3 { font-size: var(--text-base); font-weight: 600; }
-    h4 { font-size: var(--text-sm); font-weight: 600; }
-    p { max-width: 72ch; }
-
-    .app-subtitle, .ccat-field-hint { color: var(--ccat-text-secondary); font-size: var(--text-sm); }
-    .section-intro { display: grid; gap: 0.375rem; margin-bottom: 0.5rem; }
-    .section-intro p { color: var(--ccat-text-secondary); }
-
-    .app-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: var(--text-xs);
-      font-weight: 600;
-      padding: 0.25rem 0.625rem;
-      border-radius: 9999px;
-      background: var(--ccat-bg-elevated);
-      border: 1px solid var(--ccat-border);
-      width: fit-content;
-    }
-    .app-status::before {
-      content: '';
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 50%;
-      background: var(--warning-color);
-    }
-    .app-status[data-status="loaded"]::before { background: var(--success-color); }
-    .app-status[data-status="error"]::before { background: var(--danger-color); }
-    .app-status[data-status="loading"]::before { background: var(--warning-color); }
-
-    .tabular-nums {
-      font-variant-numeric: tabular-nums;
-      font-feature-settings: 'tnum';
-    }
-
-    button, input, select, textarea, .ccat-interactive {
-      min-height: 2.75rem; /* >= 44px WCAG 2.2 AAA */
-      min-width: 2.75rem;
-      font: inherit;
-    }
-
-    button:focus-visible,
-    input:focus-visible,
-    select:focus-visible,
-    textarea:focus-visible,
-    summary:focus-visible,
-    a:focus-visible {
-      outline: 2px solid var(--ccat-focus-ring);
-      outline-offset: 2px;
-    }
-
-    button:not(:disabled) { cursor: pointer; }
-    button:disabled { opacity: 0.65; cursor: not-allowed; }
-
-    /* Layout Shell Dual-Rail Desktop: Sidebar Fixa 100vh com Scroll Somente no Conteúdo */
-    .app-sidebar {
-      width: 270px;
-      flex-shrink: 0;
-      height: 100vh;
-      overflow-y: auto;
-      overflow-x: hidden;
-      background: var(--ccat-bg-surface);
-      border-right: 1px solid var(--ccat-border);
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-start;
-      padding: 1.25rem 1rem;
-      gap: 1.5rem;
-    }
-
-    .brand-section {
-      display: flex;
-      flex-direction: column;
-      gap: 0.625rem;
-    }
-
-    .brand-logo-row {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .brand-badge {
-      width: 2.25rem;
-      height: 2.25rem;
-      flex-shrink: 0;
-      border-radius: var(--radius-md);
-      box-shadow: 0 2px 8px -1px rgba(0, 90, 100, 0.35);
-    }
-
-    .sidebar-nav-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.375rem;
-      list-style: none;
-    }
-
-    .sidebar-nav-btn {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      width: 100%;
-      text-align: left;
-      padding: 0.625rem 0.875rem;
-      border-radius: var(--radius-md);
-      border: 1px solid transparent;
-      background: transparent;
-      color: var(--ccat-text-secondary);
-      font-weight: 600;
-      font-size: var(--text-sm);
-      transition: background-color 140ms var(--ease-fluid), color 140ms var(--ease-fluid);
-    }
-    .sidebar-nav-btn:hover {
-      background: var(--ccat-bg-elevated);
-      color: var(--ccat-text-primary);
-    }
-    .sidebar-nav-btn[aria-current="page"],
-    .sidebar-nav-btn.ccat-btn-primary {
-      background: var(--ccat-brand-primary);
-      color: #FFFFFF;
-      box-shadow: 0 2px 6px -1px rgba(0, 90, 100, 0.25);
-    }
-    .sidebar-nav-btn svg {
-      width: 1.25rem;
-      height: 1.25rem;
-      flex-shrink: 0;
-    }
-
-    .sidebar-footer {
-      display: flex;
-      flex-direction: column;
-      gap: 0.875rem;
-      padding-top: 0.875rem;
-      border-top: 1px solid var(--ccat-border);
-      margin-top: auto;
-    }
-
-    .partner-pill {
-      display: flex;
-      align-items: center;
-      gap: 0.625rem;
-      padding: 0.625rem 0.75rem;
-      border-radius: var(--radius-md);
-      background: var(--ccat-bg-elevated);
-      border: 1px solid var(--ccat-border-subtle);
-      font-size: var(--text-xs);
-    }
-    .partner-avatar {
-      width: 1.75rem;
-      height: 1.75rem;
-      border-radius: 50%;
-      background: var(--ccat-brand-accent);
-      color: #FFFFFF;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 0.75rem;
-    }
-
-    .theme-control {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
-    }
-    .theme-control label { font-size: var(--text-xs); font-weight: 600; color: var(--ccat-text-secondary); }
-    .theme-control select {
-      padding: 0.35rem 0.625rem;
-      border: 1px solid var(--ccat-border);
-      border-radius: var(--radius-sm);
-      background: var(--ccat-bg-surface);
-      color: var(--ccat-text-primary);
-      font-size: var(--text-xs);
-    }
-
-    /* Content Area com Scroll Isolado */
-    .app-content-wrapper {
-      flex: 1;
-      height: 100vh;
-      overflow-y: auto;
-      overflow-x: hidden;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      background: var(--ccat-bg-canvas);
-    }
-
-    header.app-header {
-      padding: 1rem 2rem;
-      background: var(--ccat-bg-surface);
-      border-bottom: 1px solid var(--ccat-border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    main.app-main {
-      flex: 1;
-      max-width: 1080px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 1.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-    }
-
-    .action-feedback {
-      padding: 0.75rem 1.25rem;
-      border: 1px solid var(--ccat-border);
-      border-radius: var(--radius-md);
-      background: var(--ccat-bg-surface);
-      font-size: var(--text-sm);
-      font-weight: 500;
-      box-shadow: var(--ccat-card-shadow);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .action-feedback[data-kind="error"] {
-      border-color: var(--danger-color);
-      color: var(--danger-color);
-      background: var(--danger-surface);
-    }
-    .action-feedback[data-kind="success"] {
-      border-color: var(--success-color);
-      color: var(--success-color);
-      background: var(--success-surface);
-    }
-    .action-feedback[hidden] { display: none; }
-
-    /* Cards e Superfícies Planas Anti-Slop */
-    .ccat-card {
-      background: var(--ccat-bg-surface);
-      border: 1px solid var(--ccat-border);
-      border-radius: var(--radius-lg);
-      padding: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
-      box-shadow: var(--ccat-card-shadow);
-    }
-
-    /* Onboarding Stepper Interativo */
-    .stepper-header {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 0.5rem;
-      margin-bottom: 0.5rem;
-    }
-    .stepper-step {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 0.75rem;
-      border-radius: var(--radius-md);
-      background: var(--ccat-bg-elevated);
-      font-size: var(--text-xs);
-      font-weight: 600;
-      color: var(--ccat-text-secondary);
-      border: 1px solid transparent;
-      text-align: left;
-    }
-    .stepper-step:hover {
-      background: var(--ccat-border-subtle);
-      color: var(--ccat-text-primary);
-    }
-    .stepper-step.active {
-      background: var(--ccat-bg-surface);
-      border-color: var(--ccat-brand-primary);
-      color: var(--ccat-brand-primary);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-    }
-    .step-number {
-      width: 1.25rem;
-      height: 1.25rem;
-      border-radius: 50%;
-      background: currentColor;
-      color: var(--ccat-bg-surface);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.7rem;
-      flex-shrink: 0;
-    }
-    .step-list {
-      display: grid;
-      gap: 0.75rem;
-      padding-left: 1.5rem;
-    }
-    .step-list li {
-      padding-left: 0.5rem;
-      max-width: 70ch;
-    }
-
-    /* Verificador Universal Raio-X */
-    .url-checker-panel {
-      background: var(--ccat-bg-elevated);
-      border: 1px solid var(--ccat-border);
-      border-radius: var(--radius-lg);
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-    .url-checker-input-row {
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-    }
-    .url-checker-input-row input {
-      flex: 1;
-    }
-    .url-checker-result {
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-md);
-      font-size: var(--text-sm);
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      background: var(--ccat-bg-surface);
-      border: 1px solid var(--ccat-border-subtle);
-    }
-    .url-checker-result[data-status="blocked"] {
-      border-color: var(--danger-color);
-      color: var(--danger-color);
-      background: var(--danger-surface);
-    }
-    .url-checker-result[data-status="allowed"] {
-      border-color: var(--success-color);
-      color: var(--success-color);
-      background: var(--success-surface);
-    }
-
-    /* Grid de Categorias com Detalhes Expansíveis */
-    .categories-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1rem;
-    }
-    .category-card {
-      background: var(--ccat-bg-surface);
-      border: 1px solid var(--ccat-border);
-      border-radius: var(--radius-lg);
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 1rem;
-      transition: border-color 140ms var(--ease-fluid), box-shadow 140ms var(--ease-fluid);
-      box-shadow: var(--ccat-card-shadow);
-    }
-    .category-card[data-locked="true"] {
-      border-left: 4px solid var(--ccat-brand-primary);
-    }
-    .category-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 0.5rem;
-    }
-    .category-badge-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      font-size: var(--text-xs);
-      font-weight: 600;
-      padding: 0.2rem 0.5rem;
-      border-radius: var(--radius-pill);
-      background: var(--ccat-bg-elevated);
-      color: var(--ccat-text-secondary);
-    }
-    .category-card[data-locked="true"] .category-badge-status {
-      background: var(--success-surface);
-      color: var(--success-color);
-    }
-    .category-rule-count {
-      font-size: var(--text-xs);
-      color: var(--ccat-text-muted);
-    }
-    .category-inspection {
-      border-top: 1px solid var(--ccat-border-subtle);
-      padding-top: 0.75rem;
-      font-size: var(--text-xs);
-    }
-    .category-inspection summary {
-      cursor: pointer;
-      font-weight: 600;
-      color: var(--ccat-brand-primary);
-      user-select: none;
-    }
-    
-    /* Chips Diferenciados por Cor: Domínios (Teal/Azul) vs Palavras-chave (Terracota/Âmbar) */
-    .category-tags-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.375rem;
-      margin-top: 0.5rem;
-    }
-    .category-tag-chip {
-      padding: 0.2rem 0.5rem;
-      border-radius: var(--radius-sm);
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-    }
-    .category-tag-chip--domain {
-      background: rgba(0, 90, 100, 0.08);
-      color: var(--ccat-brand-primary);
-      border: 1px solid rgba(0, 90, 100, 0.25);
-      font-weight: 500;
-    }
-    .category-tag-chip--keyword {
-      background: rgba(200, 75, 49, 0.08);
-      color: var(--ccat-brand-accent);
-      border: 1px solid rgba(200, 75, 49, 0.25);
-      font-weight: 500;
-    }
-
-    [data-theme="dark-tech"] .category-tag-chip--domain {
-      background: rgba(34, 211, 238, 0.12);
-      color: #22D3EE;
-      border-color: rgba(34, 211, 238, 0.35);
-    }
-    [data-theme="dark-tech"] .category-tag-chip--keyword {
-      background: rgba(249, 115, 22, 0.12);
-      color: #F97316;
-      border-color: rgba(249, 115, 22, 0.35);
-    }
-
-    [data-theme="high-contrast-aaa"] .category-tag-chip--domain {
-      background: #000000;
-      color: #FFD60A;
-      border: 1px solid #FFD60A;
-    }
-    [data-theme="high-contrast-aaa"] .category-tag-chip--keyword {
-      background: #000000;
-      color: #00FFFF;
-      border: 1px solid #00FFFF;
-    }
-
-    /* Data Table de Bloqueios & Abas */
-    .table-container {
-      border: 1px solid var(--ccat-border);
-      border-radius: var(--radius-md);
-      overflow-x: auto;
-      background: var(--ccat-bg-surface);
-    }
-    table.data-table {
-      width: 100%;
-      border-collapse: collapse;
-      text-align: left;
-      font-size: var(--text-sm);
-    }
-    table.data-table th, table.data-table td {
-      padding: 0.75rem 1rem;
-      border-bottom: 1px solid var(--ccat-border-subtle);
-    }
-    table.data-table th {
-      background: var(--ccat-bg-elevated);
-      font-weight: 600;
-      color: var(--ccat-text-secondary);
-    }
-    table.data-table tr:hover td {
-      background: var(--ccat-bg-elevated);
-    }
-
-    /* Formulários e Modais */
-    .rule-form {
-      display: grid;
-      gap: 0.75rem;
-      border-top: 1px solid var(--ccat-border);
-      padding-top: 1.25rem;
-    }
-    .rule-form button { justify-self: start; }
-
-    .recovery-details {
-      border-top: 1px solid var(--ccat-border);
-      padding-top: 1rem;
-    }
-    .recovery-details summary {
-      cursor: pointer;
-      font-weight: 600;
-      min-height: 2.75rem;
-      display: flex;
-      align-items: center;
-    }
-    .recovery-details > div {
-      display: grid;
-      gap: 1rem;
-      padding-top: 1rem;
-    }
-
-    .skip-link {
-      position: absolute;
-      left: -9999px;
-      top: 0.75rem;
-      z-index: var(--z-toast, 1000);
-      padding: 0.625rem 1.25rem;
-      background: var(--ccat-brand-primary);
-      color: #FFFFFF;
-      border-radius: 9999px;
-      font-weight: 600;
-      text-decoration: none;
-    }
-    .skip-link:focus,
-    .skip-link:focus-visible {
-      left: 1rem;
-    }
-
-    /* Visibilidade dos 5 Estados de UI e das Views */
-    html[data-ui-state="active"] [data-state-panel]:not([data-state-panel="active"]) { display: none; }
-    html[data-ui-state="loading"] [data-state-panel]:not([data-state-panel="loading"]) { display: none; }
-    html[data-ui-state="empty"] [data-state-panel]:not([data-state-panel="empty"]) { display: none; }
-    html[data-ui-state="error"] [data-state-panel]:not([data-state-panel="error"]) { display: none; }
-    html[data-ui-state="partial"] [data-state-panel]:not([data-state-panel="partial"]) { display: none; }
-    [data-view][hidden] { display: none !important; }
-
-    /* Modal de Pausa Consciente */
-    dialog#partnerAuthDialog {
-      margin: auto;
-      max-width: 520px;
-      width: calc(100% - 2rem);
-      border: 1px solid var(--ccat-border);
-      border-radius: var(--radius-xl);
-      background: var(--ccat-bg-surface);
-      color: var(--ccat-text-primary);
-      padding: 0;
-      box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.35);
-    }
-    dialog#partnerAuthDialog::backdrop {
-      background: rgba(15, 23, 42, 0.65);
-      backdrop-filter: blur(6px);
-    }
-    .dialog-content {
-      padding: 2rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-    }
-    .mindful-box {
-      background: var(--ccat-bg-elevated);
-      border: 1px solid var(--ccat-border-subtle);
-      border-radius: var(--radius-lg);
-      padding: 1.25rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 0.75rem;
-    }
-    .breathing-circle {
-      width: 4rem;
-      height: 4rem;
-      border-radius: 50%;
-      background: var(--ccat-brand-primary);
-      opacity: 0.85;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #FFFFFF;
-      font-weight: 700;
-      font-size: 1.25rem;
-      transition: transform 4s ease-in-out;
-    }
-
-    .ccat-alert-error {
-      border: 2px solid var(--danger-color);
-      background: var(--danger-surface);
-      color: var(--danger-color);
-      padding: 1rem 1.25rem;
-      border-radius: 0.75rem;
-    }
-
-    .ccat-alert-partial {
-      border: 2px solid var(--warning-color);
-      background: var(--warning-surface);
-      color: var(--warning-color);
-      padding: 1rem 1.25rem;
-      border-radius: 0.75rem;
-    }
-
-    .profile-banner-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-top: 0.75rem;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: 0.01ms !important;
-        transition-duration: 0.01ms !important;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="./renderer.css" />
 </head>
 <body>
   <a href="#main-content" class="skip-link">Pular para o conteúdo principal</a>
@@ -763,18 +67,18 @@
       <div class="partner-pill">
         <div class="partner-avatar" aria-hidden="true">🤝</div>
         <div>
-          <p style="font-weight: 600; font-size: 0.8rem;">Compromisso</p>
-          <p class="app-subtitle" id="partnerStatus" style="font-size: 0.75rem;">Aguardando estado do Ajudante</p>
+          <p class="partner-pill-title">Compromisso</p>
+          <p class="app-subtitle partner-pill-status" id="partnerStatus">Aguardando estado do Ajudante</p>
         </div>
       </div>
 
       <div class="theme-control">
         <label for="themeSelect">Aparência</label>
         <select id="themeSelect" aria-label="Aparência">
-          <option data-theme-select="capycro-ivory" value="capycro-ivory" aria-pressed="true">Padrão</option>
-          <option data-theme-select="dark-tech" value="dark-tech" aria-pressed="false">Escuro</option>
-          <option data-theme-select="light-fintech" value="light-fintech" aria-pressed="false">Claro</option>
-          <option data-theme-select="high-contrast-aaa" value="high-contrast-aaa" aria-pressed="false">Alto contraste</option>
+          <option data-theme-select="capycro-ivory" value="capycro-ivory">Padrão</option>
+          <option data-theme-select="dark-tech" value="dark-tech">Escuro</option>
+          <option data-theme-select="light-fintech" value="light-fintech">Claro</option>
+          <option data-theme-select="high-contrast-aaa" value="high-contrast-aaa">Alto contraste</option>
         </select>
       </div>
     </div>
@@ -784,11 +88,11 @@
   <div class="app-content-wrapper">
     <header class="app-header">
       <div>
-        <h2>Painel de Proteção e Foco</h2>
+        <h3>Painel de Proteção e Foco</h3>
         <p class="app-subtitle">Seu espaço de foco, protegido com ajuda de quem você confia.</p>
       </div>
-      <div id="quickStatsHeader" class="tabular-nums" style="font-size: var(--text-xs); color: var(--ccat-text-secondary);">
-        Proteção Contínua Ativa
+      <div id="quickStatsHeader" class="tabular-nums header-stats">
+        Conferindo proteção...
       </div>
     </header>
 
@@ -797,7 +101,7 @@
 
       <!-- Perfil dos navegadores ainda não aprovado (fora dos 5 estados: aparece junto de qualquer um) -->
       <section id="profileBanner" class="ccat-alert-partial" role="status" aria-live="polite" hidden>
-        <h2>Falta 1 passo para proteger os navegadores</h2>
+        <h3>Falta 1 passo para proteger os navegadores</h3>
         <p>Aprove o perfil do monBlock em Ajustes do Sistema &gt; Geral &gt; Gerenciamento de Dispositivos. Sem ele, Chrome, Brave e Edge podem ignorar o bloqueio.</p>
         <div class="profile-banner-actions">
           <button type="button" id="openProfileSettingsBtn" class="ccat-btn ccat-btn-primary">Abrir Ajustes</button>
@@ -807,7 +111,7 @@
 
       <!-- Daemon de versão anterior (sem browserProfileInstalled no estado): pede atualização do serviço -->
       <section id="serviceUpdateBanner" class="ccat-alert-partial" role="status" aria-live="polite" hidden>
-        <h2>Atualize o serviço do monBlock</h2>
+        <h3>Atualize o serviço do monBlock</h3>
         <p>O serviço instalado é de uma versão anterior e não confere o perfil dos navegadores. Reinstale o serviço para receber a verificação.</p>
         <div class="profile-banner-actions">
           <button type="button" id="updateServiceBtn" class="ccat-btn ccat-btn-primary">Reinstalar serviço</button>
@@ -815,7 +119,7 @@
       </section>
 
       <!-- ==================================================================
-           5 ESTADOS VISUAIS OBRIGATÓRIOS (loading, empty, error, partial, active)
+           ESTADOS VISUAIS (loading, error, active; empty = dica em Categorias; partial = faixas de aviso)
            ================================================================== -->
 
       <!-- Estado 1: Loading (Skeleton Shimmer sem layout shift) -->
@@ -824,12 +128,6 @@
         <p>Consultando o estado das categorias e do Ajudante.</p>
       </section>
 
-      <!-- Estado 2: Empty (Lista customizada vazia com CTA claro) -->
-      <section data-state-panel="empty" class="ccat-card" aria-label="Lista customizada vazia">
-        <h2>Comece a bloquear sites específicos</h2>
-        <p>A categoria Conteúdo Adulto já vem ativada. Você também pode acrescentar sites ou palavras.</p>
-        <button type="button" id="addFirstDomainBtn" class="ccat-btn ccat-btn-primary">Adicionar site</button>
-      </section>
 
       <!-- Estado 3: Error (Banner RFC 9457 Problem Details) -->
       <section
@@ -842,19 +140,12 @@
         <h2>Não foi possível concluir a ação</h2>
         <p id="problemDetailsTitle"><strong>Confira o que aconteceu e tente novamente.</strong></p>
         <p id="problemDetailsDetail">A proteção existente permanece ativa.</p>
-        <button type="button" id="reinstallServiceBtn" class="ccat-btn ccat-btn-primary" hidden>Reinstalar serviço</button>
+        <div class="profile-banner-actions">
+          <button type="button" id="retryStateBtn" class="ccat-btn ccat-btn-primary">Tentar novamente</button>
+          <button type="button" id="reinstallServiceBtn" class="ccat-btn" hidden>Reinstalar serviço</button>
+        </div>
       </section>
 
-      <!-- Estado 4: Partial / Degraded (Modo Offline / Desafio-Resposta HMAC-SHA256) -->
-      <section
-        data-state-panel="partial"
-        class="ccat-alert-partial"
-        role="status"
-        aria-live="polite"
-      >
-        <h2>Proteção local disponível</h2>
-        <p>Se o Telegram estiver indisponível, combine com seu Ajudante o uso de um código de liberação offline (HMAC-SHA256). A proteção continua ativa.</p>
-      </section>
 
       <!-- Estado 5: Active (Dashboard Populado com as 4 Views da Jornada) -->
       <div data-state-panel="active">
@@ -864,26 +155,28 @@
           <div class="section-intro">
             <h2 id="onboarding-heading" tabindex="-1">Primeiros passos</h2>
             <p>Configure seu guardião de foco e pareie seu Ajudante de forma simples e guiada.</p>
+            <button type="button" id="skipOnboardingBtn" class="ccat-btn">Agora não, ir às categorias</button>
           </div>
 
           <!-- Stepper Tabs -->
+          <p class="app-subtitle tabular-nums" id="onboardingProgress">Passo 1 de 4</p>
           <div class="stepper-header" role="tablist" aria-label="Progresso da configuração inicial">
-            <button type="button" class="stepper-step active" id="stepIndicator1" data-onboarding-step-tab="1" role="tab" aria-selected="true">
+            <button type="button" class="stepper-step active" id="stepIndicator1" data-onboarding-step-tab="1" role="tab" aria-controls="onboardingStepPanel1" aria-selected="true">
               <span class="step-number">1</span> Propósito
             </button>
-            <button type="button" class="stepper-step" id="stepIndicator2" data-onboarding-step-tab="2" role="tab" aria-selected="false">
-              <span class="step-number">2</span> Escudo Base
+            <button type="button" class="stepper-step" id="stepIndicator2" data-onboarding-step-tab="2" role="tab" aria-controls="onboardingStepPanel2" aria-selected="false" tabindex="-1">
+              <span class="step-number">2</span> Primeira proteção
             </button>
-            <button type="button" class="stepper-step" id="stepIndicator3" data-onboarding-step-tab="3" role="tab" aria-selected="false">
+            <button type="button" class="stepper-step" id="stepIndicator3" data-onboarding-step-tab="3" role="tab" aria-controls="onboardingStepPanel3" aria-selected="false" tabindex="-1">
               <span class="step-number">3</span> Ajudante Telegram
             </button>
-            <button type="button" class="stepper-step" id="stepIndicator4" data-onboarding-step-tab="4" role="tab" aria-selected="false">
+            <button type="button" class="stepper-step" id="stepIndicator4" data-onboarding-step-tab="4" role="tab" aria-controls="onboardingStepPanel4" aria-selected="false" tabindex="-1">
               <span class="step-number">4</span> Chaves de Emergência
             </button>
           </div>
 
           <!-- Lista Canônica de 4 passos preservada para testes -->
-          <ol class="step-list" id="onboardingCanonicalList" style="display: none;">
+          <ol class="step-list canonical-list" id="onboardingCanonicalList">
             <li data-onboarding-step="1"><strong>Entenda a proteção.</strong> Você pode ativar novos bloqueios a qualquer momento. Para retirar um bloqueio ativo, é necessária autorização do Ajudante.</li>
             <li data-onboarding-step="2"><strong>Confira o estado do aplicativo.</strong> O status acima mostra se o estado da proteção foi carregado e se há um Ajudante pareado.</li>
             <li data-onboarding-step="3"><strong>Combine com seu Ajudante.</strong> O pareamento e a guarda dos códigos de recuperação devem ser concluídos antes de depender da recuperação offline.</li>
@@ -891,60 +184,60 @@
           </ol>
 
           <!-- PAINEL 1: Propósito & Filosofia da Catraca -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel1" data-panel-step="1">
-            <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1rem;">
-              <div style="display: flex; align-items: center; gap: 0.75rem;">
-                <span style="font-size: 1.75rem;" aria-hidden="true">🛡️</span>
+          <div class="onboarding-step-panel" id="onboardingStepPanel1" data-panel-step="1" role="tabpanel" aria-labelledby="stepIndicator1">
+            <div class="callout-box">
+              <div class="row-center">
+                <span class="icon-lg" aria-hidden="true">🛡️</span>
                 <div>
                   <h3>Como o monBlock protege o seu foco?</h3>
-                  <p class="app-subtitle">Tecnologia de compromisso baseada na Catraca Unidirecional (*One-Way Ratchet*).</p>
+                  <p class="app-subtitle">Tecnologia de compromisso baseada na Catraca Unidirecional: o bloqueio só é retirado com autorização do seu Ajudante.</p>
                 </div>
               </div>
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem;">
-                <div style="background: var(--ccat-bg-surface); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
-                  <strong style="color: var(--success-color);">🟢 Para Adicionar Bloqueios:</strong>
-                  <p style="font-size: var(--text-sm); margin-top: 0.25rem;">Livre e instantâneo com 1 clique. Adicione categorias, domínios ou termos sempre que quiser eliminar uma nova distração.</p>
+              <div class="compare-grid">
+                <div class="compare-card">
+                  <strong class="text-success">🟢 Para Adicionar Bloqueios:</strong>
+                  <p class="compare-note">Livre e instantâneo com 1 clique. Adicione categorias, domínios ou termos sempre que quiser eliminar uma nova distração.</p>
                 </div>
-                <div style="background: var(--ccat-bg-surface); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
-                  <strong style="color: var(--ccat-brand-accent);">🔒 Para Desbloquear:</strong>
-                  <p style="font-size: var(--text-sm); margin-top: 0.25rem;">Exige autorização do seu Ajudante via Telegram, uma chave de emergência ou espera de 72h. Impulsos rápidos não quebram sua disciplina.</p>
+                <div class="compare-card">
+                  <strong class="text-accent">🔒 Para Desbloquear:</strong>
+                  <p class="compare-note">Exige autorização do seu Ajudante via Telegram, uma chave de emergência ou espera de 72h. Impulsos rápidos não quebram sua disciplina.</p>
                 </div>
               </div>
-              <div style="display: flex; justify-content: flex-end;">
-                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep2Btn">Avançar: Escudo Base →</button>
+              <div class="row-end">
+                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep2Btn">Avançar: Primeira proteção →</button>
               </div>
             </div>
           </div>
 
-          <!-- PAINEL 2: Escudo Base Recomendado -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel2" data-panel-step="2" style="display: none;">
-            <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1rem;">
+          <!-- PAINEL 2: Primeira proteção recomendada -->
+          <div class="onboarding-step-panel" id="onboardingStepPanel2" data-panel-step="2" role="tabpanel" aria-labelledby="stepIndicator2" hidden>
+            <div class="callout-box">
               <h3>Selecione o Escudo Inicial Recomendado</h3>
               <p class="ccat-field-hint">A categoria Conteúdo Adulto já começa ativa. Você pode escolher ativar outras agora.</p>
-              <div style="display: grid; gap: 0.75rem;">
-                <div style="display: flex; align-items: center; justify-content: space-between; background: var(--ccat-bg-surface); padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
+              <div class="stack-sm">
+                <div class="status-row">
                   <div>
                     <strong>Conteúdo Adulto &amp; Pornografia</strong>
-                    <p class="app-subtitle" style="font-size: 0.75rem;">5 domínios principais + 4 palavras-chave</p>
+                    <p class="app-subtitle partner-pill-status">5 domínios principais + 4 palavras-chave</p>
                   </div>
-                  <span class="category-badge-status" style="background: var(--success-surface); color: var(--success-color);">🔒 Ativa por Padrão</span>
+                  <span class="category-badge-status badge-success">🔒 Ativa por Padrão</span>
                 </div>
-                <div style="display: flex; align-items: center; justify-content: space-between; background: var(--ccat-bg-surface); padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
+                <div class="status-row">
                   <div>
                     <strong>Apostas &amp; Cassinos (Bets)</strong>
-                    <p class="app-subtitle" style="font-size: 0.75rem;">Bet365, Blaze, Stake, Betano e afins</p>
+                    <p class="app-subtitle partner-pill-status">Bet365, Blaze, Stake, Betano e afins</p>
                   </div>
                   <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="gambling">Ativar Bloqueio</button>
                 </div>
-                <div style="display: flex; align-items: center; justify-content: space-between; background: var(--ccat-bg-surface); padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
+                <div class="status-row">
                   <div>
                     <strong>Proxies, VPNs &amp; Bypass</strong>
-                    <p class="app-subtitle" style="font-size: 0.75rem;">Ferramentas de evasão para burlar regras</p>
+                    <p class="app-subtitle partner-pill-status">Ferramentas de evasão para burlar regras</p>
                   </div>
                   <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="proxy">Ativar Bloqueio</button>
                 </div>
               </div>
-              <div style="display: flex; justify-content: space-between;">
+              <div class="row-between">
                 <button type="button" class="ccat-btn" id="backToStep1Btn">← Voltar</button>
                 <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep3Btn">Avançar: Conectar Ajudante →</button>
               </div>
@@ -952,36 +245,36 @@
           </div>
 
           <!-- PAINEL 3: Tutorial Detalhado do Telegram & Formulário de Pareamento -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel3" data-panel-step="3" style="display: none;">
-            <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1.25rem;">
+          <div class="onboarding-step-panel" id="onboardingStepPanel3" data-panel-step="3" role="tabpanel" aria-labelledby="stepIndicator3" hidden>
+            <div class="tutorial-box">
               <div>
                 <h3>Tutorial de Pareamento com o Ajudante (Telegram)</h3>
                 <p class="app-subtitle">Seu Ajudante de Responsabilidade definirá a Senha Mestra diretamente no chat do Telegram.</p>
               </div>
 
               <!-- 4 Etapas Visuais Explicativas -->
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
-                <div style="background: var(--ccat-bg-surface); padding: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
-                  <div style="font-weight: 700; color: var(--ccat-brand-primary); font-size: 0.85rem; margin-bottom: 0.25rem;">1. Buscar o Bot</div>
-                  <p style="font-size: var(--text-xs); color: var(--ccat-text-secondary);">No Telegram do Ajudante, busque por <strong>@monBlockBot</strong> ou abra o link do bot.</p>
+              <div class="steps-grid">
+                <div class="step-card">
+                  <div class="step-title">1. Buscar o Bot</div>
+                  <p class="header-stats">No Telegram do Ajudante, busque por <strong>@monBlockBot</strong> ou abra o link do bot.</p>
                 </div>
-                <div style="background: var(--ccat-bg-surface); padding: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
-                  <div style="font-weight: 700; color: var(--ccat-brand-primary); font-size: 0.85rem; margin-bottom: 0.25rem;">2. Enviar /start</div>
-                  <p style="font-size: var(--text-xs); color: var(--ccat-text-secondary);">O Ajudante envia <code>/start</code> para o bot e visualiza o seu Chat ID numérico.</p>
+                <div class="step-card">
+                  <div class="step-title">2. Enviar /start</div>
+                  <p class="header-stats">O Ajudante envia <code>/start</code> para o bot e visualiza o seu Chat ID numérico.</p>
                 </div>
-                <div style="background: var(--ccat-bg-surface); padding: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
-                  <div style="font-weight: 700; color: var(--ccat-brand-primary); font-size: 0.85rem; margin-bottom: 0.25rem;">3. Enviar Convite</div>
-                  <p style="font-size: var(--text-xs); color: var(--ccat-text-secondary);">Digite o Chat ID dele abaixo e clique em <em>Enviar Convite</em> para notificar o bot.</p>
+                <div class="step-card">
+                  <div class="step-title">3. Enviar Convite</div>
+                  <p class="header-stats">Digite o Chat ID dele abaixo e clique em <em>Enviar Convite</em> para notificar o bot.</p>
                 </div>
-                <div style="background: var(--ccat-bg-surface); padding: 0.85rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle);">
-                  <div style="font-weight: 700; color: var(--ccat-brand-primary); font-size: 0.85rem; margin-bottom: 0.25rem;">4. Senha no Telegram</div>
-                  <p style="font-size: var(--text-xs); color: var(--ccat-text-secondary);">O Ajudante define a senha no chat via <code>/senha &lt;senha&gt;</code>. Você não tem acesso a ela!</p>
+                <div class="step-card">
+                  <div class="step-title">4. Senha no Telegram</div>
+                  <p class="header-stats">O Ajudante define a senha no chat via <code>/senha &lt;senha&gt;</code>. Você não tem acesso a ela!</p>
                 </div>
               </div>
 
               <!-- Formulário Ágil de Pareamento -->
-              <div class="rule-form" id="onboardingPairingCard" style="background: var(--ccat-bg-surface); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border); border-top: none;">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem;">
+              <div class="rule-form pairing-form-card" id="onboardingPairingCard">
+                <div class="pairing-form-grid">
                   <div>
                     <label for="onboardingPartnerNameInput" class="ccat-field-label">Nome do Ajudante</label>
                     <input id="onboardingPartnerNameInput" type="text" class="ccat-input" placeholder="Ex: Ana Clara" />
@@ -995,62 +288,63 @@
               </div>
 
               <!-- Card de Espera do Ajudante -->
-              <div id="onboardingPairingWaitingCard" style="display: none; background: var(--ccat-bg-surface); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-brand-primary); gap: 0.75rem;">
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                  <span style="font-size: 1.5rem;" aria-hidden="true">⏳</span>
+              <div class="pairing-waiting-card" id="onboardingPairingWaitingCard">
+                <div class="row-center">
+                  <span class="icon-md" aria-hidden="true">⏳</span>
                   <div>
-                    <strong id="waitingPartnerText" style="color: var(--ccat-brand-primary);">Convite enviado com sucesso!</strong>
-                    <p style="font-size: var(--text-sm); color: var(--ccat-text-secondary); margin-top: 0.25rem;">
+                    <strong class="text-brand" id="waitingPartnerText">Convite enviado com sucesso!</strong>
+                    <p class="hint-text">
                       Aguardando seu Ajudante responder no Telegram com o comando <code>/senha &lt;senha&gt;</code> para ativar a proteção...
                     </p>
                   </div>
                 </div>
-                <div style="margin-top: 0.5rem;">
-                  <button type="button" id="cancelPairingBtn" class="ccat-btn" style="min-height: 2.25rem; font-size: var(--text-xs);">Cancelar Convite</button>
+                <div class="mt-sm">
+                  <button type="button" id="cancelPairingBtn" class="ccat-btn btn-compact">Cancelar Convite</button>
                 </div>
               </div>
 
-              <div style="display: flex; justify-content: space-between;">
+              <p class="ccat-field-hint" id="nextToStep4Hint">Os códigos de emergência só existem depois que o Ajudante concluir o pareamento.</p>
+              <div class="row-between">
                 <button type="button" class="ccat-btn" id="backToStep2Btn">← Voltar</button>
-                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep4Btn">Avançar: Chaves de Emergência →</button>
+                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep4Btn" disabled aria-describedby="nextToStep4Hint">Avançar: Chaves de Emergência →</button>
               </div>
             </div>
           </div>
 
           <!-- PAINEL 4: Chaves de Emergência REC-* -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel4" data-panel-step="4" style="display: none;">
-            <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1.25rem;">
+          <div class="onboarding-step-panel" id="onboardingStepPanel4" data-panel-step="4" role="tabpanel" aria-labelledby="stepIndicator4" hidden>
+            <div class="tutorial-box">
               <div>
                 <h3>Custódia Exclusiva dos 5 Códigos de Emergência (REC-*)</h3>
                 <p class="app-subtitle">Os códigos de resgate ficam sob posse exclusiva do seu Ajudante de Responsabilidade.</p>
               </div>
 
-              <div style="background: var(--ccat-bg-surface); padding: 1.25rem; border-radius: var(--radius-md); border: 1px solid var(--ccat-border-subtle); display: grid; gap: 0.85rem;">
-                <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
-                  <span style="font-size: 1.5rem;" aria-hidden="true">🛡️</span>
+              <div class="custody-card">
+                <div class="row-start">
+                  <span class="icon-md" aria-hidden="true">🛡️</span>
                   <div>
-                    <strong style="color: var(--ccat-brand-primary); font-size: var(--text-base);">Proteção Ativa contra a Autossabotagem</strong>
-                    <p style="font-size: var(--text-sm); color: var(--ccat-text-secondary); margin-top: 0.25rem;">
+                    <strong class="custody-title">Proteção Ativa contra a Autossabotagem</strong>
+                    <p class="hint-text">
                       Para garantir que o seu compromisso não seja quebrado em momentos de impulso, <strong>nenhuma chave de recuperação é exibida ou salva neste computador</strong>.
                     </p>
-                    <p style="font-size: var(--text-sm); color: var(--ccat-text-secondary); margin-top: 0.5rem;">
+                    <p class="custody-text">
                       Os <strong>5 Códigos de Emergência (REC-*)</strong> foram enviados de forma confidencial diretamente para o Telegram do seu Ajudante. Se a internet cair e você precisar urgentemente de acesso a um site essencial de trabalho/estudo, você precisará contatá-lo para obter uma das chaves.
                     </p>
                   </div>
                 </div>
-                <div style="background: var(--ccat-bg-elevated); padding: 0.75rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--ccat-border); font-size: var(--text-xs); color: var(--ccat-text-muted);">
+                <div class="note-box">
                   📌 Cada código <code>REC-*</code> é de uso único e libera 1 site por 1 hora em modo offline.
                 </div>
               </div>
 
-              <label style="display: flex; align-items: flex-start; gap: 0.625rem; font-size: var(--text-sm); cursor: pointer;">
-                <input id="onboardingConfirmCodesCheckbox" type="checkbox" style="margin-top: 0.2rem; width: 1.25rem; height: 1.25rem; accent-color: var(--ccat-brand-primary);" />
+              <label class="confirm-label">
+                <input class="confirm-checkbox" id="onboardingConfirmCodesCheckbox" type="checkbox" />
                 <span><strong>Confirmação de Compromisso:</strong> Compreendo que os 5 códigos de emergência estão sob guarda exclusiva do meu Ajudante no Telegram e não estão acessíveis neste computador.</span>
               </label>
 
-              <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="row-between-center">
                 <button type="button" class="ccat-btn" id="backToStep3Btn">← Voltar</button>
-                <button type="button" id="goToCategoriesBtn" class="ccat-btn ccat-btn-primary">Concluir e Ver Categorias →</button>
+                <button type="button" id="goToCategoriesBtn" class="ccat-btn ccat-btn-primary" disabled>Concluir e Ver Categorias →</button>
               </div>
             </div>
           </div>
@@ -1062,6 +356,11 @@
             <h2 id="categories-heading" tabindex="-1">Categorias</h2>
             <p>Ative o que quiser bloquear. Para reverter uma categoria ativa, será necessária autorização do Ajudante. Clique em <em>Inspecionar</em> para ver domínios (azul) e termos (terracota).</p>
           </div>
+          <p id="helperReminder" class="ccat-field-hint" hidden>Você ainda não escolheu um Ajudante. <button type="button" id="openOnboardingBtn" class="ccat-btn">Escolher um Ajudante</button></p>
+          <aside id="emptyRulesHint" class="ccat-field-hint" hidden>
+            <p>Você também pode bloquear sites ou palavras específicos, além das categorias.</p>
+            <button type="button" id="addFirstDomainBtn" class="ccat-btn">Adicionar site</button>
+          </aside>
 
           <div class="categories-grid">
             <!-- 1. Conteúdo Adulto -->
@@ -1109,7 +408,7 @@
                   <span class="category-tag-chip category-tag-chip--domain">🌐 stake.com</span>
                   <span class="category-tag-chip category-tag-chip--domain">🌐 betano.com</span>
                   <span class="category-tag-chip category-tag-chip--domain">🌐 sportingbet.com</span>
-                  <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: cassino,online</span>
+                  <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: cassino + online</span>
                   <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: roleta,aposta</span>
                   <span class="category-tag-chip category-tag-chip--keyword">🔤 termo: slot,bonus</span>
                 </div>
@@ -1335,7 +634,7 @@
               <input id="urlCheckerInput" type="text" class="ccat-input" placeholder="Ex.: twitch.tv ou betano.com ou termo suspeito..." />
               <button type="button" id="urlCheckerBtn" class="ccat-btn">Verificar</button>
             </div>
-            <div id="urlCheckerResult" class="url-checker-result" style="display: none;"></div>
+            <div id="urlCheckerResult" class="url-checker-result canonical-list" role="status"></div>
           </div>
 
           <!-- ADIÇÃO DE DOMÍNIOS EM LOTE -->
@@ -1377,9 +676,9 @@
 
           <!-- TABELA DE SITES E PALAVRAS BLOQUEADOS ATUALMENTE -->
           <div class="rule-form">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <div class="list-header">
               <h3>Lista Ativa de Proteção</h3>
-              <input id="rulesTableSearchInput" type="text" class="ccat-input" style="min-height: 2.25rem; font-size: 0.85rem; max-width: 260px;" placeholder="Filtrar regras ativas..." />
+              <input id="rulesTableSearchInput" type="text" class="ccat-input filter-input-compact" placeholder="Filtrar regras ativas..." />
             </div>
             <div class="table-container">
               <table class="data-table" id="activeRulesTable" aria-label="Tabela de domínios e termos ativos">
@@ -1462,19 +761,15 @@
       <h2 id="dialog-title">Pausa Consciente &amp; Ajudante</h2>
       <div class="mindful-box">
         <div class="breathing-circle" id="dialogBreathingTimer" aria-hidden="true">10</div>
-        <p style="font-weight: 600; font-size: var(--text-sm);">Respire fundo antes de prosseguir.</p>
-        <p class="app-subtitle" style="font-size: 0.8rem;">O que você busca acessar apoia o seu foco ou é um impulso passageiro?</p>
+        <p class="mindful-title">Respire fundo antes de prosseguir.</p>
+        <p class="app-subtitle mindful-hint">O que você busca acessar apoia o seu foco ou é um impulso passageiro?</p>
       </div>
 
-      <div style="display: grid; gap: 0.5rem;">
-        <label for="dialogUnblockReasonInput" class="ccat-field-label">Por que você precisa deste acesso?</label>
-        <input id="dialogUnblockReasonInput" type="text" class="ccat-input" placeholder="Justificativa sincera para o seu Ajudante..." />
-      </div>
 
       <p class="ccat-field-hint">Esta categoria já está protegida. Para retirar um bloqueio ativo, combine a autorização com seu Ajudante. Esta tela ainda não envia pedidos pelo Telegram.</p>
 
-      <div style="display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap;">
-        <button type="button" class="ccat-btn" id="closePartnerDialogBtn">Voltar às categorias</button>
+      <div class="dialog-actions">
+        <button type="button" class="ccat-btn ccat-btn-primary" id="closePartnerDialogBtn" autofocus>Voltar às categorias</button>
       </div>
     </div>
   </dialog>
@@ -1482,6 +777,7 @@
   <dialog id="profileStepsDialog" aria-labelledby="profile-steps-title">
     <div class="dialog-content">
       <h2 id="profile-steps-title">Como aprovar o perfil dos navegadores</h2>
+      <p>Sem este perfil, Chrome, Brave e Edge podem ignorar o bloqueio do monBlock.</p>
       <ol>
         <li>Clique em <strong>Abrir Ajustes</strong>. O monBlock abre Ajustes do Sistema &gt; Geral &gt; Gerenciamento de Dispositivos.</li>
         <li>Dê dois cliques em <strong>monBlock — Proteção dos navegadores</strong>.</li>
@@ -1489,7 +785,7 @@
       </ol>
       <p class="ccat-field-hint">Este aviso some sozinho em até meio minuto depois da aprovação.</p>
       <div class="profile-banner-actions">
-        <button type="button" class="ccat-btn" id="closeProfileStepsBtn">Fechar</button>
+        <button type="button" class="ccat-btn ccat-btn-primary" id="closeProfileStepsBtn" autofocus>Fechar</button>
       </div>
     </div>
   </dialog>

@@ -1,5 +1,12 @@
 'use strict';
 
+// Rota inicial (spec 2026-11-06-rota-inicial): só `paired` decide; sem estado ou depois de navegar, não decide.
+function pickInitialView(state, { dismissed = false, userNavigated = false } = {}) {
+  if (!state || userNavigated) return null;
+  return state.paired === true || dismissed ? 'categories' : 'onboarding';
+}
+globalThis.monblockRenderer = { pickInitialView };
+
 (function bootstrapDesktopRenderer() {
   if (typeof document === 'undefined') return;
 
@@ -91,6 +98,14 @@
   ];
 
   let pairingPollInterval = null;
+  let userNavigated = false;
+  let loadSeq = 0;
+  let initialViewPicked = false;
+  const DISMISS_KEY = 'monblock.onboardingDismissed';
+  // localStorage é só conveniência de UI: indisponível = não dispensou.
+  const readDismissed = () => {
+    try { return localStorage.getItem(DISMISS_KEY) === '1'; } catch { return false; }
+  };
 
   function stopPairingPoll() {
     if (pairingPollInterval) {
@@ -110,18 +125,37 @@
       .replace(/'/g, '&#39;');
   }
 
+  let feedbackTimer = null;
   function notify(message, isError = false) {
-    feedback.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" style="background:none; border:none; color:inherit; font-weight:700; cursor:pointer; padding:0 0.5rem; font-size:1rem;" aria-label="Fechar aviso">✕</button>`;
+    // DOM API (textContent): a mensagem nunca é interpretada como HTML.
+    const text = document.createElement('span');
+    text.textContent = message;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'notice-close';
+    close.setAttribute('aria-label', 'Fechar aviso');
+    close.textContent = '✕';
+    feedback.replaceChildren(text, close);
     feedback.hidden = false;
     feedback.dataset.kind = isError ? 'error' : 'success';
-    feedback.setAttribute('role', isError ? 'alert' : 'status');
+    // Uma região fixa (role=status); erro só eleva a urgência, sem trocar o role.
+    feedback.setAttribute('aria-live', isError ? 'assertive' : 'polite');
     feedback.querySelector('button')?.addEventListener('click', () => {
       feedback.hidden = true;
     });
+    clearTimeout(feedbackTimer);
+    // Sucesso some sozinho em 5 s (e espera hover/foco); erro fica até ser fechado.
+    if (!isError) {
+      feedbackTimer = setTimeout(() => {
+        if (!feedback.matches(':hover, :focus-within')) feedback.hidden = true;
+      }, 5000);
+    }
   }
 
   function switchView(targetView, moveFocus = false) {
-    if (!views.some((view) => view.dataset.view === targetView)) return;
+    if (!views.some((view) => view.dataset.view === targetView)) return false;
+    // Em erro só "Ajudante e recuperação" tem conteúdo visível (CSS); não marcar como atual uma view escondida.
+    if (htmlEl.dataset.uiState === 'error' && targetView !== 'partner') return false;
     if (targetView !== 'onboarding') {
       stopPairingPoll();
     }
@@ -133,6 +167,7 @@
     }
     for (const view of views) view.hidden = view.dataset.view !== targetView;
     if (moveFocus) views.find((view) => view.dataset.view === targetView)?.querySelector('h2')?.focus();
+    return true;
   }
 
   function renderCategories(enabledCategories) {
@@ -181,7 +216,7 @@
       for (const kw of cat.keywords) {
         if (!query || kw.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
           rows.push({
-            item: kw,
+            item: kw.replaceAll(',', ' + '),
             type: 'Palavra-chave',
             origin: `Categoria: ${cat.namePt}`,
             status: '🔒 Protegido',
@@ -206,7 +241,7 @@
     for (const kw of currentRules.keywords || []) {
       if (!query || kw.toLowerCase().includes(query)) {
         rows.push({
-          item: kw,
+          item: kw.replaceAll(',', ' + '),
           type: 'Palavra-chave',
           origin: 'Adicionado Manualmente',
           status: '🔒 Protegido',
@@ -215,7 +250,7 @@
     }
 
     if (rows.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--ccat-text-muted); padding: 1.5rem;">Nenhuma regra corresponde ao filtro.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="table-empty-cell">Nenhuma regra corresponde ao filtro.</td></tr>';
       return;
     }
 
@@ -285,6 +320,7 @@
     startCooldownBtn.disabled = true;
   }
 
+  const quickStats = document.getElementById('quickStatsHeader');
   const reinstallServiceBtn = document.getElementById('reinstallServiceBtn');
   const profileBanner = document.getElementById('profileBanner');
   const serviceUpdateBanner = document.getElementById('serviceUpdateBanner');
@@ -299,11 +335,20 @@
 
   async function loadState() {
     let result;
+    const seq = ++loadSeq;
     try {
       result = await bridge.getState();
+      if (seq !== loadSeq) return htmlEl.dataset.uiState === 'active'; // resposta velha: a mais recente vence
       if (!result || result.status !== 200 || !result.state) throw new Error(result?.detail || 'O estado da proteção não pôde ser consultado.');
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = true;
       renderProfileBanner(result.state);
+      // Sai do estado de erro antes de escolher a view: em erro o switchView só aceita 'partner'.
+      htmlEl.dataset.uiState = 'active';
+      if (!initialViewPicked) {
+        initialViewPicked = true;
+        const initial = pickInitialView(result.state, { dismissed: readDismissed(), userNavigated });
+        if (initial) switchView(initial);
+      }
       currentRules = result.state.rules || currentRules;
       renderCategories(currentRules.enabledCategories || []);
       renderActiveRulesTable();
@@ -311,15 +356,30 @@
       updateCooldown();
       status.textContent = result.state.tamperLockdown ? 'Estado carregado — modo de segurança' : 'Estado da proteção carregado';
       status.dataset.status = result.state.tamperLockdown ? 'error' : 'loaded';
+      if (quickStats) {
+        // Perfil dos navegadores não aprovado: Chrome/Brave/Edge podem ignorar o bloqueio, então não é "ativa" plena.
+        quickStats.textContent = result.state.tamperLockdown
+          ? 'Modo de segurança'
+          : result.state.browserProfileInstalled === false ? 'Proteção parcial' : 'Proteção ativa';
+      }
+      isPaired = result.state.paired === true;
+      renderOnboardingGate();
+      const emptyHint = document.getElementById('emptyRulesHint');
+      if (emptyHint) emptyHint.hidden = (currentRules.blockedDomains?.length ?? 0) + (currentRules.keywords?.length ?? 0) > 0;
+      const reminder = document.getElementById('helperReminder');
+      if (reminder) reminder.hidden = isPaired;
       partnerStatus.textContent = result.state.paired ? 'Ajudante pareado' : 'Ajudante ainda não pareado';
       htmlEl.dataset.uiState = 'active';
       return true;
     } catch (error) {
+      if (seq !== loadSeq) return htmlEl.dataset.uiState === 'active';
       htmlEl.dataset.uiState = 'error';
+      switchView('partner'); // única view com conteúdo em erro; mantém a nav coerente
       // 503: o serviço root não responde (ADR-0007). Sem ele a proteção não pode ser confirmada.
       const daemonOffline = result?.status === 503;
       status.textContent = daemonOffline ? 'Proteção não verificada' : 'Não foi possível conferir a proteção';
       status.dataset.status = 'error';
+      if (quickStats) quickStats.textContent = 'Proteção não verificada';
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = !daemonOffline;
       renderProfileBanner(null);
       document.getElementById('problemDetailsTitle').textContent = daemonOffline ? 'Proteção não verificada' : 'Estado indisponível';
@@ -349,42 +409,94 @@
   // Seletor de Tema
   const themeSelect = document.getElementById('themeSelect');
   if (themeSelect) {
+    try {
+      const saved = localStorage.getItem('monblock.theme');
+      if (saved && Array.from(themeSelect.options).some((o) => o.value === saved)) {
+        htmlEl.dataset.theme = saved;
+        themeSelect.value = saved;
+      }
+    } catch { /* localStorage indisponível */ }
     themeSelect.addEventListener('change', () => {
       htmlEl.dataset.theme = themeSelect.value;
-      for (const option of themeSelect.options) option.setAttribute('aria-pressed', String(option.selected));
+      try { localStorage.setItem('monblock.theme', themeSelect.value); } catch { /* sem persistência: volta ao padrão */ }
     });
   }
 
   // Navegação Principal da Sidebar
-  for (const btn of navBtns) btn.addEventListener('click', () => switchView(btn.dataset.navTarget, true));
+  for (const btn of navBtns) {
+    btn.addEventListener('click', () => {
+      if (switchView(btn.dataset.navTarget, true)) userNavigated = true;
+    });
+  }
+  document.getElementById('retryStateBtn')?.addEventListener('click', () => void loadState());
+  document.getElementById('openOnboardingBtn')?.addEventListener('click', () => {
+    userNavigated = true;
+    switchView('onboarding', true);
+  });
+  document.getElementById('skipOnboardingBtn')?.addEventListener('click', () => {
+    userNavigated = true; // vale mesmo se o localStorage falhar
+    try { localStorage.setItem(DISMISS_KEY, '1'); } catch { /* sem persistência: volta ao onboarding na próxima abertura */ }
+    switchView('categories', true);
+  });
   document.getElementById('goToCategoriesBtn')?.addEventListener('click', () => switchView('categories', true));
   document.getElementById('addFirstDomainBtn')?.addEventListener('click', () => {
     switchView('rules', true);
     document.getElementById('batchDomainsTextarea')?.focus();
   });
 
-  // Stepper Interativo de Onboarding (Passos 1 a 4)
-  function switchOnboardingStep(stepNumber) {
+  // Stepper Interativo de Onboarding (Passos 1 a 4). O passo 4 (códigos de emergência) só existe depois do pareamento.
+  let isPaired = false;
+  const confirmCodesCheckbox = document.getElementById('onboardingConfirmCodesCheckbox');
+  const finishOnboardingBtn = document.getElementById('goToCategoriesBtn');
+  const nextToStep4Btn = document.getElementById('nextToStep4Btn');
+  const stepTab = (i) => document.getElementById(`stepIndicator${i}`);
+
+  function renderOnboardingGate() {
+    if (nextToStep4Btn) nextToStep4Btn.disabled = !isPaired;
+    const tab4 = stepTab(4);
+    if (tab4) {
+      if (isPaired) tab4.removeAttribute('aria-disabled');
+      else tab4.setAttribute('aria-disabled', 'true');
+    }
+    if (finishOnboardingBtn) finishOnboardingBtn.disabled = !confirmCodesCheckbox?.checked;
+  }
+  confirmCodesCheckbox?.addEventListener('change', renderOnboardingGate);
+
+  function switchOnboardingStep(stepNumber, moveFocus = false) {
+    if (stepNumber === 4 && !isPaired) return;
     for (let i = 1; i <= 4; i++) {
       const panel = document.getElementById(`onboardingStepPanel${i}`);
-      const tab = document.getElementById(`stepIndicator${i}`);
-      if (panel) panel.style.display = i === stepNumber ? 'block' : 'none';
+      const tab = stepTab(i);
+      if (panel) panel.hidden = i !== stepNumber;
       if (tab) {
         tab.classList.toggle('active', i === stepNumber);
         tab.setAttribute('aria-selected', String(i === stepNumber));
+        tab.tabIndex = i === stepNumber ? 0 : -1;
       }
     }
+    const progress = document.getElementById('onboardingProgress');
+    if (progress) progress.textContent = `Passo ${stepNumber} de 4`;
+    if (moveFocus) stepTab(stepNumber)?.focus();
   }
 
   for (let i = 1; i <= 4; i++) {
-    document.getElementById(`stepIndicator${i}`)?.addEventListener('click', () => switchOnboardingStep(i));
+    stepTab(i)?.addEventListener('click', () => switchOnboardingStep(i));
+    // Setas/Home/End movem entre abas (padrão ARIA tabs); o passo 4 bloqueado é pulado.
+    stepTab(i)?.addEventListener('keydown', (event) => {
+      const last = isPaired ? 4 : 3;
+      const next = { ArrowRight: i === last ? 1 : i + 1, ArrowLeft: i === 1 ? last : i - 1, Home: 1, End: last }[event.key];
+      if (!next) return;
+      event.preventDefault();
+      switchOnboardingStep(next, true);
+    });
   }
   document.getElementById('nextToStep2Btn')?.addEventListener('click', () => switchOnboardingStep(2));
   document.getElementById('backToStep1Btn')?.addEventListener('click', () => switchOnboardingStep(1));
   document.getElementById('nextToStep3Btn')?.addEventListener('click', () => switchOnboardingStep(3));
   document.getElementById('backToStep2Btn')?.addEventListener('click', () => switchOnboardingStep(2));
-  document.getElementById('nextToStep4Btn')?.addEventListener('click', () => switchOnboardingStep(4));
+  nextToStep4Btn?.addEventListener('click', () => switchOnboardingStep(4));
   document.getElementById('backToStep3Btn')?.addEventListener('click', () => switchOnboardingStep(3));
+  renderOnboardingGate();
 
   // Modal de Pausa Consciente & Respiração 10s
   let breathingInterval = null;
@@ -511,8 +623,6 @@
           const statusRes = await bridge.checkPairingStatus();
           if (statusRes?.status === 200 && statusRes.paired) {
             stopPairingPoll();
-            const cb = document.getElementById('onboardingConfirmCodesCheckbox');
-            if (cb) cb.checked = true;
             await loadState();
             notify('Ajudante configurou a Senha Mestra no Telegram! Proteção ativa.');
             switchOnboardingStep(4);
@@ -617,7 +727,11 @@
     }
   }, 15_000);
 
-  if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => switchView(viewId, true));
+  if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => {
+    if (!switchView(viewId, true)) return;
+    userNavigated = true;
+    if (viewId === 'rules') document.getElementById('batchDomainsTextarea')?.focus();
+  });
   switchView('categories');
   void loadState();
   setInterval(updateCooldown, 1000);
