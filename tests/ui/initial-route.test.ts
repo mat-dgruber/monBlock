@@ -131,6 +131,7 @@ describe('CSP, estilos e motion (F3/F4)', () => {
     expect(html).not.toMatch(/\sstyle="/);
     expect(html).not.toContain('<style>');
     expect(js).not.toMatch(/style="/);
+    expect(js).not.toContain('feedback.innerHTML');
     expect(html).toContain("style-src 'self';");
     expect(html).toContain('href="./renderer.css"');
     expect(html).not.toMatch(/\bux-\d+\b/);

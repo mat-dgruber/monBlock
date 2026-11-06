@@ -127,7 +127,15 @@ globalThis.monblockRenderer = { pickInitialView };
 
   let feedbackTimer = null;
   function notify(message, isError = false) {
-    feedback.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" class="notice-close" aria-label="Fechar aviso">✕</button>`;
+    // DOM API (textContent): a mensagem nunca é interpretada como HTML.
+    const text = document.createElement('span');
+    text.textContent = message;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'notice-close';
+    close.setAttribute('aria-label', 'Fechar aviso');
+    close.textContent = '✕';
+    feedback.replaceChildren(text, close);
     feedback.hidden = false;
     feedback.dataset.kind = isError ? 'error' : 'success';
     // Uma região fixa (role=status); erro só eleva a urgência, sem trocar o role.
