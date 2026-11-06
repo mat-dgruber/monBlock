@@ -27,6 +27,7 @@ export const SUPPORTED_MACOS_BROWSERS = [
   'Brave Browser',
   'Arc',
   'Microsoft Edge',
+  'Dia',
   'Firefox',
 ] as const;
 
@@ -85,6 +86,13 @@ on run argv
         return frontApp & "\\n" & tabUrl & "\\n" & tabTitle
       end tell
     end using terms from
+  else if frontApp is "Dia" then
+    tell application "Dia"
+      if (count of windows) is 0 then return ""
+      set tabUrl to URL of active tab of front window
+      set tabTitle to title of active tab of front window
+      return frontApp & "\\n" & tabUrl & "\\n" & tabTitle
+    end tell
   else if frontApp is "Firefox" then
     tell application "System Events"
       tell process "Firefox"
@@ -115,6 +123,12 @@ on run argv
         end if
       end tell
     end using terms from
+  else if browserName is "Dia" then
+    tell application "Dia"
+      if (count of windows) > 0 then
+        set URL of active tab of front window to safeRedirectUrl
+      end if
+    end tell
   else if browserName is "Firefox" then
     open location safeRedirectUrl
   end if
