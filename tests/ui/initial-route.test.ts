@@ -110,3 +110,16 @@ describe('higiene (F3)', () => {
     expect(js).toContain("if (viewId === 'rules') document.getElementById('batchDomainsTextarea')?.focus();");
   });
 });
+
+describe('revisão do PR #5', () => {
+  const js = fs.readFileSync(rendererPath, 'utf8');
+  it('ignora respostas velhas de getState e não marca view escondida como atual em erro', () => {
+    expect(js).toContain('if (seq !== loadSeq)');
+    expect(js).toContain("htmlEl.dataset.uiState === 'error' && targetView !== 'partner'");
+  });
+  it('Agora não vale mesmo sem localStorage; lembrete do Ajudante para não pareados; perfil ausente = parcial', () => {
+    expect(js).toMatch(/userNavigated = true; \/\/ vale mesmo se o localStorage falhar/);
+    expect(html).toContain('id="helperReminder"');
+    expect(js).toContain("'Proteção parcial'");
+  });
+});

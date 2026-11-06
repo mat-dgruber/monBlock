@@ -99,6 +99,7 @@ globalThis.monblockRenderer = { pickInitialView };
 
   let pairingPollInterval = null;
   let userNavigated = false;
+  let loadSeq = 0;
   let initialViewPicked = false;
   const DISMISS_KEY = 'monblock.onboardingDismissed';
   // localStorage é só conveniência de UI: indisponível = não dispensou.
@@ -135,7 +136,9 @@ globalThis.monblockRenderer = { pickInitialView };
   }
 
   function switchView(targetView, moveFocus = false) {
-    if (!views.some((view) => view.dataset.view === targetView)) return;
+    if (!views.some((view) => view.dataset.view === targetView)) return false;
+    // Em erro só "Ajudante e recuperação" tem conteúdo visível (CSS); não marcar como atual uma view escondida.
+    if (htmlEl.dataset.uiState === 'error' && targetView !== 'partner') return false;
     if (targetView !== 'onboarding') {
       stopPairingPoll();
     }
@@ -147,6 +150,7 @@ globalThis.monblockRenderer = { pickInitialView };
     }
     for (const view of views) view.hidden = view.dataset.view !== targetView;
     if (moveFocus) views.find((view) => view.dataset.view === targetView)?.querySelector('h2')?.focus();
+    return true;
   }
 
   function renderCategories(enabledCategories) {
@@ -314,8 +318,10 @@ globalThis.monblockRenderer = { pickInitialView };
 
   async function loadState() {
     let result;
+    const seq = ++loadSeq;
     try {
       result = await bridge.getState();
+      if (seq !== loadSeq) return htmlEl.dataset.uiState === 'active'; // resposta velha: a mais recente vence
       if (!result || result.status !== 200 || !result.state) throw new Error(result?.detail || 'O estado da proteção não pôde ser consultado.');
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = true;
       renderProfileBanner(result.state);
@@ -331,14 +337,23 @@ globalThis.monblockRenderer = { pickInitialView };
       updateCooldown();
       status.textContent = result.state.tamperLockdown ? 'Estado carregado — modo de segurança' : 'Estado da proteção carregado';
       status.dataset.status = result.state.tamperLockdown ? 'error' : 'loaded';
-      if (quickStats) quickStats.textContent = result.state.tamperLockdown ? 'Modo de segurança' : 'Proteção ativa';
+      if (quickStats) {
+        // Perfil dos navegadores não aprovado: Chrome/Brave/Edge podem ignorar o bloqueio, então não é "ativa" plena.
+        quickStats.textContent = result.state.tamperLockdown
+          ? 'Modo de segurança'
+          : result.state.browserProfileInstalled === false ? 'Proteção parcial' : 'Proteção ativa';
+      }
       isPaired = result.state.paired === true;
       renderOnboardingGate();
+      const reminder = document.getElementById('helperReminder');
+      if (reminder) reminder.hidden = isPaired;
       partnerStatus.textContent = result.state.paired ? 'Ajudante pareado' : 'Ajudante ainda não pareado';
       htmlEl.dataset.uiState = 'active';
       return true;
     } catch (error) {
+      if (seq !== loadSeq) return htmlEl.dataset.uiState === 'active';
       htmlEl.dataset.uiState = 'error';
+      switchView('partner'); // única view com conteúdo em erro; mantém a nav coerente
       // 503: o serviço root não responde (ADR-0007). Sem ele a proteção não pode ser confirmada.
       const daemonOffline = result?.status === 503;
       status.textContent = daemonOffline ? 'Proteção não verificada' : 'Não foi possível conferir a proteção';
@@ -389,12 +404,16 @@ globalThis.monblockRenderer = { pickInitialView };
   // Navegação Principal da Sidebar
   for (const btn of navBtns) {
     btn.addEventListener('click', () => {
-      userNavigated = true;
-      switchView(btn.dataset.navTarget, true);
+      if (switchView(btn.dataset.navTarget, true)) userNavigated = true;
     });
   }
   document.getElementById('retryStateBtn')?.addEventListener('click', () => void loadState());
+  document.getElementById('openOnboardingBtn')?.addEventListener('click', () => {
+    userNavigated = true;
+    switchView('onboarding', true);
+  });
   document.getElementById('skipOnboardingBtn')?.addEventListener('click', () => {
+    userNavigated = true; // vale mesmo se o localStorage falhar
     try { localStorage.setItem(DISMISS_KEY, '1'); } catch { /* sem persistência: volta ao onboarding na próxima abertura */ }
     switchView('categories', true);
   });
@@ -688,8 +707,8 @@ globalThis.monblockRenderer = { pickInitialView };
   }, 15_000);
 
   if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => {
+    if (!switchView(viewId, true)) return;
     userNavigated = true;
-    switchView(viewId, true);
     if (viewId === 'rules') document.getElementById('batchDomainsTextarea')?.focus();
   });
   switchView('categories');
