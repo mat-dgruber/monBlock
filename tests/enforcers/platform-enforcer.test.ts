@@ -306,29 +306,54 @@ describe('PlatformEnforcer — imposição no sistema (Fase 4, ADR-0007)', () =>
 });
 
 describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
-  const listed = '_computerlevel[3] attribute: profileIdentifier: com.ccat.monblock.browsers\n';
+  // Formato real de `sudo profiles show -all` no macOS 27.0.1 (spike 2026-11-06).
+  const block = (prefix: string, types: string[]) =>
+    [
+      `${prefix} attribute: profileIdentifier: com.ccat.monblock.browsers`,
+      `${prefix} attribute: containsComputerItems: TRUE`,
+      `${prefix} payload count = ${types.length}`,
+      ...types.flatMap((t, i) => [
+        `${prefix}            payload[${i + 1}] name\t\t\t= ${t}`,
+        `${prefix}            payload[${i + 1}] type\t\t\t= ${t}`,
+      ]),
+    ].join('\n') + '\n';
+  const all = ['com.microsoft.Edge', 'com.google.Chrome', 'com.brave.Browser'];
 
-  it('true quando `profiles list -all` lista o perfil do monBlock', async () => {
+  it('true com o perfil de sistema e as 3 políticas Chromium', async () => {
     // Arrange
     const calls: string[][] = [];
-    const run = async (cmd: string, args: string[]) => (calls.push([cmd, ...args]), listed);
+    const run = async (cmd: string, args: string[]) => (calls.push([cmd, ...args]), block('_computerlevel[1]', all));
 
     // Act
     const result = await checkBrowserProfileInstalled(run);
 
     // Assert
     expect(result).toBe(true);
-    expect(calls).toEqual([['/usr/bin/profiles', 'list', '-all']]);
+    expect(calls).toEqual([['/usr/bin/profiles', 'show', '-all']]);
   });
 
-  it('false quando o perfil não está na lista', async () => {
-    const result = await checkBrowserProfileInstalled(async () => 'There are no configuration profiles installed\n');
-    expect(result).toBe(false);
+  it('false quando o perfil com o mesmo identificador é de usuário, não de sistema', async () => {
+    expect(await checkBrowserProfileInstalled(async () => block('mat-dgruber[1]', all))).toBe(false);
   });
 
-  it('false quando há outros perfis listados e o do monBlock não', async () => {
+  it('false quando falta a política de algum navegador', async () => {
+    const out = block('_computerlevel[1]', ['com.google.Chrome', 'com.brave.Browser']);
+    expect(await checkBrowserProfileInstalled(async () => out)).toBe(false);
+  });
+
+  it('não mistura payloads de outro perfil de sistema', async () => {
+    const other = '_computerlevel[2] payload[1] type\t\t\t= com.microsoft.Edge\n';
+    const out = block('_computerlevel[1]', ['com.google.Chrome', 'com.brave.Browser']) + other;
+    expect(await checkBrowserProfileInstalled(async () => out)).toBe(false);
+  });
+
+  it('false quando há outros perfis e o do monBlock não', async () => {
     const other = '_computerlevel[1] attribute: profileIdentifier: com.example.vpn\n';
     expect(await checkBrowserProfileInstalled(async () => other)).toBe(false);
+  });
+
+  it('false quando não há nenhum perfil instalado', async () => {
+    expect(await checkBrowserProfileInstalled(async () => 'There are no configuration profiles installed\n')).toBe(false);
   });
 
   it('null quando a saída tem formato desconhecido (não acusa perfil ausente por engano)', async () => {
