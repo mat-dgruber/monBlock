@@ -82,6 +82,8 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 **Pronto:** commit `feat(enforcer): aplicar bloqueio em /etc/hosts e políticas do sistema`.
 
+> **Execução (2026-11-05):** hosts e políticas só são regravados quando o conteúdo muda (o watchdog de 60 s não gera escrita nem flush de DNS à toa). `generateBrowserMobileconfig` gera o perfil com UUIDs estáveis (validado com `plutil -lint`); a instalação do perfil é na Fase 8. O `main.ts` continua apontando para `userData/enforcer` até a Fase 6 ligar os caminhos reais (`/etc/hosts`, `/Library/Managed Preferences/<bundleId>.plist`, `/Library/Preferences/org.mozilla.firefox.plist`). `generateFirefoxPoliciesJson` foi removido.
+
 ## Fase 5 — Servidor e cliente IPC
 
 - **Novo:** `src/daemon/ipc-server.ts` — `net.createServer` no path recebido; NDJSON; linha ≤ 64 KiB; 5 s de ociosidade; ≤ 8 conexões; validação por `type` antes de `daemon.handleCommand`; erros RFC 9457 com `buildProblem`.

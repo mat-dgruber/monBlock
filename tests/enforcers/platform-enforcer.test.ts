@@ -7,9 +7,13 @@ import {
   rollbackHostsFromBackup,
 } from '../../src/enforcers/hosts-enforcer.js';
 import { buildBrowserPolicies } from '../../src/enforcers/browser-policy-enforcer.js';
+import { execFileSync } from 'node:child_process';
 import {
   MacOSPlatformEnforcer,
+  defaultCommandExecutor,
+  generateBrowserMobileconfig,
   generateChromiumAndSafariPlist,
+  generateFirefoxPlist,
 } from '../../src/enforcers/platform-enforcer.js';
 
 describe('PlatformEnforcer: Atomic /etc/hosts & Multi-Browser Policies', () => {
@@ -162,5 +166,140 @@ describe('PlatformEnforcer: Atomic /etc/hosts & Multi-Browser Policies', () => {
     expect(cleanedHosts).toContain('127.0.0.1 localhost');
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+describe('PlatformEnforcer — imposição no sistema (Fase 4, ADR-0007)', () => {
+  const rules = {
+    enabledCategories: [],
+    blockedDomains: ['tiktok.com', 'bet<&>.com'],
+    allowlistDomains: [],
+    keywords: [],
+    lockIncognito: true,
+  };
+
+  function lint(file: string): void {
+    if (process.platform === 'darwin') execFileSync('plutil', ['-lint', file]);
+  }
+
+  function setup(flushDns = false) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-f4-'));
+    const hostsPath = path.join(dir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n10.0.0.5 nas.local\n', 'utf8');
+    const commands: string[] = [];
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath,
+      chromiumPlistPaths: [path.join(dir, 'com.google.Chrome.plist'), path.join(dir, 'com.brave.Browser.plist')],
+      firefoxPlistPath: path.join(dir, 'org.mozilla.firefox.plist'),
+      flushDns,
+      commandExecutor: async (cmd, args) => {
+        commands.push([cmd, ...args].join(' '));
+      },
+    });
+    return { dir, hostsPath, commands, enforcer };
+  }
+
+  it('grava o hosts entre nouchg e uchg e faz flush de DNS', async () => {
+    // Arrange
+    const { dir, hostsPath, commands, enforcer } = setup(true);
+
+    // Act
+    await enforcer.applyWebRules(rules);
+
+    // Assert
+    expect(commands).toEqual([
+      `chflags nouchg ${hostsPath}`,
+      `chflags uchg ${hostsPath}`,
+      'dscacheutil -flushcache',
+      'killall -HUP mDNSResponder',
+    ]);
+    expect(fs.readFileSync(hostsPath, 'utf8')).toContain('10.0.0.5 nas.local');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reaplicar regras iguais não reescreve o hosts nem roda comandos', async () => {
+    // Arrange
+    const { dir, hostsPath, commands, enforcer } = setup(true);
+    await enforcer.applyWebRules(rules);
+    commands.length = 0;
+    const before = fs.statSync(hostsPath).mtimeMs;
+
+    // Act
+    const res = applyAtomicHostsBlock(hostsPath, ['tiktok.com']);
+    await enforcer.applyWebRules(rules);
+
+    // Assert
+    expect(res.changed).toBe(false);
+    expect(commands).toEqual([]);
+    expect(fs.statSync(hostsPath).mtimeMs).toBe(before);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('grava a política em cada navegador Chromium e o plist do Firefox válido', async () => {
+    // Arrange
+    const { dir, enforcer } = setup();
+
+    // Act
+    await enforcer.applyWebRules(rules);
+
+    // Assert
+    for (const name of ['com.google.Chrome.plist', 'com.brave.Browser.plist']) {
+      expect(fs.readFileSync(path.join(dir, name), 'utf8')).toContain('tiktok.com');
+    }
+    const ff = path.join(dir, 'org.mozilla.firefox.plist');
+    lint(ff);
+    const xml = fs.readFileSync(ff, 'utf8');
+    expect(xml).toMatch(/<key>EnterprisePoliciesEnabled<\/key>\s*<true\/>/);
+    expect(xml).toContain('*://*.tiktok.com/*');
+    expect(xml).toMatch(/<key>DisablePrivateBrowsing<\/key>\s*<true\/>/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('generateFirefoxPlist escapa XML', () => {
+    const xml = generateFirefoxPlist({ blockedDomains: ['a<b>&c.com'], allowlistDomains: [], lockIncognito: false });
+
+    expect(xml).toContain('a&lt;b&gt;&amp;c.com');
+    expect(xml).not.toContain('a<b>');
+  });
+
+  it('gera mobileconfig válido, de escopo System, com Chrome/Brave/Edge e UUIDs estáveis', () => {
+    // Arrange
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-mc-'));
+    const params = { blockedDomains: ['tiktok.com'], allowlistDomains: [], lockIncognito: true };
+
+    // Act
+    const a = generateBrowserMobileconfig(params);
+    const b = generateBrowserMobileconfig(params);
+    fs.writeFileSync(path.join(dir, 'p.mobileconfig'), a);
+
+    // Assert
+    lint(path.join(dir, 'p.mobileconfig'));
+    expect(a).toBe(b);
+    for (const type of ['com.google.Chrome', 'com.brave.Browser', 'com.microsoft.Edge']) {
+      expect(a).toContain(`<string>${type}</string>`);
+    }
+    expect(a).toMatch(/<key>PayloadScope<\/key>\s*<string>System<\/string>/);
+    expect(a).toContain('<string>tiktok.com</string>');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('verifyApplied aponta o que foi adulterado', async () => {
+    // Arrange
+    const { dir, hostsPath, enforcer } = setup();
+    await enforcer.applyWebRules(rules);
+    expect(enforcer.verifyApplied(rules)).toEqual([]);
+
+    // Act
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    fs.rmSync(path.join(dir, 'org.mozilla.firefox.plist'));
+
+    // Assert
+    expect(enforcer.verifyApplied(rules)).toEqual([hostsPath, path.join(dir, 'org.mozilla.firefox.plist')]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('executor padrão propaga erro quando roda como root e engole em userland', async () => {
+    await expect(defaultCommandExecutor(true)('/nonexistent/monblock-cmd', [])).rejects.toThrow();
+    await expect(defaultCommandExecutor(false)('/nonexistent/monblock-cmd', [])).resolves.toBeUndefined();
   });
 });

@@ -24,7 +24,7 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-daemon-'));
     hostsPath = path.join(tmpDir, 'hosts');
     chromiumPlistPath = path.join(tmpDir, 'com.google.Chrome.plist');
-    firefoxPoliciesPath = path.join(tmpDir, 'policies.json');
+    firefoxPoliciesPath = path.join(tmpDir, 'org.mozilla.firefox.plist');
     fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
 
     executedCommands = [];
@@ -37,8 +37,8 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
 
     enforcer = new MacOSPlatformEnforcer({
       hostsPath,
-      chromiumPlistPath,
-      firefoxPoliciesPath,
+      chromiumPlistPaths: [chromiumPlistPath],
+      firefoxPlistPath: firefoxPoliciesPath,
       commandExecutor: async (cmd, args) => {
         executedCommands.push({ cmd, args });
       },
@@ -672,8 +672,8 @@ describe('MonBlockDaemon com TrustedClock (RN-DAEMON-08)', () => {
   function buildDaemon(): MonBlockDaemon {
     const enforcer = new MacOSPlatformEnforcer({
       hostsPath,
-      chromiumPlistPath: path.join(tmpDir, 'chrome.plist'),
-      firefoxPoliciesPath: path.join(tmpDir, 'policies.json'),
+      chromiumPlistPaths: [path.join(tmpDir, 'chrome.plist')],
+      firefoxPlistPath: path.join(tmpDir, 'org.mozilla.firefox.plist'),
       commandExecutor: async () => undefined,
     });
     const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
@@ -761,8 +761,8 @@ describe('MonBlockDaemon — tombstone (RN-DAEMON-07) e rate limit (RN-DAEMON-09
     if (!fs.existsSync(hostsPath)) fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
     const enforcer = new MacOSPlatformEnforcer({
       hostsPath,
-      chromiumPlistPath: path.join(tmpDir, 'chrome.plist'),
-      firefoxPoliciesPath: path.join(tmpDir, 'policies.json'),
+      chromiumPlistPaths: [path.join(tmpDir, 'chrome.plist')],
+      firefoxPlistPath: path.join(tmpDir, 'org.mozilla.firefox.plist'),
       commandExecutor: async () => undefined,
     });
     const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });

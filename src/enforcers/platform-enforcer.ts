@@ -22,6 +22,7 @@ import {
 import {
   CRITICAL_INFRA_ALLOWLIST,
   applyAtomicHostsBlock,
+  buildManagedHostsContent,
   rollbackHostsFromBackup,
 } from './hosts-enforcer.js';
 
@@ -54,6 +55,11 @@ function writeFileAtomically(filePath: string, content: string): void {
       // Ignora erro residual de limpeza
     }
   }
+}
+
+function writeIfChanged(filePath: string, content: string): void {
+  if (fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8') === content) return;
+  writeFileAtomically(filePath, content);
 }
 
 /**
@@ -98,12 +104,97 @@ export function generateChromiumAndSafariPlist(params: BrowserPolicyParams): str
   ].join('\n');
 }
 
+/** Serializa JSON simples (dict/array/string/bool/inteiro) em XML plist, com escape de XML. */
+export function toPlistXml(value: unknown): string {
+  const node = (v: unknown, pad: string): string => {
+    if (typeof v === 'boolean') return `${pad}<${v}/>`;
+    if (typeof v === 'number') return `${pad}<integer>${Math.trunc(v)}</integer>`;
+    if (typeof v === 'string') return `${pad}<string>${escapeXml(v)}</string>`;
+    if (Array.isArray(v)) {
+      return [`${pad}<array>`, ...v.map((x) => node(x, `${pad}  `)), `${pad}</array>`].join('\n');
+    }
+    const entries = Object.entries((v ?? {}) as Record<string, unknown>).filter(([, x]) => x !== undefined);
+    return [
+      `${pad}<dict>`,
+      ...entries.flatMap(([k, x]) => [`${pad}  <key>${escapeXml(k)}</key>`, node(x, `${pad}  `)]),
+      `${pad}</dict>`,
+    ].join('\n');
+  };
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    node(value, ''),
+    '</plist>',
+    '',
+  ].join('\n');
+}
+
 /**
- * Gera o JSON `policies.json` para o Mozilla Firefox.
+ * Plist do Firefox em `/Library/Preferences/org.mozilla.firefox.plist` (spike S2):
+ * `EnterprisePoliciesEnabled` + as mesmas políticas do `policies.json`, sem tocar no bundle.
  */
-export function generateFirefoxPoliciesJson(params: BrowserPolicyParams): string {
+export function generateFirefoxPlist(params: BrowserPolicyParams): string {
   const { firefoxPolicy } = buildBrowserPolicies(params);
-  return JSON.stringify(firefoxPolicy, null, 2);
+  return toPlistXml({
+    EnterprisePoliciesEnabled: true,
+    ...(firefoxPolicy.policies as Record<string, unknown>),
+  });
+}
+
+/** Bundle IDs Chromium cobertos pelo perfil e pela escrita direta. */
+export const CHROMIUM_BUNDLE_IDS = ['com.google.Chrome', 'com.brave.Browser', 'com.microsoft.Edge'] as const;
+
+/** UUID estável derivado de um nome, para que o perfil regenerado substitua o anterior. */
+function stableUuid(name: string): string {
+  const h = crypto.createHash('sha256').update(name).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`.toUpperCase();
+}
+
+/**
+ * Perfil `.mobileconfig` (escopo System) com as políticas Chromium (spike S1: plists escritos
+ * à mão em `/Library/Managed Preferences` sem MDM são removidos pelo macOS). Instalado no
+ * onboarding com aprovação do usuário; remover exige Admin.
+ */
+export function generateBrowserMobileconfig(params: BrowserPolicyParams): string {
+  const { chromiumPolicy } = buildBrowserPolicies(params);
+  const root = 'com.ccat.monblock.browsers';
+  return toPlistXml({
+    PayloadType: 'Configuration',
+    PayloadVersion: 1,
+    PayloadIdentifier: root,
+    PayloadUUID: stableUuid(root),
+    PayloadDisplayName: 'monBlock — Proteção dos navegadores',
+    PayloadDescription: 'Bloqueia sites das categorias ativas no monBlock e desativa o DNS seguro do navegador.',
+    PayloadOrganization: 'monBlock',
+    PayloadScope: 'System',
+    PayloadRemovalDisallowed: true,
+    PayloadContent: CHROMIUM_BUNDLE_IDS.map((bundleId) => ({
+      PayloadType: bundleId,
+      PayloadVersion: 1,
+      PayloadIdentifier: `${root}.${bundleId}`,
+      PayloadUUID: stableUuid(`${root}.${bundleId}`),
+      PayloadDisplayName: bundleId,
+      ...chromiumPolicy,
+    })),
+  });
+}
+
+/**
+ * Executor padrão (`execFile`, sem shell). Como root a falha propaga: o daemon precisa saber
+ * que a imposição não aconteceu. Em userland não há privilégio, então a falha é esperada.
+ */
+export function defaultCommandExecutor(isRoot: boolean): (cmd: string, args: string[]) => Promise<void> {
+  return async (cmd, args) => {
+    const targetPath = args[args.length - 1] ?? '';
+    const isSystemPath = targetPath.startsWith('/etc/') || targetPath.startsWith('/Library/');
+    if (!isSystemPath && cmd === 'chflags') return;
+    try {
+      await execFileAsync(cmd, args);
+    } catch (err) {
+      if (isRoot) throw err;
+    }
+  };
 }
 
 // MARK: - Contrato PlatformEnforcer
@@ -115,7 +206,7 @@ export interface PlatformEnforcer {
   ): Promise<{
     hostsPath: string;
     chromiumPlist: string;
-    firefoxJson: string;
+    firefoxPlist: string;
   }>;
   protectCriticalPaths(paths: string[]): Promise<string[]>;
   restoreSystemCleanState(): Promise<void>;
@@ -124,8 +215,12 @@ export interface PlatformEnforcer {
 /** Opções de inicialização do `MacOSPlatformEnforcer`. */
 export interface MacOSPlatformEnforcerOptions {
   hostsPath?: string;
-  chromiumPlistPath?: string;
-  firefoxPoliciesPath?: string;
+  /** Ex.: `/Library/Managed Preferences/<bundleId>.plist` (reforço do perfil `.mobileconfig`). */
+  chromiumPlistPaths?: string[];
+  /** Ex.: `/Library/Preferences/org.mozilla.firefox.plist`. */
+  firefoxPlistPath?: string;
+  /** Padrão: só quando o alvo é o `/etc/hosts` real. */
+  flushDns?: boolean;
   commandExecutor?: (cmd: string, args: string[]) => Promise<void> | void;
 }
 
@@ -133,29 +228,18 @@ export interface MacOSPlatformEnforcerOptions {
 
 export class MacOSPlatformEnforcer implements PlatformEnforcer {
   private readonly hostsPath: string;
-  private readonly chromiumPlistPath?: string;
-  private readonly firefoxPoliciesPath?: string;
+  private readonly chromiumPlistPaths: string[];
+  private readonly firefoxPlistPath?: string;
+  private readonly flushDns: boolean;
   private readonly commandExecutor: (cmd: string, args: string[]) => Promise<void> | void;
 
   constructor(options: MacOSPlatformEnforcerOptions = {}) {
     this.hostsPath = options.hostsPath ?? '/etc/hosts';
-    this.chromiumPlistPath = options.chromiumPlistPath;
-    this.firefoxPoliciesPath = options.firefoxPoliciesPath;
+    this.chromiumPlistPaths = options.chromiumPlistPaths ?? [];
+    this.firefoxPlistPath = options.firefoxPlistPath;
+    this.flushDns = options.flushDns ?? this.hostsPath === '/etc/hosts';
     this.commandExecutor =
-      options.commandExecutor ??
-      (async (cmd: string, args: string[]) => {
-        const targetPath = args[args.length - 1] ?? '';
-        const isSystemPath =
-          targetPath.startsWith('/etc/') || targetPath.startsWith('/Library/');
-        if (!isSystemPath && cmd === 'chflags') {
-          return;
-        }
-        try {
-          await execFileAsync(cmd, args);
-        } catch {
-          // Degrada graciosamente quando executado em userland sem privilégio root
-        }
-      });
+      options.commandExecutor ?? defaultCommandExecutor(process.getuid?.() === 0);
   }
 
   private normalizeDomainList(entries: string[]): string[] {
@@ -226,34 +310,65 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
   ): Promise<{
     hostsPath: string;
     chromiumPlist: string;
-    firefoxJson: string;
+    firefoxPlist: string;
   }> {
+    const expected = this.expectedArtifacts(rules, activeGrants);
+
+    const current = fs.existsSync(this.hostsPath) ? fs.readFileSync(this.hostsPath, 'utf8') : '';
+    if (buildManagedHostsContent(current, expected.blockedDomains).content !== current) {
+      // `uchg` impede o rename atômico: tira, grava, recoloca.
+      await this.commandExecutor('chflags', ['nouchg', this.hostsPath]);
+      applyAtomicHostsBlock(this.hostsPath, expected.blockedDomains);
+      await this.commandExecutor('chflags', ['uchg', this.hostsPath]);
+      if (this.flushDns) {
+        await this.commandExecutor('dscacheutil', ['-flushcache']);
+        await this.commandExecutor('killall', ['-HUP', 'mDNSResponder']);
+      }
+    }
+
+    for (const p of this.chromiumPlistPaths) writeIfChanged(p, expected.chromiumPlist);
+    if (this.firefoxPlistPath) writeIfChanged(this.firefoxPlistPath, expected.firefoxPlist);
+
+    return {
+      hostsPath: this.hostsPath,
+      chromiumPlist: expected.chromiumPlist,
+      firefoxPlist: expected.firefoxPlist,
+    };
+  }
+
+  private expectedArtifacts(
+    rules: ProtectionRuleset,
+    activeGrants: Array<{ target: string; expiresAtMs: number }>
+  ): { blockedDomains: string[]; chromiumPlist: string; firefoxPlist: string } {
     const { effectiveBlockedDomains, effectiveAllowlistDomains } =
       this.resolveEffectiveBlockedDomains(rules, activeGrants);
-    applyAtomicHostsBlock(this.hostsPath, effectiveBlockedDomains);
-
     const policyParams: BrowserPolicyParams = {
       blockedDomains: effectiveBlockedDomains,
       allowlistDomains: effectiveAllowlistDomains,
       lockIncognito: rules.lockIncognito,
     };
-
-    const chromiumPlist = generateChromiumAndSafariPlist(policyParams);
-    const firefoxJson = generateFirefoxPoliciesJson(policyParams);
-
-    if (this.chromiumPlistPath) {
-      writeFileAtomically(this.chromiumPlistPath, chromiumPlist);
-    }
-
-    if (this.firefoxPoliciesPath) {
-      writeFileAtomically(this.firefoxPoliciesPath, firefoxJson);
-    }
-
     return {
-      hostsPath: this.hostsPath,
-      chromiumPlist,
-      firefoxJson,
+      blockedDomains: effectiveBlockedDomains,
+      chromiumPlist: generateChromiumAndSafariPlist(policyParams),
+      firefoxPlist: generateFirefoxPlist(policyParams),
     };
+  }
+
+  /** Caminhos cujo conteúdo diverge do esperado para estas regras (adulteração ou remoção). */
+  public verifyApplied(
+    rules: ProtectionRuleset,
+    activeGrants: Array<{ target: string; expiresAtMs: number }> = []
+  ): string[] {
+    const expected = this.expectedArtifacts(rules, activeGrants);
+    const read = (p: string): string | null => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null);
+    const drift: string[] = [];
+    const hosts = read(this.hostsPath) ?? '';
+    if (buildManagedHostsContent(hosts, expected.blockedDomains).content !== hosts) drift.push(this.hostsPath);
+    for (const p of this.chromiumPlistPaths) if (read(p) !== expected.chromiumPlist) drift.push(p);
+    if (this.firefoxPlistPath && read(this.firefoxPlistPath) !== expected.firefoxPlist) {
+      drift.push(this.firefoxPlistPath);
+    }
+    return drift;
   }
 
   /**
@@ -283,11 +398,8 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
       writeFileAtomically(this.hostsPath, cleaned ? `${cleaned}\n` : '');
     }
 
-    if (this.chromiumPlistPath && fs.existsSync(this.chromiumPlistPath)) {
-      fs.unlinkSync(this.chromiumPlistPath);
-    }
-    if (this.firefoxPoliciesPath && fs.existsSync(this.firefoxPoliciesPath)) {
-      fs.unlinkSync(this.firefoxPoliciesPath);
+    for (const p of [...this.chromiumPlistPaths, ...(this.firefoxPlistPath ? [this.firefoxPlistPath] : [])]) {
+      fs.rmSync(p, { force: true });
     }
   }
 }
