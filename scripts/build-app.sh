@@ -32,6 +32,8 @@ plutil -replace CFBundleDisplayName -string monBlock "$PLIST"
 plutil -replace CFBundleIdentifier -string com.ccat.monblock "$PLIST"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
 plutil -replace CFBundleVersion -string "$VERSION" "$PLIST"
+# Sem esta chave o macOS não mostra o pedido de Automação e nega em silêncio: o watcher (palavras-chave) não lê as abas.
+plutil -replace NSAppleEventsUsageDescription -string "O monBlock lê o endereço e o título da aba em foco do navegador para bloquear sites e palavras-chave que você escolheu." "$PLIST"
 
 xattr -cr "$APP" 2>/dev/null || true
 # ponytail: --deep serve ao ad-hoc; release com Developer ID assina de dentro para fora + notarização.
