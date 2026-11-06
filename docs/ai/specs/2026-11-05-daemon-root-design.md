@@ -171,6 +171,8 @@ Recomendar (onboarding) que o Ajudante seja o único Admin e o usuário vire Sta
 
 Recomendação: `.pkg`. Ambos mostram o item em "Itens de Início" (BTM no macOS 13+); o `.pkg` não exige addon nativo e instala o app inteiro como `root:wheel`.
 
+> **Atualização 2026-11-06:** `.pkg` mantido, mas ele instala só o daemon; o `.app` é distribuído à parte e leva o `.pkg` dentro. Motivo em `docs/ai/specs/2026-11-06-empacotamento-app-macos-design.md` §4.
+
 ### D4 — Daemon inacessível
 
 UI em "Proteção não verificada", sem fallback em processo (ver §5). Confirmação de que essa é a experiência desejada.
