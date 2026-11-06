@@ -163,9 +163,28 @@ export type DaemonSuccessResponse =
 
 export type DaemonResponse = DaemonSuccessResponse | ProblemDetailsResponse;
 
+/** Tipos aceitos na fronteira IPC (RN-DAEMON-04). O `satisfies` + checagem abaixo quebram o build se faltar um. */
+export const DAEMON_COMMAND_TYPES = [
+  'GET_STATE',
+  'INITIATE_PAIRING',
+  'CHECK_PAIRING_STATUS',
+  'CANCEL_PAIRING',
+  'PAIR_PARTNER',
+  'MUTATE_RULES',
+  'VERIFY_OFFLINE_TOKEN',
+  'VERIFY_RECOVERY_CODE',
+  'TRIGGER_EMERGENCY_COOLDOWN',
+  'REVOKE_GRANTS_ON_SLEEP',
+  'UNINSTALL_AUTHORIZED',
+] as const satisfies ReadonlyArray<DaemonCommand['type']>;
+const _allCommandTypesListed: Exclude<DaemonCommand['type'], (typeof DAEMON_COMMAND_TYPES)[number]> extends never
+  ? true
+  : never = true;
+void _allCommandTypesListed;
+
 // MARK: - Utilitário RFC 9457
 
-function buildProblem(
+export function buildProblem(
   status: ProblemDetailsResponse['status'],
   title: string,
   detail: string,
