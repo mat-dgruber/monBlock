@@ -361,9 +361,13 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     if (contentDiffers || this.hostsModeWrong()) {
       // `uchg` impede o rename atômico: tira, grava, recoloca.
       await this.commandExecutor('chflags', ['nouchg', this.hostsPath]);
-      applyAtomicHostsBlock(this.hostsPath, expected.blockedDomains);
-      if (fs.existsSync(this.hostsPath)) fs.chmodSync(this.hostsPath, HOSTS_FILE_MODE); // repara hosts antigo em 0600
-      await this.commandExecutor('chflags', ['uchg', this.hostsPath]);
+      try {
+        applyAtomicHostsBlock(this.hostsPath, expected.blockedDomains);
+        if (fs.existsSync(this.hostsPath)) fs.chmodSync(this.hostsPath, HOSTS_FILE_MODE); // repara hosts antigo em 0600
+      } finally {
+        // Mesmo se a gravação/chmod falhar, o arquivo não pode ficar sem a trava imutável.
+        await this.commandExecutor('chflags', ['uchg', this.hostsPath]);
+      }
       if (this.flushDns) {
         await this.commandExecutor('dscacheutil', ['-flushcache']);
         await this.commandExecutor('killall', ['-HUP', 'mDNSResponder']);

@@ -399,3 +399,33 @@ describe('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', 
     expect(enforcer.verifyApplied(rules)).not.toContain(hostsPath);
   });
 });
+
+describe('hosts: rollback e trava', () => {
+  it('rollback restaura em 0644 mesmo com backup 0600', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-rb-'));
+    const hostsPath = path.join(dir, 'hosts');
+    fs.writeFileSync(`${hostsPath}.monblock.bak`, '127.0.0.1 localhost\n', { mode: 0o600 });
+    fs.writeFileSync(hostsPath, 'x\n');
+    expect(rollbackHostsFromBackup(hostsPath)).toBe(true);
+    expect(fs.statSync(hostsPath).mode & 0o777).toBe(0o644);
+  });
+
+  it('repõe uchg mesmo se a regravação falhar', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-uchg-'));
+    const hostsPath = path.join(dir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n');
+    const cmds: string[] = [];
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath,
+      flushDns: false,
+      commandExecutor: (cmd, args) => {
+        cmds.push(`${cmd} ${args[0]}`);
+        if (args[0] === 'nouchg') fs.rmSync(hostsPath); // some o alvo: chmod/rename falham depois
+      },
+    });
+    const rules = { enabledCategories: [], blockedDomains: ['a.com'], allowlistDomains: [], keywords: [], lockIncognito: true };
+    await enforcer.applyWebRules(rules).catch(() => undefined);
+    await enforcer.applyWebRules(rules).catch(() => undefined);
+    expect(cmds).toContain('chflags uchg');
+  });
+});

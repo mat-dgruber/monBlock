@@ -119,6 +119,7 @@ export function rollbackHostsFromBackup(hostsFilePath: string): boolean {
   const tmpPath = `${hostsFilePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
     fs.copyFileSync(backupPath, tmpPath);
+    fs.chmodSync(tmpPath, HOSTS_FILE_MODE); // o backup nasce 0600 (umask 077); o hosts restaurado precisa ser legível
     fs.renameSync(tmpPath, hostsFilePath);
     return true;
   } finally {

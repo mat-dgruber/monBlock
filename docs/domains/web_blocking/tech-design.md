@@ -31,6 +31,7 @@ A arquitetura interna do domínio segue separação estrita entre **Núcleo de D
 
 *   **Transacionalidade em Sistema de Arquivos (`/etc/hosts`):**
     *   Para evitar corrupção do arquivo `/etc/hosts` em caso de queda de energia ou `SIGKILL`, `applyAtomicHostsBlock()` jamais edita o arquivo in-place. O algoritmo lê o conteúdo atual, cria `/etc/hosts.monblock.bak` (se ainda não existir), escreve o novo conteúdo completo em `/etc/hosts.monblock.tmp` e invoca `fs.renameSync(tmpPath, hostsFilePath)` (operação atômica no nível do inode POSIX).
+    *   **Permissão `0644` obrigatória:** o `/etc/hosts` é gravado (e restaurado no rollback) em `0644` com `chmod` explícito, porque o daemon roda com `umask 077` e o mDNSResponder (sem root) ignora por completo um hosts `0600`, deixando os sites abertos. `applyWebRules` repara um hosts com conteúdo certo e modo errado, e `verifyApplied` conta o modo fora de `0644` como desvio. A trava `uchg` é sempre reposta (`finally`) após a regravação.
     *   De forma análoga, `rollbackHostsFromBackup()` copia `.monblock.bak` para `.monblock.rollback.tmp` e executa `fs.renameSync` sobre o arquivo alvo.
 *   **Persistência do Estado de Regras (`RuleEngineState`):**
     *   As listas `enabledCategories`, `blockedDomains`, `allowlistDomains`, `keywords` e a flag `lockIncognito` são persistidas pelo `StateStore` do daemon privilegiado em SQLite `STRICT` (`0600`) com verificação de integridade.
