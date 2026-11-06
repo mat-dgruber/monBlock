@@ -53,6 +53,15 @@ export interface TrayStatusSnapshot {
   cooldownRemainingFormatted?: string | null;
 }
 
+/**
+ * Texto ao lado do ícone da barra de menu (sem assets novos): "?" = proteção não verificada,
+ * "!" = falta aprovar o perfil dos navegadores, vazio = tudo certo.
+ */
+export function trayTitleFor(state: { browserProfileInstalled?: boolean | null } | null): string {
+  if (!state) return ' ?';
+  return state.browserProfileInstalled === false ? ' !' : '';
+}
+
 export interface TrayActionHandlers {
   onQuickAdd: () => void;
   onRequestUnblock: () => void;
@@ -319,6 +328,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
       } : undefined
     );
     tray.setContextMenu(Menu.buildFromTemplate(menuItems));
+    if (process.platform === 'darwin') tray.setTitle(trayTitleFor(pubState));
   };
 
   // Registro dos canais IPC conectados ao MonBlockDaemon
