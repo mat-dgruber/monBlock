@@ -121,7 +121,8 @@ export class DaemonClient extends EventEmitter {
   }
 
   private setStatus(next: DaemonClientStatus): void {
-    if (this.status === next) return;
+    // Depois de close() (saída do app) os ouvintes já podem ter janela/tray destruídas.
+    if (this.closed || this.status === next) return;
     this.status = next;
     this.emit('status', next);
   }

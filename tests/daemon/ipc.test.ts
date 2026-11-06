@@ -155,6 +155,22 @@ describe('DaemonClient', () => {
     expect(res).toEqual({ status: 200, echoed: 'GET_STATE' });
   });
 
+  it('não emite status depois de close() (a janela já foi destruída na saída do app)', async () => {
+    // Arrange
+    await start();
+    const client = newClient();
+    await waitFor(() => client.status === 'online');
+    const emitted: string[] = [];
+    client.on('status', (s) => emitted.push(s));
+
+    // Act
+    client.close();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Assert
+    expect(emitted).toEqual([]);
+  });
+
   it('fica offline quando o daemon cai, recusa chamadas e reconecta quando volta', async () => {
     const server = await start();
     const client = newClient();
