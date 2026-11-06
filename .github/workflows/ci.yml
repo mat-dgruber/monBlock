@@ -55,3 +55,22 @@ jobs:
           name: monblockd-pkg
           path: build/monblockd.pkg
           retention-days: 7
+      # .app com o .pkg embutido: o botão "Reinstalar serviço" abre Contents/Resources/monblockd.pkg.
+      - run: npm run build:app
+      - run: |
+          test -f build/monBlock.app/Contents/Resources/monblockd.pkg
+          codesign --verify --deep --strict build/monBlock.app
+          plutil -extract CFBundleIdentifier raw build/monBlock.app/Contents/Info.plist | grep -qx com.ccat.monblock
+      - name: Smoke do .app (10 s sem crash)
+        run: |
+          build/monBlock.app/Contents/MacOS/Electron --user-data-dir="$RUNNER_TEMP/monblock-smoke" &
+          PID=$!
+          sleep 10
+          kill -0 "$PID"
+          kill "$PID"
+      - run: ditto -c -k --keepParent build/monBlock.app build/monBlock-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monBlock-app
+          path: build/monBlock-app.zip
+          retention-days: 7
