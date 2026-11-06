@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +8,10 @@ import { MacOSPlatformEnforcer } from '../../src/enforcers/platform-enforcer.js'
 import { TripleStateStore } from '../../src/storage/state-store.js';
 import { MonBlockDaemon } from '../../src/daemon/monblockd.js';
 import { TrustedClock } from '../../src/daemon/trusted-clock.js';
+
+// Gerados por execução: senha de teste fixa no código é indistinguível de segredo real para scanners.
+const TEST_PASSWORD = `t-${crypto.randomBytes(9).toString('base64url')}`;
+const OTHER_TEST_PASSWORD = `o-${crypto.randomBytes(9).toString('base64url')}`;
 
 describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
   let tmpDir: string;
@@ -681,7 +686,7 @@ describe('MonBlockDaemon com TrustedClock (RN-DAEMON-08)', () => {
   }
 
   it('adiantar o relógio do sistema 72h não conclui o cooldown', async () => {
-    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: 's' });
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: TEST_PASSWORD, hmacSecret: 's' });
     await daemon.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
 
     t.wall += 72 * H;
@@ -692,7 +697,7 @@ describe('MonBlockDaemon com TrustedClock (RN-DAEMON-08)', () => {
   });
 
   it('o cooldown conclui após 72h reais (monotônico)', async () => {
-    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: 's' });
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: TEST_PASSWORD, hmacSecret: 's' });
     await daemon.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
 
     t.mono += 72 * H;
@@ -703,7 +708,7 @@ describe('MonBlockDaemon com TrustedClock (RN-DAEMON-08)', () => {
 
   it('atrasar o relógio do sistema não prolonga uma concessão de 15 min', async () => {
     const secret = 'clock-grant-secret';
-    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: secret });
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: TEST_PASSWORD, hmacSecret: secret });
     const challenge = 'MB-4444-C1';
     await daemon.handleCommand({
       type: 'VERIFY_OFFLINE_TOKEN',
@@ -720,7 +725,7 @@ describe('MonBlockDaemon com TrustedClock (RN-DAEMON-08)', () => {
   });
 
   it('reinício do daemon com relógio adiantado não acelera o cooldown', async () => {
-    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', hmacSecret: 's' });
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: TEST_PASSWORD, hmacSecret: 's' });
     await daemon.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
 
     t.mono = 0; // reboot zera o monotônico
@@ -738,7 +743,7 @@ describe('MonBlockDaemon — tombstone (RN-DAEMON-07) e rate limit (RN-DAEMON-09
   let daemon: MonBlockDaemon;
   const t = { wall: 1_700_000_000_000, mono: 0 };
   const H = 3600_000;
-  const PASSWORD = 'Senha#Forte2026';
+  const PASSWORD = TEST_PASSWORD;
 
   function telegramReplyingFrom(chatId: string) {
     return {
@@ -800,7 +805,7 @@ describe('MonBlockDaemon — tombstone (RN-DAEMON-07) e rate limit (RN-DAEMON-09
     await daemon.handleCommand({ type: 'PAIR_PARTNER', password: PASSWORD, telegramChatId: '111' });
     wipeVaults();
 
-    const res = await buildDaemon().handleCommand({ type: 'PAIR_PARTNER', password: 'OutraSenha#99' });
+    const res = await buildDaemon().handleCommand({ type: 'PAIR_PARTNER', password: OTHER_TEST_PASSWORD });
 
     expect(res.status).toBe(423);
   });
@@ -835,9 +840,9 @@ describe('MonBlockDaemon — tombstone (RN-DAEMON-07) e rate limit (RN-DAEMON-09
     await d.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
 
     t.wall += 72 * H; // relógio adiantado não conta
-    const early = await d.handleCommand({ type: 'PAIR_PARTNER', password: 'OutraSenha#99' });
+    const early = await d.handleCommand({ type: 'PAIR_PARTNER', password: OTHER_TEST_PASSWORD });
     t.mono += 72 * H;
-    const late = await d.handleCommand({ type: 'PAIR_PARTNER', password: 'OutraSenha#99' });
+    const late = await d.handleCommand({ type: 'PAIR_PARTNER', password: OTHER_TEST_PASSWORD });
 
     expect(early.status).toBe(423);
     expect(late.status).toBe(200);
@@ -944,7 +949,7 @@ describe('MonBlockDaemon — watchdog (tick) e detecção de inatividade (spec �
 
   async function paired(): Promise<MonBlockDaemon> {
     const d = build();
-    await d.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', telegramChatId: '111' });
+    await d.handleCommand({ type: 'PAIR_PARTNER', password: TEST_PASSWORD, telegramChatId: '111' });
     await d.handleCommand({
       type: 'MUTATE_RULES',
       rules: { enabledCategories: ['adult'], blockedDomains: ['tiktok.com'], allowlistDomains: [], keywords: [], lockIncognito: true },
@@ -1153,12 +1158,12 @@ describe('MonBlockDaemon — desinstalação autorizada (spec §12)', () => {
         uninstallerRuns++;
       },
     });
-    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', telegramChatId: '111' });
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: TEST_PASSWORD, telegramChatId: '111' });
 
     // Act
     const denied = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'errada' });
     const runsAfterDenied = uninstallerRuns;
-    const ok = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'Senha#Forte2026' });
+    const ok = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: TEST_PASSWORD });
 
     // Assert
     expect(denied.status).toBe(403);
