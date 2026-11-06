@@ -21,6 +21,7 @@ import {
 } from './browser-policy-enforcer.js';
 import {
   CRITICAL_INFRA_ALLOWLIST,
+  HOSTS_FILE_MODE,
   applyAtomicHostsBlock,
   buildManagedHostsContent,
   rollbackHostsFromBackup,
@@ -46,7 +47,8 @@ function writeFileAtomically(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(tmpPath, content, 'utf8');
+    fs.writeFileSync(tmpPath, content, { encoding: 'utf8', mode: HOSTS_FILE_MODE });
+    fs.chmodSync(tmpPath, HOSTS_FILE_MODE); // umask 077 do daemon: sem isso o arquivo sairia 0600
     fs.renameSync(tmpPath, filePath);
   } finally {
     try {
@@ -355,10 +357,12 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     const expected = this.expectedArtifacts(rules, activeGrants);
 
     const current = fs.existsSync(this.hostsPath) ? fs.readFileSync(this.hostsPath, 'utf8') : '';
-    if (buildManagedHostsContent(current, expected.blockedDomains).content !== current) {
+    const contentDiffers = buildManagedHostsContent(current, expected.blockedDomains).content !== current;
+    if (contentDiffers || this.hostsModeWrong()) {
       // `uchg` impede o rename atômico: tira, grava, recoloca.
       await this.commandExecutor('chflags', ['nouchg', this.hostsPath]);
       applyAtomicHostsBlock(this.hostsPath, expected.blockedDomains);
+      if (fs.existsSync(this.hostsPath)) fs.chmodSync(this.hostsPath, HOSTS_FILE_MODE); // repara hosts antigo em 0600
       await this.commandExecutor('chflags', ['uchg', this.hostsPath]);
       if (this.flushDns) {
         await this.commandExecutor('dscacheutil', ['-flushcache']);
@@ -394,6 +398,11 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     };
   }
 
+  /** `/etc/hosts` fora de 0644: o mDNSResponder (sem root) não o lê e o bloqueio por DNS não vale. */
+  private hostsModeWrong(): boolean {
+    return fs.existsSync(this.hostsPath) && (fs.statSync(this.hostsPath).mode & 0o777) !== HOSTS_FILE_MODE;
+  }
+
   /** Caminhos cujo conteúdo diverge do esperado para estas regras (adulteração ou remoção). */
   public verifyApplied(
     rules: ProtectionRuleset,
@@ -403,7 +412,9 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     const read = (p: string): string | null => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null);
     const drift: string[] = [];
     const hosts = read(this.hostsPath) ?? '';
-    if (buildManagedHostsContent(hosts, expected.blockedDomains).content !== hosts) drift.push(this.hostsPath);
+    if (buildManagedHostsContent(hosts, expected.blockedDomains).content !== hosts || this.hostsModeWrong()) {
+      drift.push(this.hostsPath);
+    }
     for (const p of this.chromiumPlistPaths) if (read(p) !== expected.chromiumPlist) drift.push(p);
     if (this.firefoxPlistPath && read(this.firefoxPlistPath) !== expected.firefoxPlist) {
       drift.push(this.firefoxPlistPath);

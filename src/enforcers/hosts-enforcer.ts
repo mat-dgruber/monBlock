@@ -36,6 +36,12 @@ const HOSTNAME_RE =
  * @param blockedDomains Lista de domínios a serem redirecionados para `0.0.0.0`.
  * @returns Objeto contendo o caminho do backup gerado e a quantidade de domínios aplicados.
  */
+/**
+ * O `/etc/hosts` precisa ser legível por todos: o mDNSResponder roda sem root e, com 0600, ignora o
+ * arquivo inteiro (os sites continuam abrindo). O daemon usa umask 077, então o modo é explícito.
+ */
+export const HOSTS_FILE_MODE = 0o644;
+
 export function applyAtomicHostsBlock(
   hostsFilePath: string,
   blockedDomains: string[]
@@ -56,7 +62,8 @@ export function applyAtomicHostsBlock(
 
   const tmpPath = `${hostsFilePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(tmpPath, nextContent, 'utf8');
+    fs.writeFileSync(tmpPath, nextContent, { encoding: 'utf8', mode: HOSTS_FILE_MODE });
+    fs.chmodSync(tmpPath, HOSTS_FILE_MODE); // o umask 077 do daemon ignora o `mode` acima
     fs.renameSync(tmpPath, hostsFilePath);
   } finally {
     try {

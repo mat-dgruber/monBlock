@@ -30,6 +30,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - `monBlock.app` para macOS (`npm run build:app`, `scripts/build-app.sh`) com o `monblockd.pkg` em `Contents/Resources/`, para o botão "Reinstalar serviço"; a CI gera, assina ad-hoc, roda um smoke e publica o artefato `monBlock-app`.
 
 ### Corrigido
+- Bloqueio por DNS ineficaz: o daemon (umask 077) gravava `/etc/hosts` em 0600 e o mDNSResponder, que roda sem root, ignorava o arquivo inteiro; os sites continuavam abrindo. O hosts agora é gravado em 0644, um hosts já existente em 0600 é reparado no próximo ciclo e o modo errado conta como desvio no watchdog.
 - Blindagem pós-auditoria `/review max geral` em `MOD-01` a `MOD-04`: remoção de `nowMs` controlado por cliente IPC no Cooldown de 72h (`nowFn` isolado no daemon), exigência de `requirePermanentToken` em `MUTATE_RULES`, reconciliação efetiva de `TemporaryGrant` no `/etc/hosts` e `BrowserPolicies`, diferenciação entre falha de I/O (`ioError`) e adulteração criptográfica no `TripleStateStore`, unificação dos seletores `data-theme` e contraste WCAG 2.2 AA/AAA em `docs/design/tokens.css`, hidratação `initRendererDom` e limite de payload `16 KB` + `Content-Security-Policy` no servidor local `:49152`.
 
 ### Segurança

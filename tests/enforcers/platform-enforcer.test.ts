@@ -367,3 +367,35 @@ describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', () => {
+  const rules = { enabledCategories: ['adult'], blockedDomains: [], allowlistDomains: [], keywords: [], lockIncognito: true };
+  const mode = (p: string) => fs.statSync(p).mode & 0o777;
+
+  it('grava o hosts em 0644 mesmo com umask 077 (como o daemon root)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-mode-'));
+    const hostsPath = path.join(dir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    const old = process.umask(0o077);
+    try {
+      await new MacOSPlatformEnforcer({ hostsPath, flushDns: false, commandExecutor: () => {} }).applyWebRules(rules);
+    } finally {
+      process.umask(old);
+    }
+    expect(fs.readFileSync(hostsPath, 'utf8')).toContain('pornhub.com');
+    expect(mode(hostsPath)).toBe(0o644);
+  });
+
+  it('repara um hosts já correto mas em 0600 e o acusa como desvio', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-mode-'));
+    const hostsPath = path.join(dir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    const enforcer = new MacOSPlatformEnforcer({ hostsPath, flushDns: false, commandExecutor: () => {} });
+    await enforcer.applyWebRules(rules);
+    fs.chmodSync(hostsPath, 0o600); // estado visto na máquina: conteúdo certo, permissão errada
+    expect(enforcer.verifyApplied(rules)).toContain(hostsPath);
+    await enforcer.applyWebRules(rules);
+    expect(mode(hostsPath)).toBe(0o644);
+    expect(enforcer.verifyApplied(rules)).not.toContain(hostsPath);
+  });
+});
