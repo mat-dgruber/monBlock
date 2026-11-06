@@ -24,10 +24,10 @@ jobs:
       - run: npm run typecheck --if-present
       - run: npm test --if-present
       # Scripts do instalador rodam como root: qualquer aviso do shellcheck quebra o build.
-      - run: shellcheck packaging/macos/scripts/preinstall packaging/macos/scripts/postinstall packaging/macos/uninstall.sh scripts/*.sh
+      - run: shellcheck packaging/macos/scripts/preinstall packaging/macos/scripts/postinstall packaging/macos/uninstall.sh scripts/*.sh tests/e2e/root/run.sh
 
   macos-package:
-    name: macOS — binário SEA e .pkg do monblockd
+    name: macOS — .pkg do monblockd e E2E como root
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +43,13 @@ jobs:
           plutil -lint packaging/macos/com.ccat.monblockd.plist
           codesign --verify --strict build/daemon/monblockd
           pkgutil --payload-files build/monblockd.pkg | grep -q 'PrivilegedHelperTools/com.ccat.monblockd/monblockd$'
+      # Runner descartável com sudo sem senha: instala o .pkg de verdade (spec §13/§14).
+      # O sudo troca o PATH; o node do setup-node precisa ser repassado.
+      - name: E2E root
+        run: sudo env "PATH=$PATH" sh tests/e2e/root/run.sh
+      - name: Log do daemon
+        if: failure()
+        run: sudo tail -100 /var/log/monblockd.log || true
       - uses: actions/upload-artifact@v4
         with:
           name: monblockd-pkg
