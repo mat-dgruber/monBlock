@@ -66,3 +66,19 @@ Embora `daemon_persistence` seja um domínio majoritariamente de infraestrutura 
     *   Além da verificação no boot, o `monblockd` executa um *heartbeat* interno a cada `30s` verificando a integridade do bloco `# >>> MONBLOCK START >>>` no `/etc/hosts` e a existência dos 3 cofres. Se qualquer alteração externa for detectada, a restauração atômica ocorre em $< 50\text{ms}$.
 *   **Proteção contra Corrupção em Queda de Energia:**
     *   Tanto o `/etc/hosts` quanto o `partner.seal` utilizam o padrão *Write-Temporary-Then-Rename* (`fs.writeFileSync(tmp)` + `fs.renameSync(tmp, target)`), garantindo que o arquivo alvo jamais fique truncado ou parcialmente escrito.
+
+## 6. Revisão ADR-0007 (2026-11-05)
+
+Prevalece sobre as seções anteriores onde houver conflito. Detalhes em `docs/ai/specs/2026-11-05-daemon-root-design.md`.
+
+| Tema | Antes | Agora |
+| :--- | :--- | :--- |
+| Socket | `/var/run/monblockd.sock` | `/var/run/monblock/monblockd.sock` (diretório `root:monblock 0750`, socket `0660`), NDJSON ≤ 64 KiB |
+| Persistência | SQLite `state.db` | 3 cofres `MBV1.` (AES-256-GCM + HMAC); cofre 2 no System Keychain via `security -i` (stdin) |
+| Chave | `safeStorage` (Keychain de login) | `/Library/Application Support/monBlock/vault.key`, `root:wheel 0600` |
+| Pareamento perdido | `wasPaired` em memória | Tombstone `/var/db/monblock/tombstone` (`uchg`) — RN-DAEMON-07 |
+| Tempo | `Date.now()` | `TrustedClock` (`src/daemon/trusted-clock.ts`) — RN-DAEMON-08 |
+| Watchdog | 30 s | Reaplicação + verificação SHA-256 do bloco do hosts a cada 60 s; heartbeat a cada 5 min |
+| Chromium | `/Library/Managed Preferences` | Perfil `.mobileconfig` (aprovado pelo usuário) + escrita direta como reforço |
+| Firefox | `policies.json` | `/Library/Preferences/org.mozilla.firefox.plist` |
+| Binário | — | Node SEA por arquitetura (`lipo -create`), hardened runtime + `allow-jit`, instalado por `.pkg` |

@@ -12,7 +12,7 @@ Data       | Autor          | Descrição
 
 | Metadado | Detalhe |
 | :--- | :--- |
-| **Status** | **Implementada** (2026-11-05) |
+| **Status** | **Substituída parcialmente por ADR-0007** (2026-11-05) — chave via `safeStorage` dá lugar a arquivo `root 0600`; formato `MBV1.` mantido |
 | **Decisores** | Matheus Diniz |
 | **Tags** | `security`, `storage`, `electron` |
 | **Impacto Sistêmico** | Alto (`state-store.ts`, `main.ts`, formato dos 3 cofres) |
@@ -25,7 +25,7 @@ O review geral de 2026-11-05 encontrou dois defeitos críticos na persistência 
 1. **Chave de integridade fixa no código** (`'monblock-local-runtime-integrity-key-v1'` em `main.ts`) e fallback determinístico (`platform:arch:USER`) em `resolveVaultIntegrityKey`. Qualquer pessoa com o código-fonte forja cofres com HMAC válido.
 2. **Segredos legíveis em disco**: `hmacSecret`, `passwordHash` e hashes de recuperação ficavam em JSON puro em `userData/vaults`. Com o `hmacSecret`, o usuário protegido gera tokens `UNLOCK-PERMANENT`.
 
-## Decisão
+## 2. Decisão de Arquitetura
 
 - `main.ts` gera, na primeira execução, uma chave aleatória de 256 bits e a persiste em `vaults/vault.key`, cifrada por `safeStorage` (chave mestra no Keychain do macOS). `MONBLOCK_INTEGRITY_KEY` continua como override de desenvolvimento.
 - `resolveVaultIntegrityKey` deixa de derivar chave: sem chave explícita ou env, lança erro.

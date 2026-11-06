@@ -94,6 +94,8 @@ A comunicação entre `Electron UI` e `monblockd` ocorre exclusivamente via **Un
 - **Resiliência de Desconexão**: O fechamento da janela Electron (`window-all-closed`) ou o encerramento do processo de UI não afeta o `monblockd`, mantendo 100% do bloqueio ativo.
 
 ### 3.3 Camada de Persistência e Banco de Dados (ANSI SQL)
+
+> **Nota (2026-11-05, ADR-0007):** o SQLite abaixo não será adotado; o estado segue nos 3 cofres `MBV1.` (AES-256-GCM + HMAC). A meta de `< 50MB RAM` foi revista para `< 120 MB` RSS (Node SEA).
 ```sql
 CREATE TABLE daemon_health_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
