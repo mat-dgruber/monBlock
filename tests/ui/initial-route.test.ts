@@ -155,6 +155,7 @@ describe('regressão: recuperação após erro', () => {
 
 describe('stepper: sublinhado do passo ativo', () => {
   it('anima só transform e respeita reduced-motion', () => {
+    expect(css).toMatch(/\.stepper-step::after \{[^}]*transform: scaleX\(0\)[^}]*transition: transform /);
     expect(css).toContain('.stepper-step.active::after { transform: scaleX(1); }');
     expect(css).toMatch(/prefers-reduced-motion: reduce\) \{ \.stepper-step::after \{ transition: none; \}/);
   });
