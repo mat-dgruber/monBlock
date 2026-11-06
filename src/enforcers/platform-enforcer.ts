@@ -210,6 +210,11 @@ export interface PlatformEnforcer {
   }>;
   protectCriticalPaths(paths: string[]): Promise<string[]>;
   restoreSystemCleanState(): Promise<void>;
+  /** Caminhos divergentes do esperado (watchdog do daemon). */
+  verifyApplied?(
+    rules: ProtectionRuleset,
+    activeGrants?: Array<{ target: string; expiresAtMs: number }>
+  ): string[];
 }
 
 /** Opções de inicialização do `MacOSPlatformEnforcer`. */

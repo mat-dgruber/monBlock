@@ -104,6 +104,8 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 **Pronto:** commit `feat(daemon): rodar monblockd como processo root separado`.
 
+> **Execução (2026-11-05):** (1) Cofre 2 em arquivo, não no System Keychain (spec §7 revista): `security -i` trunca em ~4 KB e o prompt por stdin grava vazio; sem `VaultIO`, que só existiria para o Keychain. (2) Sem `MONBLOCK_DEV_INPROC`: em desenvolvimento roda-se o próprio `dist/daemon/entry.js` com `MONBLOCK_DEV_ROOT_DIR` e o Electron aponta para ele com `MONBLOCK_SOCKET_PATH` (só em build não empacotado). O caminho em processo deixou de existir no Electron. (3) `tick()` faz tudo a cada 60 s (âncora no Telegram via `getMe` a cada 10 min, reaplicação, `verifyApplied`, heartbeat e snapshot do relógio); aviso de adulteração no máximo 1 por hora; aviso de inatividade quando o intervalo passa de 15 min sem desligamento limpo. (4) `uchg` só no `/etc/hosts`. (5) Pendentes: aviso ao Ajudante anterior a cada 6h durante cooldown de re-pareamento; revogação de concessões no sono continua vindo do Electron (`powerMonitor`).
+
 ## Fase 7 — Migração (P5)
 
 - **Alterar:** `monblockd.ts` — comando `MIGRATE_LEGACY_STATE` (spec §10): só com store vazio e sem tombstone; mescla restritiva; credenciais só de `MBV1.`; confirmação ao Ajudante pelo Telegram; idempotente por `migrationId`.

@@ -46,6 +46,16 @@ const api = Object.freeze({
   requestAuthorizedUninstall(payload) {
     return ipcRenderer.invoke('monblock:request-authorized-uninstall', payload);
   },
+  daemonStatus() {
+    return ipcRenderer.invoke('monblock:daemon-status');
+  },
+  reinstallService() {
+    return ipcRenderer.invoke('monblock:reinstall-service');
+  },
+  onDaemonStatus(callback) {
+    if (typeof callback !== 'function') return;
+    ipcRenderer.on('monblock:daemon-status', (_event, status) => callback(status));
+  },
   onTrayNavigate(callback) {
     if (typeof callback !== 'function') return;
     ipcRenderer.on('monblock:tray-navigate', (_event, viewId) => callback(viewId));
