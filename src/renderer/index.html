@@ -67,8 +67,8 @@
       <div class="partner-pill">
         <div class="partner-avatar" aria-hidden="true">🤝</div>
         <div>
-          <p class="ux-1">Compromisso</p>
-          <p class="app-subtitle ux-2" id="partnerStatus">Aguardando estado do Ajudante</p>
+          <p class="partner-pill-title">Compromisso</p>
+          <p class="app-subtitle partner-pill-status" id="partnerStatus">Aguardando estado do Ajudante</p>
         </div>
       </div>
 
@@ -91,7 +91,7 @@
         <h3>Painel de Proteção e Foco</h3>
         <p class="app-subtitle">Seu espaço de foco, protegido com ajuda de quem você confia.</p>
       </div>
-      <div id="quickStatsHeader" class="tabular-nums ux-3">
+      <div id="quickStatsHeader" class="tabular-nums header-stats">
         Conferindo proteção...
       </div>
     </header>
@@ -176,7 +176,7 @@
           </div>
 
           <!-- Lista Canônica de 4 passos preservada para testes -->
-          <ol class="step-list ux-4" id="onboardingCanonicalList">
+          <ol class="step-list canonical-list" id="onboardingCanonicalList">
             <li data-onboarding-step="1"><strong>Entenda a proteção.</strong> Você pode ativar novos bloqueios a qualquer momento. Para retirar um bloqueio ativo, é necessária autorização do Ajudante.</li>
             <li data-onboarding-step="2"><strong>Confira o estado do aplicativo.</strong> O status acima mostra se o estado da proteção foi carregado e se há um Ajudante pareado.</li>
             <li data-onboarding-step="3"><strong>Combine com seu Ajudante.</strong> O pareamento e a guarda dos códigos de recuperação devem ser concluídos antes de depender da recuperação offline.</li>
@@ -185,25 +185,25 @@
 
           <!-- PAINEL 1: Propósito & Filosofia da Catraca -->
           <div class="onboarding-step-panel" id="onboardingStepPanel1" data-panel-step="1" role="tabpanel" aria-labelledby="stepIndicator1">
-            <div class="ux-5">
-              <div class="ux-6">
-                <span class="ux-7" aria-hidden="true">🛡️</span>
+            <div class="callout-box">
+              <div class="row-center">
+                <span class="icon-lg" aria-hidden="true">🛡️</span>
                 <div>
                   <h3>Como o monBlock protege o seu foco?</h3>
                   <p class="app-subtitle">Tecnologia de compromisso baseada na Catraca Unidirecional: o bloqueio só é retirado com autorização do seu Ajudante.</p>
                 </div>
               </div>
-              <div class="ux-8">
-                <div class="ux-9">
-                  <strong class="ux-10">🟢 Para Adicionar Bloqueios:</strong>
-                  <p class="ux-11">Livre e instantâneo com 1 clique. Adicione categorias, domínios ou termos sempre que quiser eliminar uma nova distração.</p>
+              <div class="compare-grid">
+                <div class="compare-card">
+                  <strong class="text-success">🟢 Para Adicionar Bloqueios:</strong>
+                  <p class="compare-note">Livre e instantâneo com 1 clique. Adicione categorias, domínios ou termos sempre que quiser eliminar uma nova distração.</p>
                 </div>
-                <div class="ux-9">
-                  <strong class="ux-12">🔒 Para Desbloquear:</strong>
-                  <p class="ux-11">Exige autorização do seu Ajudante via Telegram, uma chave de emergência ou espera de 72h. Impulsos rápidos não quebram sua disciplina.</p>
+                <div class="compare-card">
+                  <strong class="text-accent">🔒 Para Desbloquear:</strong>
+                  <p class="compare-note">Exige autorização do seu Ajudante via Telegram, uma chave de emergência ou espera de 72h. Impulsos rápidos não quebram sua disciplina.</p>
                 </div>
               </div>
-              <div class="ux-13">
+              <div class="row-end">
                 <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep2Btn">Avançar: Primeira proteção →</button>
               </div>
             </div>
@@ -211,33 +211,33 @@
 
           <!-- PAINEL 2: Primeira proteção recomendada -->
           <div class="onboarding-step-panel" id="onboardingStepPanel2" data-panel-step="2" role="tabpanel" aria-labelledby="stepIndicator2" hidden>
-            <div class="ux-5">
+            <div class="callout-box">
               <h3>Selecione o Escudo Inicial Recomendado</h3>
               <p class="ccat-field-hint">A categoria Conteúdo Adulto já começa ativa. Você pode escolher ativar outras agora.</p>
-              <div class="ux-14">
-                <div class="ux-15">
+              <div class="stack-sm">
+                <div class="status-row">
                   <div>
                     <strong>Conteúdo Adulto &amp; Pornografia</strong>
-                    <p class="app-subtitle ux-2">5 domínios principais + 4 palavras-chave</p>
+                    <p class="app-subtitle partner-pill-status">5 domínios principais + 4 palavras-chave</p>
                   </div>
-                  <span class="category-badge-status ux-16">🔒 Ativa por Padrão</span>
+                  <span class="category-badge-status badge-success">🔒 Ativa por Padrão</span>
                 </div>
-                <div class="ux-15">
+                <div class="status-row">
                   <div>
                     <strong>Apostas &amp; Cassinos (Bets)</strong>
-                    <p class="app-subtitle ux-2">Bet365, Blaze, Stake, Betano e afins</p>
+                    <p class="app-subtitle partner-pill-status">Bet365, Blaze, Stake, Betano e afins</p>
                   </div>
                   <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="gambling">Ativar Bloqueio</button>
                 </div>
-                <div class="ux-15">
+                <div class="status-row">
                   <div>
                     <strong>Proxies, VPNs &amp; Bypass</strong>
-                    <p class="app-subtitle ux-2">Ferramentas de evasão para burlar regras</p>
+                    <p class="app-subtitle partner-pill-status">Ferramentas de evasão para burlar regras</p>
                   </div>
                   <button type="button" class="ccat-btn ccat-btn-primary" data-action="enable-category" data-category="proxy">Ativar Bloqueio</button>
                 </div>
               </div>
-              <div class="ux-17">
+              <div class="row-between">
                 <button type="button" class="ccat-btn" id="backToStep1Btn">← Voltar</button>
                 <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep3Btn">Avançar: Conectar Ajudante →</button>
               </div>
@@ -246,35 +246,35 @@
 
           <!-- PAINEL 3: Tutorial Detalhado do Telegram & Formulário de Pareamento -->
           <div class="onboarding-step-panel" id="onboardingStepPanel3" data-panel-step="3" role="tabpanel" aria-labelledby="stepIndicator3" hidden>
-            <div class="ux-18">
+            <div class="tutorial-box">
               <div>
                 <h3>Tutorial de Pareamento com o Ajudante (Telegram)</h3>
                 <p class="app-subtitle">Seu Ajudante de Responsabilidade definirá a Senha Mestra diretamente no chat do Telegram.</p>
               </div>
 
               <!-- 4 Etapas Visuais Explicativas -->
-              <div class="ux-19">
-                <div class="ux-20">
-                  <div class="ux-21">1. Buscar o Bot</div>
-                  <p class="ux-3">No Telegram do Ajudante, busque por <strong>@monBlockBot</strong> ou abra o link do bot.</p>
+              <div class="steps-grid">
+                <div class="step-card">
+                  <div class="step-title">1. Buscar o Bot</div>
+                  <p class="header-stats">No Telegram do Ajudante, busque por <strong>@monBlockBot</strong> ou abra o link do bot.</p>
                 </div>
-                <div class="ux-20">
-                  <div class="ux-21">2. Enviar /start</div>
-                  <p class="ux-3">O Ajudante envia <code>/start</code> para o bot e visualiza o seu Chat ID numérico.</p>
+                <div class="step-card">
+                  <div class="step-title">2. Enviar /start</div>
+                  <p class="header-stats">O Ajudante envia <code>/start</code> para o bot e visualiza o seu Chat ID numérico.</p>
                 </div>
-                <div class="ux-20">
-                  <div class="ux-21">3. Enviar Convite</div>
-                  <p class="ux-3">Digite o Chat ID dele abaixo e clique em <em>Enviar Convite</em> para notificar o bot.</p>
+                <div class="step-card">
+                  <div class="step-title">3. Enviar Convite</div>
+                  <p class="header-stats">Digite o Chat ID dele abaixo e clique em <em>Enviar Convite</em> para notificar o bot.</p>
                 </div>
-                <div class="ux-20">
-                  <div class="ux-21">4. Senha no Telegram</div>
-                  <p class="ux-3">O Ajudante define a senha no chat via <code>/senha &lt;senha&gt;</code>. Você não tem acesso a ela!</p>
+                <div class="step-card">
+                  <div class="step-title">4. Senha no Telegram</div>
+                  <p class="header-stats">O Ajudante define a senha no chat via <code>/senha &lt;senha&gt;</code>. Você não tem acesso a ela!</p>
                 </div>
               </div>
 
               <!-- Formulário Ágil de Pareamento -->
-              <div class="rule-form ux-22" id="onboardingPairingCard">
-                <div class="ux-23">
+              <div class="rule-form pairing-form-card" id="onboardingPairingCard">
+                <div class="pairing-form-grid">
                   <div>
                     <label for="onboardingPartnerNameInput" class="ccat-field-label">Nome do Ajudante</label>
                     <input id="onboardingPartnerNameInput" type="text" class="ccat-input" placeholder="Ex: Ana Clara" />
@@ -288,23 +288,23 @@
               </div>
 
               <!-- Card de Espera do Ajudante -->
-              <div class="ux-24" id="onboardingPairingWaitingCard">
-                <div class="ux-6">
-                  <span class="ux-25" aria-hidden="true">⏳</span>
+              <div class="pairing-waiting-card" id="onboardingPairingWaitingCard">
+                <div class="row-center">
+                  <span class="icon-md" aria-hidden="true">⏳</span>
                   <div>
-                    <strong class="ux-26" id="waitingPartnerText">Convite enviado com sucesso!</strong>
-                    <p class="ux-27">
+                    <strong class="text-brand" id="waitingPartnerText">Convite enviado com sucesso!</strong>
+                    <p class="hint-text">
                       Aguardando seu Ajudante responder no Telegram com o comando <code>/senha &lt;senha&gt;</code> para ativar a proteção...
                     </p>
                   </div>
                 </div>
-                <div class="ux-28">
-                  <button type="button" id="cancelPairingBtn" class="ccat-btn ux-29">Cancelar Convite</button>
+                <div class="mt-sm">
+                  <button type="button" id="cancelPairingBtn" class="ccat-btn btn-compact">Cancelar Convite</button>
                 </div>
               </div>
 
               <p class="ccat-field-hint" id="nextToStep4Hint">Os códigos de emergência só existem depois que o Ajudante concluir o pareamento.</p>
-              <div class="ux-17">
+              <div class="row-between">
                 <button type="button" class="ccat-btn" id="backToStep2Btn">← Voltar</button>
                 <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep4Btn" disabled aria-describedby="nextToStep4Hint">Avançar: Chaves de Emergência →</button>
               </div>
@@ -313,36 +313,36 @@
 
           <!-- PAINEL 4: Chaves de Emergência REC-* -->
           <div class="onboarding-step-panel" id="onboardingStepPanel4" data-panel-step="4" role="tabpanel" aria-labelledby="stepIndicator4" hidden>
-            <div class="ux-18">
+            <div class="tutorial-box">
               <div>
                 <h3>Custódia Exclusiva dos 5 Códigos de Emergência (REC-*)</h3>
                 <p class="app-subtitle">Os códigos de resgate ficam sob posse exclusiva do seu Ajudante de Responsabilidade.</p>
               </div>
 
-              <div class="ux-30">
-                <div class="ux-31">
-                  <span class="ux-25" aria-hidden="true">🛡️</span>
+              <div class="custody-card">
+                <div class="row-start">
+                  <span class="icon-md" aria-hidden="true">🛡️</span>
                   <div>
-                    <strong class="ux-32">Proteção Ativa contra a Autossabotagem</strong>
-                    <p class="ux-27">
+                    <strong class="custody-title">Proteção Ativa contra a Autossabotagem</strong>
+                    <p class="hint-text">
                       Para garantir que o seu compromisso não seja quebrado em momentos de impulso, <strong>nenhuma chave de recuperação é exibida ou salva neste computador</strong>.
                     </p>
-                    <p class="ux-33">
+                    <p class="custody-text">
                       Os <strong>5 Códigos de Emergência (REC-*)</strong> foram enviados de forma confidencial diretamente para o Telegram do seu Ajudante. Se a internet cair e você precisar urgentemente de acesso a um site essencial de trabalho/estudo, você precisará contatá-lo para obter uma das chaves.
                     </p>
                   </div>
                 </div>
-                <div class="ux-34">
+                <div class="note-box">
                   📌 Cada código <code>REC-*</code> é de uso único e libera 1 site por 1 hora em modo offline.
                 </div>
               </div>
 
-              <label class="ux-35">
-                <input class="ux-36" id="onboardingConfirmCodesCheckbox" type="checkbox" />
+              <label class="confirm-label">
+                <input class="confirm-checkbox" id="onboardingConfirmCodesCheckbox" type="checkbox" />
                 <span><strong>Confirmação de Compromisso:</strong> Compreendo que os 5 códigos de emergência estão sob guarda exclusiva do meu Ajudante no Telegram e não estão acessíveis neste computador.</span>
               </label>
 
-              <div class="ux-37">
+              <div class="row-between-center">
                 <button type="button" class="ccat-btn" id="backToStep3Btn">← Voltar</button>
                 <button type="button" id="goToCategoriesBtn" class="ccat-btn ccat-btn-primary" disabled>Concluir e Ver Categorias →</button>
               </div>
@@ -634,7 +634,7 @@
               <input id="urlCheckerInput" type="text" class="ccat-input" placeholder="Ex.: twitch.tv ou betano.com ou termo suspeito..." />
               <button type="button" id="urlCheckerBtn" class="ccat-btn">Verificar</button>
             </div>
-            <div id="urlCheckerResult" class="url-checker-result ux-4" role="status"></div>
+            <div id="urlCheckerResult" class="url-checker-result canonical-list" role="status"></div>
           </div>
 
           <!-- ADIÇÃO DE DOMÍNIOS EM LOTE -->
@@ -676,9 +676,9 @@
 
           <!-- TABELA DE SITES E PALAVRAS BLOQUEADOS ATUALMENTE -->
           <div class="rule-form">
-            <div class="ux-38">
+            <div class="list-header">
               <h3>Lista Ativa de Proteção</h3>
-              <input id="rulesTableSearchInput" type="text" class="ccat-input ux-39" placeholder="Filtrar regras ativas..." />
+              <input id="rulesTableSearchInput" type="text" class="ccat-input filter-input-compact" placeholder="Filtrar regras ativas..." />
             </div>
             <div class="table-container">
               <table class="data-table" id="activeRulesTable" aria-label="Tabela de domínios e termos ativos">
@@ -761,14 +761,14 @@
       <h2 id="dialog-title">Pausa Consciente &amp; Ajudante</h2>
       <div class="mindful-box">
         <div class="breathing-circle" id="dialogBreathingTimer" aria-hidden="true">10</div>
-        <p class="ux-40">Respire fundo antes de prosseguir.</p>
-        <p class="app-subtitle ux-41">O que você busca acessar apoia o seu foco ou é um impulso passageiro?</p>
+        <p class="mindful-title">Respire fundo antes de prosseguir.</p>
+        <p class="app-subtitle mindful-hint">O que você busca acessar apoia o seu foco ou é um impulso passageiro?</p>
       </div>
 
 
       <p class="ccat-field-hint">Esta categoria já está protegida. Para retirar um bloqueio ativo, combine a autorização com seu Ajudante. Esta tela ainda não envia pedidos pelo Telegram.</p>
 
-      <div class="ux-42">
+      <div class="dialog-actions">
         <button type="button" class="ccat-btn ccat-btn-primary" id="closePartnerDialogBtn" autofocus>Voltar às categorias</button>
       </div>
     </div>

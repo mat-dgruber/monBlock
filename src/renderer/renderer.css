@@ -703,141 +703,138 @@ dialog#profileStepsDialog::backdrop {
   }
 }
 
-/* Extraído de atributos style="" inline (CSP sem unsafe-inline). Nomes ux-N são provisórios: renomear por componente ao tocar na tela. */
-.ux-1 { font-weight: 600;
+/* Extraído de atributos style="" inline (CSP sem unsafe-inline). Nomes semânticos por papel; consolidar utilitários repetidos quando as telas forem refatoradas. */
+.partner-pill-title { font-weight: 600;
   font-size: 0.8rem; }
-.ux-2 { font-size: 0.75rem; }
-.ux-3 { font-size: var(--text-xs);
+.partner-pill-status { font-size: 0.75rem; }
+.header-stats { font-size: var(--text-xs);
   color: var(--ccat-text-secondary); }
-.ux-4 { display: none; }
-.ux-5 { background: var(--ccat-bg-elevated);
+.canonical-list { display: none; }
+.callout-box { background: var(--ccat-bg-elevated);
   padding: 1.5rem;
   border-radius: var(--radius-lg);
   border: 1px solid var(--ccat-border);
   display: grid;
   gap: 1rem; }
-.ux-6 { display: flex;
+.row-center { display: flex;
   align-items: center;
   gap: 0.75rem; }
-.ux-7 { font-size: 1.75rem; }
-.ux-8 { display: grid;
+.icon-lg { font-size: 1.75rem; }
+.compare-grid { display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem; }
-.ux-9 { background: var(--ccat-bg-surface);
+.compare-card { background: var(--ccat-bg-surface);
   padding: 1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--ccat-border-subtle); }
-.ux-10 { color: var(--success-color); }
-.ux-11 { font-size: var(--text-sm);
+.text-success { color: var(--success-color); }
+.compare-note { font-size: var(--text-sm);
   margin-top: 0.25rem; }
-.ux-12 { color: var(--ccat-brand-accent); }
-.ux-13 { display: flex;
+.text-accent { color: var(--ccat-brand-accent); }
+.row-end { display: flex;
   justify-content: flex-end; }
-.ux-14 { display: grid;
+.stack-sm { display: grid;
   gap: 0.75rem; }
-.ux-15 { display: flex;
+.status-row { display: flex;
   align-items: center;
   justify-content: space-between;
   background: var(--ccat-bg-surface);
   padding: 0.85rem 1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--ccat-border-subtle); }
-.ux-16 { background: var(--success-surface);
+.badge-success { background: var(--success-surface);
   color: var(--success-color); }
-.ux-17 { display: flex;
+.row-between { display: flex;
   justify-content: space-between; }
-.ux-18 { background: var(--ccat-bg-elevated);
+.tutorial-box { background: var(--ccat-bg-elevated);
   padding: 1.5rem;
   border-radius: var(--radius-lg);
   border: 1px solid var(--ccat-border);
   display: grid;
   gap: 1.25rem; }
-.ux-19 { display: grid;
+.steps-grid { display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 0.75rem; }
-.ux-20 { background: var(--ccat-bg-surface);
+.step-card { background: var(--ccat-bg-surface);
   padding: 0.85rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--ccat-border-subtle); }
-.ux-21 { font-weight: 700;
+.step-title { font-weight: 700;
   color: var(--ccat-brand-primary);
   font-size: 0.85rem;
   margin-bottom: 0.25rem; }
-.ux-22 { background: var(--ccat-bg-surface);
+.pairing-form-card { background: var(--ccat-bg-surface);
   padding: 1.25rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--ccat-border);
   border-top: none; }
-.ux-23 { display: grid;
+.pairing-form-grid { display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 0.75rem; }
-.ux-24 { display: none;
+.pairing-waiting-card { display: none;
   background: var(--ccat-bg-surface);
   padding: 1.25rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--ccat-brand-primary);
   gap: 0.75rem; }
-.ux-25 { font-size: 1.5rem; }
-.ux-26 { color: var(--ccat-brand-primary); }
-.ux-27 { font-size: var(--text-sm);
+.icon-md { font-size: 1.5rem; }
+.text-brand { color: var(--ccat-brand-primary); }
+.hint-text { font-size: var(--text-sm);
   color: var(--ccat-text-secondary);
   margin-top: 0.25rem; }
-.ux-28 { margin-top: 0.5rem; }
-.ux-29 { min-height: 2.25rem;
+.mt-sm { margin-top: 0.5rem; }
+.btn-compact { min-height: 2.25rem;
   font-size: var(--text-xs); }
-.ux-30 { background: var(--ccat-bg-surface);
+.custody-card { background: var(--ccat-bg-surface);
   padding: 1.25rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--ccat-border-subtle);
   display: grid;
   gap: 0.85rem; }
-.ux-31 { display: flex;
+.row-start { display: flex;
   align-items: flex-start;
   gap: 0.75rem; }
-.ux-32 { color: var(--ccat-brand-primary);
+.custody-title { color: var(--ccat-brand-primary);
   font-size: var(--text-base); }
-.ux-33 { font-size: var(--text-sm);
+.custody-text { font-size: var(--text-sm);
   color: var(--ccat-text-secondary);
   margin-top: 0.5rem; }
-.ux-34 { background: var(--ccat-bg-elevated);
+.note-box { background: var(--ccat-bg-elevated);
   padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--ccat-border);
   font-size: var(--text-xs);
   color: var(--ccat-text-muted); }
-.ux-35 { display: flex;
+.confirm-label { display: flex;
   align-items: flex-start;
   gap: 0.625rem;
   font-size: var(--text-sm);
   cursor: pointer; }
-.ux-36 { margin-top: 0.2rem;
+.confirm-checkbox { margin-top: 0.2rem;
   width: 1.25rem;
   height: 1.25rem;
   accent-color: var(--ccat-brand-primary); }
-.ux-37 { display: flex;
+.row-between-center { display: flex;
   justify-content: space-between;
   align-items: center; }
-.ux-38 { display: flex;
+.list-header { display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem; }
-.ux-39 { min-height: 2.25rem;
+.filter-input-compact { min-height: 2.25rem;
   font-size: 0.85rem;
   max-width: 260px; }
-.ux-40 { font-weight: 600;
+.mindful-title { font-weight: 600;
   font-size: var(--text-sm); }
-.ux-41 { font-size: 0.8rem; }
-.ux-42 { display: flex;
+.mindful-hint { font-size: 0.8rem; }
+.dialog-actions { display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
   flex-wrap: wrap; }
 .notice-close { background: none; border: none; color: inherit; font-weight: 700; cursor: pointer; padding: 0 0.5rem; font-size: 1rem; }
 .table-empty-cell { text-align: center; color: var(--ccat-text-muted); padding: 1.5rem; }
 
-/* Botão primário do tokens.css usava a paleta azul; alinhado à paleta CCAT do app (nav, links, foco). */
-.ccat-btn-primary { background: var(--ccat-brand-primary); border-color: var(--ccat-brand-primary); color: var(--ccat-on-brand); }
-.ccat-btn-primary:hover:not(:disabled) { background: var(--ccat-brand-primary-hover); border-color: var(--ccat-brand-primary-hover); }
 
 /* Motion (F4): só transform/opacity; entrada de views, painéis, faixas e toast; respiração real no dialog de pausa. */
 :root { --dur-fast: 140ms; --dur-base: 220ms; --dur-calm: 360ms; }
@@ -851,4 +848,11 @@ dialog#profileStepsDialog::backdrop {
 dialog[open] .breathing-circle { animation: breathe 8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   [data-view], .onboarding-step-panel, #profileBanner, #serviceUpdateBanner, .action-feedback, .breathing-circle { animation: none !important; }
+}
+
+/* Paleta única no app: os tokens genéricos de tokens.css (botões, inputs, foco) seguem a paleta --ccat-* de cada tema. */
+:root, [data-theme] {
+  --primary-color: var(--ccat-brand-primary);
+  --primary-hover: var(--ccat-brand-primary-hover);
+  --primary-foreground: var(--ccat-on-brand);
 }

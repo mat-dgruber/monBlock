@@ -133,6 +133,8 @@ describe('CSP, estilos e motion (F3/F4)', () => {
     expect(js).not.toMatch(/style="/);
     expect(html).toContain("style-src 'self';");
     expect(html).toContain('href="./renderer.css"');
+    expect(html).not.toMatch(/\bux-\d+\b/);
+    expect(css).toContain('--primary-color: var(--ccat-brand-primary)');
   });
   it('motion só com transform/opacity e com reduced-motion; toast de sucesso some, erro fica', () => {
     expect(css).toContain('@keyframes enter-up');
@@ -140,5 +142,12 @@ describe('CSP, estilos e motion (F3/F4)', () => {
     expect(css).not.toMatch(/@keyframes[^}]*\b(top|left|width|height)\s*:/);
     expect(js).toContain('if (!isError) {');
     expect(js).toContain("feedback.setAttribute('aria-live', isError ? 'assertive' : 'polite');");
+  });
+});
+
+describe('regressão: recuperação após erro', () => {
+  it('volta a active antes de escolher a rota inicial (senão switchView recusa a view)', () => {
+    const js = fs.readFileSync(rendererPath, 'utf8');
+    expect(js.indexOf("htmlEl.dataset.uiState = 'active';")).toBeLessThan(js.indexOf('const initial = pickInitialView('));
   });
 });

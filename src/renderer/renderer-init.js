@@ -334,6 +334,8 @@ globalThis.monblockRenderer = { pickInitialView };
       if (!result || result.status !== 200 || !result.state) throw new Error(result?.detail || 'O estado da proteção não pôde ser consultado.');
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = true;
       renderProfileBanner(result.state);
+      // Sai do estado de erro antes de escolher a view: em erro o switchView só aceita 'partner'.
+      htmlEl.dataset.uiState = 'active';
       if (!initialViewPicked) {
         initialViewPicked = true;
         const initial = pickInitialView(result.state, { dismissed: readDismissed(), userNavigated });
