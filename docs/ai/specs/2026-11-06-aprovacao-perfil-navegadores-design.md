@@ -102,6 +102,9 @@ Fora de escopo: MDM, instalar o perfil sem o usuário (o macOS não permite), Fi
   `profileIdentifier: com.ccat.monblock.browsers` (o índice entre colchetes varia).
 - **Spike (b), 2026-11-06, macOS 27.0.1:** `open x-apple.systempreferences:com.apple.Profiles-Settings.extension`
   abre Ajustes > Geral > Gerenciamento de Dispositivos ("Device Management") com o perfil listado.
+- **Spike (c), 2026-11-06:** `sudo profiles show -all` agrupa cada perfil por prefixo de escopo
+  (`_computerlevel[N]` = sistema) e lista `payload[k] type = <bundle id>`. A checagem passou a usar `show`
+  e exige escopo de sistema + payloads de Chrome, Brave e Edge (revisão do PR #4).
 - `execFile` a cada 60 s como root: custo desprezível; argumentos fixos, sem shell.
 
 ## 8. Rollback

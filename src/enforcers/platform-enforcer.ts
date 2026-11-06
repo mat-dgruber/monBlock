@@ -202,14 +202,28 @@ export function defaultCommandExecutor(isRoot: boolean): (cmd: string, args: str
 /**
  * O perfil `.mobileconfig` dos navegadores está aprovado? Precisa de root: sem ele o
  * `profiles` só lista perfis do usuário. `null` = não deu para verificar (a UI não avisa).
+ * Exige escopo de sistema (`_computerlevel[N]`) e as políticas dos 3 Chromium: um perfil de
+ * usuário ou incompleto com o mesmo identificador não esconde o aviso.
+ * ponytail: confere os tipos de payload, não o conteúdo das políticas (o `profiles show` não o
+ * exibe); instalar um perfil forjado exige Admin, que já contorna o monBlock de outros jeitos.
  */
 export async function checkBrowserProfileInstalled(
   run: (cmd: string, args: string[]) => Promise<string> = async (cmd, args) =>
     (await execFileAsync(cmd, args, { timeout: 5000 })).stdout
 ): Promise<boolean | null> {
   try {
-    const out = await run('/usr/bin/profiles', ['list', '-all']);
-    if (out.includes('profileIdentifier: com.ccat.monblock.browsers')) return true;
+    const out = await run('/usr/bin/profiles', ['show', '-all']);
+    const owner = /^(\S+) attribute: profileIdentifier: com\.ccat\.monblock\.browsers\s*$/m.exec(out)?.[1];
+    if (owner) {
+      if (!owner.startsWith('_computerlevel[')) return false;
+      const types = new Set(
+        out
+          .split('\n')
+          .filter((line) => line.startsWith(`${owner} `))
+          .map((line) => /payload\[\d+\] type\s*=\s*(\S+)/.exec(line)?.[1])
+      );
+      return CHROMIUM_BUNDLE_IDS.every((id) => types.has(id));
+    }
     // Só "ausente" com saída reconhecida; formato novo do macOS vira "não verificado".
     if (out.includes('profileIdentifier:') || /no configuration profiles/i.test(out)) return false;
     console.error('[monblockd] saída do profiles não reconhecida; perfil dos navegadores não verificado');
