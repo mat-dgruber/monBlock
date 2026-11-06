@@ -4,7 +4,7 @@
  * Implementa:
  * - Configuração Zero-Trust da BrowserWindow (`nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`)
  * - Validação estrita de navegação (`validateNavigationUrl`) bloqueando origens externas
- * - Modelo da Barra de Menu / System Tray macOS (`buildTrayMenuTemplate`) sem opção de sair/desativar (`INV-UI-TRAY-03`)
+ * - Modelo da Barra de Menu / System Tray macOS (`buildTrayMenuTemplate`) sem opção de desativar o bloqueio (`INV-UI-TRAY-03`)
  * - Independência da janela em relação ao bloqueio (`handleWindowCloseEvent` — `RN-LIFE-01`)
  */
 
@@ -55,6 +55,7 @@ export interface TrayActionHandlers {
   onRequestUnblock: () => void;
   onEnterToken: () => void;
   onOpenDashboard: () => void;
+  onQuit: () => void;
 }
 
 export interface TrayMenuItem {
@@ -145,7 +146,8 @@ export function validateNavigationUrl(rawUrl: string, allowedFileRoot?: string):
  * Constrói o template do menu da Tray (Menu Bar do macOS).
  *
  * Invariante Crítica (`INV-UI-TRAY-03`):
- * O menu da Tray JAMAIS inclui opção de encerrar, sair ou desativar o bloqueio.
+ * O menu da Tray JAMAIS inclui opção de desativar o bloqueio. "Sair" encerra só a interface:
+ * a imposição vive no `monblockd` root (ADR-0007) e segue ativa com o app fechado.
  */
 export function buildTrayMenuTemplate(
   state: TrayStatusSnapshot,
@@ -201,20 +203,26 @@ export function buildTrayMenuTemplate(
       icon: icons?.['open-dashboard'],
       click: () => handlers.onOpenDashboard(),
     },
+    { type: 'separator' },
+    {
+      id: 'quit',
+      label: 'Sair do monBlock (a proteção continua ativa)',
+      click: () => handlers.onQuit(),
+    },
   ];
 }
 
 /**
  * Trata o evento de fechamento da janela principal (`RN-LIFE-01`):
- * Oculta a janela mantendo a Tray e o daemon `monblockd` vivos, exceto quando
- * houver desinstalação autorizada pelo Ajudante.
+ * Oculta a janela mantendo a Tray viva, exceto quando o app está saindo
+ * (sem isso, cancelar o close da janela cancela o quit e o app não fecha).
  */
 export function handleWindowCloseEvent(
   event: { preventDefault: () => void },
   win: { hide: () => void },
-  isAuthorizedQuit = false
+  isQuitting = false
 ): void {
-  if (!isAuthorizedQuit) {
+  if (!isQuitting) {
     event.preventDefault();
     win.hide();
   }
@@ -240,7 +248,10 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
   let tray: InstanceType<typeof Tray> | null = null;
-  let isAuthorizedQuit = false;
+  let isQuitting = false;
+  app.on('before-quit', () => {
+    isQuitting = true;
+  });
 
   // O Electron é só cliente: estado, segredos, relógio e imposição vivem no monblockd root.
   // Sem fallback para daemon em processo: parar o serviço não pode devolver o app ao modo userland.
@@ -302,6 +313,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
         onRequestUnblock: () => navigateMainWindow('partner'),
         onEnterToken: () => navigateMainWindow('partner'),
         onOpenDashboard: () => navigateMainWindow('categories'),
+        onQuit: () => app.quit(),
       },
       process.platform === 'darwin' && hasMenuSymbol ? {
         'quick-add': (nativeImage as any).createMenuSymbol('plus.circle'),
@@ -451,7 +463,6 @@ export async function bootstrapElectronRuntime(): Promise<void> {
       challengeCode: payload.challengeCode,
     });
     if ('uninstalled' in res && res.uninstalled) {
-      isAuthorizedQuit = true;
       app.quit();
     }
     return res;
@@ -475,7 +486,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   mainWindow.on('close', (event) => {
     if (mainWindow) {
-      handleWindowCloseEvent(event, mainWindow, isAuthorizedQuit);
+      handleWindowCloseEvent(event, mainWindow, isQuitting);
     }
   });
 
