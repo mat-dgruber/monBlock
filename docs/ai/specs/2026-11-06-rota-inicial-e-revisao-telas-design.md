@@ -1,7 +1,7 @@
 # Rota inicial e revisão das telas do app — spec de design
 
 - Data: 2026-11-06 · Base: `main` @ `0caf20c` (v0.3.0, PR #4 incluído)
-- Status: **rascunho — aguardando `/plan-criticize` e aprovação do usuário. Nada implementado.**
+- Status: **aprovada pelo usuário em 2026-11-06 (D1–D6 como propostas).** Implementação ainda não iniciada.
 - Escopo: `src/renderer/index.html`, `src/renderer/renderer-init.js`, `src/main/main.ts`, `docs/design/tokens.css`.
 - Relatórios completos das 5 revisões (separados, sem síntese opaca): pasta de notas da sessão, `revisao-1-ux-reviewer.md`, `revisao-2-design.md`, `revisao-3-design-review.md`, `revisao-4-design-critique.md`, `revisao-5-animacao.md`; evidências em `evidencias.md`.
 
