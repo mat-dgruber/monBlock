@@ -18,6 +18,10 @@ import { migrateLegacyVaults, readUserVaultKey } from './legacy-migration.js';
 
 /** Socket do `monblockd` root (ADR-0007). Override só em build não empacotado (dev/CI). */
 export const DAEMON_SOCKET_PATH = '/var/run/monblock/monblockd.sock';
+/** Perfil gerado pelo `build-pkg.sh` e instalado pelo `.pkg` (`HELPER_DIR` do daemon). */
+const BROWSER_PROFILE_PATH = '/Library/PrivilegedHelperTools/com.ccat.monblockd/monblock-browsers.mobileconfig';
+/** Ajustes > Geral > Gerenciamento de Dispositivos (spike 2026-11-06, macOS 27). */
+const PROFILES_SETTINGS_URL = 'x-apple.systempreferences:com.apple.Profiles-Settings.extension';
 
 const CURRENT_DIR =
   typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -334,6 +338,18 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   ipcMain.handle('monblock:reinstall-service', async () => {
     const error = await shell.openPath(path.join(process.resourcesPath, 'monblockd.pkg'));
     return error ? { status: 500, detail: `Não foi possível abrir o instalador: ${error}` } : { status: 200 };
+  });
+
+  // Sem parâmetros do renderer: caminho e URL fixos. Reabre o perfil (o macOS descarta perfis baixados
+  // e não aprovados depois de alguns minutos) e leva o usuário ao painel onde ele aprova.
+  ipcMain.handle('monblock:open-profile-settings', async () => {
+    try {
+      await shell.openPath(BROWSER_PROFILE_PATH);
+      await shell.openExternal(PROFILES_SETTINGS_URL);
+      return { status: 200 };
+    } catch (err) {
+      return { status: 500, detail: `Não foi possível abrir os Ajustes: ${(err as Error).message}` };
+    }
   });
 
   ipcMain.handle('monblock:initiate-pairing', async (_event, payload: {
