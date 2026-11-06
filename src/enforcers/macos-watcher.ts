@@ -134,6 +134,7 @@ export type ExecFileExecutor = (
 export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
   private readonly timeoutMs: number;
   private readonly execFn: ExecFileExecutor;
+  private warnedFailure = false;
 
   constructor(
     timeoutOrExecFn: number | ExecFileExecutor = execFileAsync,
@@ -164,7 +165,12 @@ export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
         url,
         title,
       };
-    } catch {
+    } catch (err) {
+      // Antes era silencioso: sem permissão de Automação o bloqueio por palavras-chave simplesmente não age.
+      if (!this.warnedFailure) {
+        this.warnedFailure = true;
+        console.error('[monBlock] Watcher não conseguiu ler a aba (permissão de Automação negada ou navegador fechado?):', (err as Error).message);
+      }
       return null;
     }
   }
