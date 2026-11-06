@@ -456,6 +456,37 @@ export class TelegramPartnerClient {
     }
   }
 
+  /** Aviso em texto puro ao Ajudante (inatividade do daemon, adulteração detectada). */
+  async sendAlert(text: string, chatId?: string): Promise<{ ok: boolean }> {
+    const targetChatId = (chatId ?? this.pairedChatId).trim();
+    if (!targetChatId || !this.botToken) return { ok: false };
+    try {
+      const res = await this.transport.send({
+        endpointUrl: `https://api.telegram.org/bot${this.botToken}/sendMessage`,
+        timeoutMs: this.timeoutMs,
+        payload: { chat_id: targetChatId, text },
+      });
+      return { ok: res.ok };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  /** `getMe` barato: serve para ancorar o `TrustedClock` no cabeçalho `Date`. */
+  async ping(): Promise<{ ok: boolean }> {
+    if (!this.botToken) return { ok: false };
+    try {
+      const res = await this.transport.send({
+        endpointUrl: `https://api.telegram.org/bot${this.botToken}/getMe`,
+        timeoutMs: this.timeoutMs,
+        payload: {},
+      });
+      return { ok: res.ok };
+    } catch {
+      return { ok: false };
+    }
+  }
+
   /**
    * Consulta novas atualizações do Telegram via long-polling (`getUpdates`).
    */

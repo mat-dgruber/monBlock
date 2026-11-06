@@ -91,9 +91,9 @@ UID 501 (usuário)                               UID 0 (root, launchd)
 | `/Library/PrivilegedHelperTools/com.ccat.monblockd/monblockd` | `root:wheel 0755` | Binário Node SEA assinado |
 | `/Library/LaunchDaemons/com.ccat.monblockd.plist` | `root:wheel 0644` | `RunAtLoad`, `KeepAlive`, `UserName=root`, `ProcessType=Background` |
 | `/Library/Application Support/monBlock/` | `root:wheel 0700` | `state.primary` (cofre 1), `vault.key` (32 bytes aleatórios, `0600`), `config.json` (bot token, `0600`) |
-| System Keychain, serviço `com.ccat.monblock.vault` | root | Cofre 2 (mesmo envelope `MBV1.` em base64) |
-| `/var/db/monblock/partner.seal` | `root:wheel 0600` + `uchg` | Cofre 3 |
-| `/var/db/monblock/tombstone` | `root:wheel 0600` + `uchg` | Marcador "já pareado" (§7) |
+| `/var/db/monblock/state.mirror` | `root:wheel 0600` | Cofre 2 (mesmo envelope `MBV1.`). Revisto na Fase 6: o System Keychain foi descartado (§7) |
+| `/var/db/monblock/partner.seal` | `root:wheel 0600` | Cofre 3 |
+| `/var/db/monblock/tombstone` | `root:wheel 0600` | Marcador "já pareado" (§7) |
 | `/var/run/monblock/` | `root:monblock 0750` | Diretório do socket |
 | `/var/run/monblock/monblockd.sock` | `root:monblock 0660` | Socket IPC |
 | `/var/log/monblockd.log` | `root:wheel 0640` | Log sem PII (chatId mascarado) |
@@ -138,10 +138,10 @@ Implementação: um módulo `src/daemon/trusted-clock.ts` com `nowForExpiry()` e
 
 ## 7. Persistência root, segredos e tombstone (P1, P4)
 
-- **Chave:** `vault.key` = 32 bytes de `crypto.randomBytes`, criada pelo daemon no primeiro boot, `0600 root`. Keychain não acrescenta proteção contra root/Admin, então não guarda a chave (só o cofre 2, por diversidade de local). `hmacSecret` continua dentro dos cofres cifrados; nunca cruza o IPC.
-- **3 cofres:** mesmo `TripleStateStore` (`MBV1.`, HMAC, quórum, self-healing) com os caminhos da §4.1. O cofre 2 passa a ser um adaptador real do System Keychain via `/usr/bin/security -i` com os comandos por **stdin** (nunca o cofre no argv: `-w <valor>` aparece no `ps` para qualquer usuário — achado do S5) (hoje é um arquivo que só se chama "keychain").
-- **Tombstone (`/var/db/monblock/tombstone`, `uchg`):** gravado no primeiro pareamento concluído. Conteúdo: `{ pairedAtMs, chatIdHash: sha256(telegramChatId), lastChatIdEnc }`, cifrado com a mesma chave. Uma cópia vai também como atributo do item do Keychain. Substitui `wasPaired` em memória: `loadAndReconcile({ expectPaired: tombstoneExists })`.
-- **Gravação:** escrita atômica `.tmp` + `fsync` + `rename` (já existe), com `chflags nouchg` → escreve → `chflags uchg` nos arquivos `uchg`.
+- **Chave:** `vault.key` = 32 bytes de `crypto.randomBytes`, criada pelo daemon no primeiro boot, `0600 root`. Keychain não acrescenta proteção contra root/Admin, então não guarda a chave. `hmacSecret` continua dentro dos cofres cifrados; nunca cruza o IPC.
+- **3 cofres:** mesmo `TripleStateStore` (`MBV1.`, HMAC, quórum, self-healing) com os caminhos da §4.1. **Revisto na Fase 6:** o cofre 2 fica em arquivo (`/var/db/monblock/state.mirror`), não no System Keychain. Sem addon nativo, o `security` só grava o segredo pelo argv (visível no `ps`, S5); `security -i` por stdin trunca a linha em ~4 KB sem erro e o prompt por stdin grava vazio (medido em 2026-11-05). O Keychain não protegia contra root/Admin; servia só para diversificar o local, e dois diretórios root (`/Library/Application Support/monBlock` e `/var/db/monblock`) cumprem esse papel.
+- **Tombstone (`/var/db/monblock/tombstone`):** gravado no primeiro pareamento concluído. Conteúdo: `{ pairedAtMs, telegramChatId }`, cifrado (AES-256-GCM) com a mesma chave; ilegível conta como pareamento prévio. Substitui `wasPaired` em memória: `loadAndReconcile()` usa a existência do tombstone.
+- **Gravação:** escrita atômica `.tmp` + `rename` (já existe). `ponytail:` `uchg` só no `/etc/hosts`; nos cofres ele só atrasaria um Admin (que tira a flag com um comando) e exigiria `nouchg`/`uchg` em cada gravação.
 
 ## 8. Decisões de produto pendentes
 

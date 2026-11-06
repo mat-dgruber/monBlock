@@ -890,3 +890,119 @@ describe('MonBlockDaemon — tombstone (RN-DAEMON-07) e rate limit (RN-DAEMON-09
     expect(res.status).toBe(403);
   });
 });
+
+describe('MonBlockDaemon — watchdog (tick) e detecção de inatividade (spec §3.3)', () => {
+  let tmpDir: string;
+  let hostsPath: string;
+  let store: TripleStateStore;
+  let alerts: string[];
+  let onPing: () => void;
+  const t = { wall: 1_700_000_000_000, mono: 0 };
+  const M = 60_000;
+
+  const telegram = () =>
+    ({
+      sendAlert: async (text: string) => {
+        alerts.push(text);
+        return { ok: true };
+      },
+      ping: async () => {
+        onPing();
+        return { ok: true };
+      },
+    }) as any;
+
+  function build(): MonBlockDaemon {
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath,
+      firefoxPlistPath: path.join(tmpDir, 'ff.plist'),
+      commandExecutor: async () => undefined,
+    });
+    const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
+    return new MonBlockDaemon({ store, enforcer, clock, telegramClient: telegram() });
+  }
+
+  beforeEach(() => {
+    t.wall = 1_700_000_000_000;
+    t.mono = 0;
+    alerts = [];
+    onPing = () => undefined;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-tick-'));
+    hostsPath = path.join(tmpDir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    store = new TripleStateStore({
+      primaryPath: path.join(tmpDir, 'a'),
+      keychainPath: path.join(tmpDir, 'b'),
+      sealPath: path.join(tmpDir, 'c'),
+      integrityKey: 'tick-key',
+    });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  async function paired(): Promise<MonBlockDaemon> {
+    const d = build();
+    await d.handleCommand({ type: 'PAIR_PARTNER', password: 'Senha#Forte2026', telegramChatId: '111' });
+    await d.handleCommand({
+      type: 'MUTATE_RULES',
+      rules: { enabledCategories: ['adult'], blockedDomains: ['tiktok.com'], allowlistDomains: [], keywords: [], lockIncognito: true },
+    });
+    return d;
+  }
+
+  it('aplica as regras no boot, sem precisar de comando', async () => {
+    const d = await paired();
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+
+    await build().tick();
+
+    expect(fs.readFileSync(hostsPath, 'utf8')).toContain('0.0.0.0 tiktok.com');
+    void d;
+  });
+
+  it('reaplica o hosts adulterado e avisa o Ajudante no máximo 1 vez por hora', async () => {
+    const d = await paired();
+    await d.tick();
+    alerts = [];
+
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    await d.tick();
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    t.mono += 10 * M;
+    await d.tick();
+
+    expect(fs.readFileSync(hostsPath, 'utf8')).toContain('0.0.0.0 tiktok.com');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatch(/alterad/i);
+  });
+
+  it('avisa o Ajudante quando o daemon ficou parado sem desligamento limpo', async () => {
+    const d = await paired();
+    await d.tick();
+
+    t.mono = 0; // reinício
+    t.wall += 3 * 60 * M;
+    const restarted = build();
+    // o ping ao Telegram traz o horário real (sem ele o tempo confiável não sabe do intervalo)
+    onPing = () => (restarted as any).clock.ingestServerDate(new Date(t.wall).toUTCString());
+    await restarted.tick();
+
+    expect(alerts.some((a) => /inativo/i.test(a))).toBe(true);
+  });
+
+  it('não avisa inatividade após desligamento limpo', async () => {
+    const d = await paired();
+    await d.tick();
+    await d.shutdown();
+
+    t.mono = 0;
+    t.wall += 3 * 60 * M;
+    const restarted = build();
+    onPing = () => (restarted as any).clock.ingestServerDate(new Date(t.wall).toUTCString());
+    await restarted.tick();
+
+    expect(alerts.some((a) => /inativo/i.test(a))).toBe(false);
+  });
+});

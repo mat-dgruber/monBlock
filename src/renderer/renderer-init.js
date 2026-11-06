@@ -285,10 +285,14 @@
     startCooldownBtn.disabled = true;
   }
 
+  const reinstallServiceBtn = document.getElementById('reinstallServiceBtn');
+
   async function loadState() {
+    let result;
     try {
-      const result = await bridge.getState();
-      if (!result || result.status !== 200 || !result.state) throw new Error('O estado da proteção não pôde ser consultado.');
+      result = await bridge.getState();
+      if (!result || result.status !== 200 || !result.state) throw new Error(result?.detail || 'O estado da proteção não pôde ser consultado.');
+      if (reinstallServiceBtn) reinstallServiceBtn.hidden = true;
       currentRules = result.state.rules || currentRules;
       renderCategories(currentRules.enabledCategories || []);
       renderActiveRulesTable();
@@ -301,9 +305,12 @@
       return true;
     } catch (error) {
       htmlEl.dataset.uiState = 'error';
-      status.textContent = 'Não foi possível conferir a proteção';
+      // 503: o serviço root não responde (ADR-0007). Sem ele a proteção não pode ser confirmada.
+      const daemonOffline = result?.status === 503;
+      status.textContent = daemonOffline ? 'Proteção não verificada' : 'Não foi possível conferir a proteção';
       status.dataset.status = 'error';
-      document.getElementById('problemDetailsTitle').textContent = 'Estado indisponível';
+      if (reinstallServiceBtn) reinstallServiceBtn.hidden = !daemonOffline;
+      document.getElementById('problemDetailsTitle').textContent = daemonOffline ? 'Proteção não verificada' : 'Estado indisponível';
       document.getElementById('problemDetailsDetail').textContent = error.message || 'Abra novamente o aplicativo para tentar consultar o estado.';
       return false;
     }
@@ -573,6 +580,11 @@
       await loadState();
     }
   });
+
+  reinstallServiceBtn?.addEventListener('click', async () => {
+    await execute(reinstallServiceBtn, () => bridge.reinstallService(), 'Instalador aberto. Siga as instruções e volte ao monBlock.');
+  });
+  if (bridge?.onDaemonStatus) bridge.onDaemonStatus(() => void loadState());
 
   if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => switchView(viewId, true));
   switchView('categories');

@@ -38,7 +38,7 @@ import type {
 export interface ProblemDetailsResponse {
   type: string;
   title: string;
-  status: 400 | 403 | 409 | 423 | 429 | 500;
+  status: 400 | 403 | 409 | 423 | 429 | 500 | 503;
   detail: string;
   instance: string;
 }
@@ -309,6 +309,85 @@ export class MonBlockDaemon {
   }
 
   private readonly onServerDate = (date: string): void => this.clock.ingestServerDate(date);
+  private firstTick = true;
+  private lastPingMs = -Infinity;
+
+  private telegramFor(chatId: string): TelegramPartnerClient {
+    return this.telegramClient ?? new TelegramPartnerClient({ pairedChatId: chatId, onServerDate: this.onServerDate });
+  }
+
+  /**
+   * Watchdog (a cada 60 s no daemon root): ancora o relógio, reaplica as regras, detecta
+   * adulteração e inatividade, grava heartbeat e o snapshot do relógio. Serializado com os comandos.
+   */
+  public tick(): Promise<{ drift: string[] }> {
+    const next = this.commandQueue.then(
+      () => this.runTick(),
+      () => this.runTick()
+    );
+    this.commandQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  /** Marca desligamento limpo (`SIGTERM`), para não acusar inatividade no próximo boot. */
+  public shutdown(): Promise<void> {
+    const next = this.commandQueue.then(
+      () => this.markCleanShutdown(),
+      () => this.markCleanShutdown()
+    );
+    this.commandQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  private markCleanShutdown(): void {
+    const { state } = this.loadState();
+    this.save({ ...state, cleanShutdown: true });
+  }
+
+  private async runTick(): Promise<{ drift: string[] }> {
+    const { state } = this.loadState();
+    const chatId = state.partnerCredentials?.telegramChatId;
+    const telegram = chatId ? this.telegramFor(chatId) : undefined;
+    if (telegram && this.clock.trustedNow() - this.lastPingMs >= 10 * 60_000) {
+      await telegram.ping();
+      this.lastPingMs = this.clock.trustedNow();
+    }
+    const trustedNow = this.clock.trustedNow();
+    const now = this.clock.nowForExpiry();
+
+    const grants = state.temporaryGrants.filter((g) => g.expiresAtMs > now);
+    const drift = this.enforcer.verifyApplied?.(state.rules, grants) ?? [];
+    await this.enforcer.applyWebRules(state.rules, grants);
+
+    const alerts: string[] = [];
+    const iso = (ms: number) => new Date(ms).toISOString();
+    if (
+      this.firstTick &&
+      state.lastHeartbeatMs !== undefined &&
+      !state.cleanShutdown &&
+      trustedNow - state.lastHeartbeatMs > 15 * 60_000
+    ) {
+      alerts.push(`⚠️ monBlock ficou inativo de ${iso(state.lastHeartbeatMs)} até ${iso(trustedNow)} (UTC).`);
+    }
+    let lastDriftAlertMs = state.lastDriftAlertMs;
+    if (drift.length > 0 && (lastDriftAlertMs === undefined || trustedNow - lastDriftAlertMs >= 3600_000)) {
+      alerts.push(`⚠️ Arquivos de bloqueio foram alterados e restaurados pelo monBlock: ${drift.join(', ')}`);
+      lastDriftAlertMs = trustedNow;
+    }
+    this.firstTick = false;
+
+    this.save({
+      ...state,
+      temporaryGrants: grants,
+      lastHeartbeatMs: trustedNow,
+      cleanShutdown: false,
+      lastDriftAlertMs,
+    });
+    if (telegram && chatId) {
+      for (const text of alerts) await telegram.sendAlert(text, chatId);
+    }
+    return { drift };
+  }
 
   /** Persiste o estado junto com o snapshot do relógio confiável. */
   private save(state: MonBlockPersistentState): void {

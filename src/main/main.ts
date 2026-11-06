@@ -12,11 +12,13 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MonBlockDaemon } from '../daemon/monblockd.js';
+import { buildProblem, type DaemonCommand, type DaemonResponse } from '../daemon/monblockd.js';
 import { MacOSBrowserWatcher } from '../enforcers/macos-watcher.js';
-import { MacOSPlatformEnforcer } from '../enforcers/platform-enforcer.js';
-import { TripleStateStore, createDefaultPersistentState } from '../storage/state-store.js';
-import { createMonBlockHttpServer } from '../server/block-server.js';
+import { createDefaultPersistentState } from '../storage/state-store.js';
+import { DaemonClient } from './daemon-client.js';
+
+/** Socket do `monblockd` root (ADR-0007). Override só em build não empacotado (dev/CI). */
+export const DAEMON_SOCKET_PATH = '/var/run/monblock/monblockd.sock';
 
 const CURRENT_DIR =
   typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -254,7 +256,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   }
 
   const electron = await import('electron');
-  const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, powerMonitor, safeStorage } = electron;
+  const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, powerMonitor, shell } = electron;
 
   const gotSingleLock = app.requestSingleInstanceLock();
   if (!gotSingleLock) {
@@ -264,38 +266,31 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   await app.whenReady();
 
-  const userDataDir = app.getPath('userData');
-  const vaultsDir = path.join(userDataDir, 'vaults');
-  const enforcerDir = path.join(userDataDir, 'enforcer');
-  fs.mkdirSync(vaultsDir, { recursive: true });
-  fs.mkdirSync(enforcerDir, { recursive: true });
-
-  const store = new TripleStateStore({
-    primaryPath: path.join(vaultsDir, 'state.primary.json'),
-    keychainPath: path.join(vaultsDir, 'state.keychain.json'),
-    sealPath: path.join(vaultsDir, 'partner.seal'),
-    integrityKey: loadOrCreateVaultKey(path.join(vaultsDir, 'vault.key'), safeStorage),
-  });
-
-  const enforcer = new MacOSPlatformEnforcer({
-    hostsPath: path.join(enforcerDir, 'hosts.monblock'),
-    chromiumPlistPaths: [path.join(enforcerDir, 'com.google.Chrome.plist')],
-    firefoxPlistPath: path.join(enforcerDir, 'org.mozilla.firefox.plist'),
-  });
-
-  const daemon = new MonBlockDaemon({ store, enforcer });
-
   let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
   let tray: InstanceType<typeof Tray> | null = null;
   let isAuthorizedQuit = false;
 
-  // Inicializa o servidor HTTP local na porta 49152 para tela de bloqueio e Problem Details
-  const blockServer = createMonBlockHttpServer();
-  // Erros de listen (ex.: EADDRINUSE) chegam como evento assíncrono; sem listener derrubariam o processo main.
-  blockServer.on('error', (err) => {
-    console.error('[monBlock] Servidor local 127.0.0.1:49152 indisponível:', (err as NodeJS.ErrnoException).code ?? err);
+  // O Electron é só cliente: estado, segredos, relógio e imposição vivem no monblockd root.
+  // Sem fallback para daemon em processo: parar o serviço não pode devolver o app ao modo userland.
+  const socketPath =
+    !app.isPackaged && process.env.MONBLOCK_SOCKET_PATH ? process.env.MONBLOCK_SOCKET_PATH : DAEMON_SOCKET_PATH;
+  const daemonClient = new DaemonClient({ socketPath });
+  const call = async (cmd: DaemonCommand): Promise<DaemonResponse> => {
+    try {
+      return await daemonClient.call(cmd);
+    } catch {
+      return buildProblem(
+        503,
+        'Proteção não verificada',
+        'O serviço do monBlock não está respondendo. Reinstale o serviço para restaurar a proteção.',
+        '/ipc/monblockd'
+      );
+    }
+  };
+  daemonClient.on('status', (status) => {
+    mainWindow?.webContents.send('monblock:daemon-status', status);
+    void refreshTrayMenu();
   });
-  blockServer.listen(49152, '127.0.0.1');
 
   const navigateMainWindow = (viewId: string): void => {
     if (!mainWindow) return;
@@ -308,7 +303,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   const refreshTrayMenu = async (): Promise<void> => {
     if (!tray) return;
-    const stateRes = await daemon.handleCommand({ type: 'GET_STATE' });
+    const stateRes = await call({ type: 'GET_STATE' });
     const pubState = 'state' in stateRes ? stateRes.state : null;
     const hasMenuSymbol = typeof (nativeImage as any).createMenuSymbol === 'function';
     const menuItems = buildTrayMenuTemplate(
@@ -335,14 +330,21 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   };
 
   // Registro dos canais IPC conectados ao MonBlockDaemon
-  ipcMain.handle('monblock:get-state', () => daemon.handleCommand({ type: 'GET_STATE' }));
+  ipcMain.handle('monblock:get-state', () => call({ type: 'GET_STATE' }));
+  ipcMain.handle('monblock:daemon-status', () => daemonClient.status);
+
+  // Reinstala o serviço abrindo o .pkg embutido no app (Fase 8); erro vira mensagem para a UI.
+  ipcMain.handle('monblock:reinstall-service', async () => {
+    const error = await shell.openPath(path.join(process.resourcesPath, 'monblockd.pkg'));
+    return error ? { status: 500, detail: `Não foi possível abrir o instalador: ${error}` } : { status: 200 };
+  });
 
   ipcMain.handle('monblock:initiate-pairing', async (_event, payload: {
     partnerName?: string;
     telegramChatId?: string;
     currentPartnerPassword?: string;
   }) => {
-    return daemon.handleCommand({
+    return call({
       type: 'INITIATE_PAIRING',
       partnerName: payload?.partnerName ?? '',
       telegramChatId: payload?.telegramChatId ?? '',
@@ -351,7 +353,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   });
 
   ipcMain.handle('monblock:check-pairing-status', async () => {
-    const res = await daemon.handleCommand({ type: 'CHECK_PAIRING_STATUS' });
+    const res = await call({ type: 'CHECK_PAIRING_STATUS' });
     if (res.status === 200 && 'paired' in res && res.paired) {
       await refreshTrayMenu();
     }
@@ -359,7 +361,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   });
 
   ipcMain.handle('monblock:cancel-pairing', async () => {
-    return daemon.handleCommand({ type: 'CANCEL_PAIRING' });
+    return call({ type: 'CANCEL_PAIRING' });
   });
 
   ipcMain.handle('monblock:pair-partner', async (_event, payload: {
@@ -367,7 +369,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     telegramChatId?: string;
     password?: string;
   }) => {
-    const res = await daemon.handleCommand({
+    const res = await call({
       type: 'PAIR_PARTNER',
       password: payload?.password ?? '',
       telegramChatId: payload?.telegramChatId,
@@ -377,33 +379,33 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   });
 
   ipcMain.handle('monblock:enable-category', async (_event, payload: { categoryId: string }) => {
-    const current = await daemon.handleCommand({ type: 'GET_STATE' });
+    const current = await call({ type: 'GET_STATE' });
     if (!('state' in current)) return current;
     const prevRules = current.state.rules;
     const nextCategories = Array.from(new Set([...prevRules.enabledCategories, payload.categoryId]));
-    return daemon.handleCommand({
+    return call({
       type: 'MUTATE_RULES',
       rules: { ...prevRules, enabledCategories: nextCategories },
     });
   });
 
   ipcMain.handle('monblock:add-batch-domains', async (_event, payload: { domains: string[] }) => {
-    const current = await daemon.handleCommand({ type: 'GET_STATE' });
+    const current = await call({ type: 'GET_STATE' });
     if (!('state' in current)) return current;
     const prevRules = current.state.rules;
     const nextDomains = Array.from(new Set([...prevRules.blockedDomains, ...(payload.domains ?? [])]));
-    return daemon.handleCommand({
+    return call({
       type: 'MUTATE_RULES',
       rules: { ...prevRules, blockedDomains: nextDomains },
     });
   });
 
   ipcMain.handle('monblock:add-keywords', async (_event, payload: { keywords: string[] }) => {
-    const current = await daemon.handleCommand({ type: 'GET_STATE' });
+    const current = await call({ type: 'GET_STATE' });
     if (!('state' in current)) return current;
     const prevRules = current.state.rules;
     const nextKeywords = Array.from(new Set([...prevRules.keywords, ...(payload.keywords ?? [])]));
-    return daemon.handleCommand({
+    return call({
       type: 'MUTATE_RULES',
       rules: { ...prevRules, keywords: nextKeywords },
     });
@@ -420,7 +422,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     token: string;
     target?: string;
   }) => {
-    const res = await daemon.handleCommand({
+    const res = await call({
       type: 'VERIFY_OFFLINE_TOKEN',
       challengeCode: payload.challengeCode,
       token: payload.token,
@@ -437,7 +439,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     if (!payload || typeof payload.recoveryCode !== 'string' || typeof payload.target !== 'string' || !/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(payload.target.trim())) {
       return { status: 400, detail: 'Informe um código e um domínio específico para a recuperação.' };
     }
-    const res = await daemon.handleCommand({
+    const res = await call({
       type: 'VERIFY_RECOVERY_CODE',
       code: payload.recoveryCode,
       target: payload.target.trim(),
@@ -447,7 +449,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   });
 
   ipcMain.handle('monblock:trigger-emergency-cooldown', async () => {
-    const res = await daemon.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
+    const res = await call({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
     await refreshTrayMenu();
     return res;
   });
@@ -457,7 +459,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     credential: string;
     challengeCode?: string;
   }) => {
-    const res = await daemon.handleCommand({
+    const res = await call({
       type: 'UNINSTALL_AUTHORIZED',
       password: payload.authMethod === 'PASSWORD' ? payload.credential : undefined,
       token: payload.authMethod === 'PERMANENT_TOKEN' ? payload.credential : undefined,
@@ -523,7 +525,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
       try {
         const now = Date.now();
         let wildcardGrant = false;
-        const res = await daemon.handleCommand({ type: 'GET_STATE' });
+        const res = await call({ type: 'GET_STATE' });
         if ('state' in res) {
           const grants = res.state.temporaryGrants.filter((g) => g.expiresAtMs > now);
           wildcardGrant = grants.some((g) => g.target === '*');
@@ -544,7 +546,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   // Revogação automática de concessões temporárias quando o Mac entra em sleep (RN-APP-04)
   powerMonitor.on('suspend', () => {
-    void daemon.handleCommand({ type: 'REVOKE_GRANTS_ON_SLEEP' }).then(() => refreshTrayMenu());
+    void call({ type: 'REVOKE_GRANTS_ON_SLEEP' }).then(() => refreshTrayMenu());
   });
 
   app.on('second-instance', () => {
@@ -562,11 +564,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   });
 
   app.on('will-quit', () => {
-    try {
-      blockServer.close();
-    } catch {
-      // Ignora erro de encerramento do servidor HTTP
-    }
+    daemonClient.close();
   });
 }
 

@@ -59,6 +59,12 @@ export interface MonBlockPersistentState {
   authFailures?: number;
   /** Até quando (tempo confiável) novas tentativas recebem 429. */
   authLockedUntilMs?: number;
+  /** Último heartbeat do daemon no tempo confiável (spec §3.3). */
+  lastHeartbeatMs?: number;
+  /** `true` só quando o daemon desligou por `SIGTERM`. */
+  cleanShutdown?: boolean;
+  /** Debounce do aviso de adulteração (1 por hora). */
+  lastDriftAlertMs?: number;
 }
 
 /** Marcador de "já houve Ajudante" que sobrevive à perda dos 3 cofres (RN-DAEMON-07). */

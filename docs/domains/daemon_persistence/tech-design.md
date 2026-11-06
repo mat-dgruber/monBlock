@@ -74,7 +74,7 @@ Prevalece sobre as seções anteriores onde houver conflito. Detalhes em `docs/a
 | Tema | Antes | Agora |
 | :--- | :--- | :--- |
 | Socket | `/var/run/monblockd.sock` | `/var/run/monblock/monblockd.sock` (diretório `root:monblock 0750`, socket `0660`), NDJSON ≤ 64 KiB |
-| Persistência | SQLite `state.db` | 3 cofres `MBV1.` (AES-256-GCM + HMAC); cofre 2 no System Keychain via `security -i` (stdin) |
+| Persistência | SQLite `state.db` + System Keychain | 3 cofres `MBV1.` (AES-256-GCM + HMAC): `/Library/Application Support/monBlock/state.primary`, `/var/db/monblock/state.mirror`, `/var/db/monblock/partner.seal` |
 | Chave | `safeStorage` (Keychain de login) | `/Library/Application Support/monBlock/vault.key`, `root:wheel 0600` |
 | Pareamento perdido | `wasPaired` em memória | Tombstone `/var/db/monblock/tombstone` (`uchg`) — RN-DAEMON-07 |
 | Tempo | `Date.now()` | `TrustedClock` (`src/daemon/trusted-clock.ts`) — RN-DAEMON-08 |
