@@ -3,7 +3,7 @@
 - **Data:** 2026-11-06
 - **Plano:** `docs/ai/plans/2026-11-05-daemon-root.md` (Fase 9)
 - **Branch:** `claude/plan-daemon-root-5adf07`
-- **Status:** E2E automatizado escrito, **ainda não executado** (precisa de `sudo`; roda no job `macos-package` da CI quando a branch for enviada). Checklist manual pendente.
+- **Status:** E2E automatizado **verde na CI** (run 42211839711 falhou no passo 5 por bug do roteiro, corrigido em `78482ca`; run 42212580701 em `e96a66f`: 7/7 passos). Checklist manual pendente.
 
 ## 1. O que já foi verificado nesta sessão (sem root)
 
@@ -31,6 +31,8 @@ Roda como root num runner descartável. Critérios BDD da spec §14 cobertos:
 | 5. Usuário Standard | `rm` dos cofres, `kill` do daemon, escrita no hosts e conexão ao socket negados (com controle positivo do `nc` como root); informa se o usuário do console entrou no grupo `monblock` |
 | 6. Desinstalação autorizada | senha errada → 403; certa → 200; hosts limpo, job descarregado, arquivos removidos |
 | 7. Cofres apagados por Admin | `tamperLockdown` e novo pareamento → 423 (D1-B) |
+
+Resultado na CI (`macos-latest`, `e96a66f`): todos os passos passaram; o usuário do console do runner (`runner`) entrou no grupo `monblock` pelo `postinstall`, e nenhum `._*` foi instalado (a dúvida da Fase 8 se resolveu). Ainda falta confirmar, no checklist, se a entrada no grupo vale para o Electron sem novo login.
 
 Não cobre (fica no checklist): Telegram (sem bot token na CI), Gatekeeper/notarização (sem Developer ID), reboot, navegadores reais.
 
