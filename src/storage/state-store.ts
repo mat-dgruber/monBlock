@@ -53,6 +53,8 @@ export interface MonBlockPersistentState {
   temporaryGrants: TemporaryGrant[];
   updatedAtMs: number;
   tamperLockdown?: boolean;
+  /** Snapshot do `TrustedClock` (RN-DAEMON-08); ausente em cofres antigos. */
+  clock?: { expiryMs: number; trustedMs: number };
 }
 
 /** Identificadores canônicos dos 3 cofres de persistência. */

@@ -59,6 +59,8 @@ export interface TelegramTransportResponse {
   ok: boolean;
   status: number;
   body?: unknown;
+  /** Cabeçalho `Date` da resposta TLS (âncora do `TrustedClock`). */
+  serverDate?: string;
 }
 
 export interface TelegramTransportAdapter {
@@ -82,6 +84,7 @@ export class NativeFetchTelegramTransport implements TelegramTransportAdapter {
       ok: response.ok,
       status: response.status,
       body,
+      serverDate: response.headers.get('date') ?? undefined,
     };
   }
 }
@@ -123,6 +126,7 @@ export interface TelegramPartnerClientOptions {
   cooldownMs?: number;
   sleepFn?: (ms: number) => Promise<void>;
   nowFn?: () => number;
+  onServerDate?: (date: string) => void;
 }
 
 /**
@@ -156,7 +160,17 @@ export class TelegramPartnerClient {
   constructor(options: TelegramPartnerClientOptions) {
     this.botToken = options.botToken ?? process.env.MONBLOCK_TELEGRAM_BOT_TOKEN ?? '';
     this.pairedChatId = (options.pairedChatId ?? '').trim();
-    this.transport = options.transport ?? new NativeFetchTelegramTransport();
+    const transport = options.transport ?? new NativeFetchTelegramTransport();
+    const onServerDate = options.onServerDate;
+    this.transport = onServerDate
+      ? {
+          send: async (request) => {
+            const res = await transport.send(request);
+            if (res.serverDate) onServerDate(res.serverDate);
+            return res;
+          },
+        }
+      : transport;
     this.timeoutMs = options.timeoutMs ?? 3000;
     this.baseDelayMs = options.baseDelayMs ?? 250;
     this.maxAttempts = options.maxAttempts ?? 3;
