@@ -65,6 +65,8 @@ export interface MonBlockPersistentState {
   cleanShutdown?: boolean;
   /** Debounce do aviso de adulteração (1 por hora). */
   lastDriftAlertMs?: number;
+  /** Migração única de userland já aplicada (RN-DAEMON-10); `id` garante idempotência. */
+  migration?: { id: string; format: 'MBV1' | 'LEGACY_JSON'; paired: boolean };
 }
 
 /** Marcador de "já houve Ajudante" que sobrevive à perda dos 3 cofres (RN-DAEMON-07). */
@@ -253,6 +255,16 @@ export class TripleStateStore {
     }
     if (successCount < 2) {
       throw errors[0] ?? new Error('Falha ao persistir quórum mínimo nos cofres.');
+    }
+  }
+
+  /** Decifra e valida um cofre serializado sem tocar no disco (migração de userland, RN-DAEMON-10). */
+  public decodeVault(raw: string): MonBlockPersistentState | null {
+    try {
+      const parsed = JSON.parse(openVaultPayload(this.encryptionKey, raw)) as SignedVaultEnvelope;
+      return this.verifyEnvelope(parsed) ? parsed.state : null;
+    } catch {
+      return null;
     }
   }
 

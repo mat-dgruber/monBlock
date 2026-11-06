@@ -198,7 +198,7 @@ Feita **uma vez**, iniciada pelo Electron (só ele tem a chave antiga no Keychai
 4. Daemon aceita **só se** o armazenamento root estiver vazio **e** não houver tombstone; caso contrário, 409.
 5. Tratamento, porque o payload vem do usuário (não confiável):
    - **Regras:** mescla só restritiva com o padrão Fail-Closed (`união` de categorias/domínios/palavras; `lockIncognito = true`; allowlist e concessões descartadas).
-   - **`MBV1.`:** credenciais do Ajudante aceitas (o usuário já podia forjá-las em userland; a migração não piora nada) **e** o daemon manda ao `chatId` migrado: "monBlock passou para o modo protegido. Foi você que pareou? [Confirmar] [Não reconheço]". "Não reconheço" → descarta o pareamento e volta para D1.
+   - **`MBV1.`:** credenciais do Ajudante aceitas (o usuário já podia forjá-las em userland; a migração não piora nada) e o daemon avisa o `chatId` migrado que o monBlock passou para o modo protegido. **Revisto na Fase 7:** sem botões de confirmação, porque a mensagem vai ao chat do próprio payload (um payload forjado a mandaria a quem forjou).
    - **JSON legado:** HMAC com chave pública não prova nada → credenciais descartadas, só regras migram; o usuário pareia de novo.
 6. Sucesso → Electron renomeia `vaults/` para `vaults.migrated-<data>/` e apaga `vault.key` do usuário. Idempotente por `migrationId` (repetição devolve o mesmo resultado).
 7. Falha em qualquer passo → nada é apagado em userland; a UI mostra erro e tenta de novo no próximo boot.

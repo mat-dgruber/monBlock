@@ -1006,3 +1006,126 @@ describe('MonBlockDaemon — watchdog (tick) e detecção de inatividade (spec �
     expect(alerts.some((a) => /inativo/i.test(a))).toBe(false);
   });
 });
+
+describe('MonBlockDaemon — MIGRATE_LEGACY_STATE (RN-DAEMON-10)', () => {
+  let tmpDir: string;
+  let store: TripleStateStore;
+  let alerts: Array<{ text: string; chatId?: string }>;
+  const t = { wall: 1_700_000_000_000, mono: 0 };
+
+  function build(): MonBlockDaemon {
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath: path.join(tmpDir, 'hosts'),
+      commandExecutor: async () => undefined,
+    });
+    const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
+    const telegramClient = {
+      sendAlert: async (text: string, chatId?: string) => {
+        alerts.push({ text, chatId });
+        return { ok: true };
+      },
+      ping: async () => ({ ok: true }),
+    } as any;
+    return new MonBlockDaemon({ store, enforcer, clock, telegramClient });
+  }
+
+  const legacyState = (over: Record<string, unknown> = {}) => ({
+    version: 9,
+    paired: true,
+    rules: {
+      enabledCategories: ['gambling', 'nao-existe'],
+      blockedDomains: ['https://www.tiktok.com/x', 'bad\nline.com'],
+      allowlistDomains: ['liberado.com'],
+      keywords: ['aposta'],
+      lockIncognito: false,
+    },
+    partnerCredentials: {
+      passwordHash: 'scrypt$abc$def',
+      salt: 'abc',
+      hmacSecret: 'segredo-antigo',
+      recoveryCodeHashes: ['scrypt$a$b'],
+      usedTokens: ['tok-1'],
+      telegramChatId: '111',
+    },
+    cooldown: { startedAtMs: 1 },
+    temporaryGrants: [{ target: '*', expiresAtMs: 9e15 }],
+    updatedAtMs: 5,
+    ...over,
+  });
+
+  beforeEach(() => {
+    alerts = [];
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-mig-'));
+    store = new TripleStateStore({
+      primaryPath: path.join(tmpDir, 'a'),
+      keychainPath: path.join(tmpDir, 'b'),
+      sealPath: path.join(tmpDir, 'c'),
+      integrityKey: 'mig-key',
+    });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('MBV1: migra regras de forma só restritiva e o Ajudante, grava tombstone e avisa o Ajudante', async () => {
+    const d = build();
+
+    const res = await d.handleCommand({ type: 'MIGRATE_LEGACY_STATE', format: 'MBV1', migrationId: 'm1', state: legacyState() });
+    const after = await d.handleCommand({ type: 'GET_STATE' });
+
+    expect(res).toMatchObject({ status: 200, migrated: true, paired: true });
+    const s = (after as any).state;
+    expect(s.paired).toBe(true);
+    expect(s.rules.enabledCategories).toEqual(expect.arrayContaining(['adult', 'gambling']));
+    expect(s.rules.enabledCategories).not.toContain('nao-existe');
+    expect(s.rules.blockedDomains).toEqual(['tiktok.com']);
+    expect(s.rules.allowlistDomains).toEqual([]);
+    expect(s.rules.lockIncognito).toBe(true);
+    expect(s.rules.keywords).toEqual(['aposta']);
+    expect(s.temporaryGrants).toEqual([]);
+    expect(s.cooldown.startedAtMs).toBeNull();
+    expect(store.readTombstone()).toMatchObject({ telegramChatId: '111' });
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.chatId).toBe('111');
+  });
+
+  it('JSON legado: migra só as regras e descarta as credenciais', async () => {
+    const res = await build().handleCommand({ type: 'MIGRATE_LEGACY_STATE', format: 'LEGACY_JSON', migrationId: 'm2', state: legacyState() });
+
+    expect(res).toMatchObject({ status: 200, migrated: true, paired: false });
+    expect(store.readTombstone()).toBeNull();
+    expect(alerts).toEqual([]);
+  });
+
+  it('é idempotente pelo migrationId e recusa (409) quando já há Ajudante ou outra migração', async () => {
+    const d = build();
+    const first = await d.handleCommand({ type: 'MIGRATE_LEGACY_STATE', format: 'MBV1', migrationId: 'm3', state: legacyState() });
+
+    const again = await d.handleCommand({ type: 'MIGRATE_LEGACY_STATE', format: 'MBV1', migrationId: 'm3', state: legacyState() });
+    const other = await d.handleCommand({ type: 'MIGRATE_LEGACY_STATE', format: 'MBV1', migrationId: 'm4', state: legacyState() });
+
+    expect(again).toEqual(first);
+    expect(other.status).toBe(409);
+    expect(alerts).toHaveLength(1);
+  });
+
+  it('recusa (409) quando o daemon root já tem tombstone, mesmo com os cofres perdidos', async () => {
+    store.writeTombstone({ pairedAtMs: 1, telegramChatId: '999' });
+
+    const res = await build().handleCommand({ type: 'MIGRATE_LEGACY_STATE', format: 'MBV1', migrationId: 'm5', state: legacyState() });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('payload malformado recebe 400', async () => {
+    const res = await build().handleCommand({
+      type: 'MIGRATE_LEGACY_STATE',
+      format: 'MBV1',
+      migrationId: 'm6',
+      state: { rules: 'nada' } as any,
+    });
+
+    expect(res.status).toBe(400);
+  });
+});
