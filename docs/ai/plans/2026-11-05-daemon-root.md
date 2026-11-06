@@ -134,6 +134,8 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 **Pronto:** E2E verde na CI + checklist preenchido; CHANGELOG `0.2.0` (MINOR: novo modo de instalação; o contrato do IPC é interno).
 
+> **Execução (2026-11-06):** `tests/e2e/root/run.sh` (7 passos) + `tests/e2e/root/ipc.mjs` entram no job `macos-package` como `sudo env "PATH=$PATH"`. Escrito e validado com `sh -n`/`shellcheck`, **ainda não executado** (precisa da CI). A sonda de permissão do socket usa `nc -U` com controle positivo como root, para não passar por engano quando o usuário de teste não consegue nem executar o `node` da home do runner. O `uninstall.sh` dispara 2 s depois da resposta 200, para o `bootout` não derrubar o daemon antes de responder. CHANGELOG em `[Unreleased]`, como o resto do projeto (nenhuma versão fechada ainda); o bump para 0.2.0 fica para o release. Checklist manual em `docs/ai/reports/2026-11-06-e2e-daemon-root.md`.
+
 ---
 
 ## Riscos e rollback por fase
