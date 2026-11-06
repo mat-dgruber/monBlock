@@ -731,3 +731,162 @@ describe('MonBlockDaemon com TrustedClock (RN-DAEMON-08)', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('MonBlockDaemon — tombstone (RN-DAEMON-07) e rate limit (RN-DAEMON-09)', () => {
+  let tmpDir: string;
+  let store: TripleStateStore;
+  let daemon: MonBlockDaemon;
+  const t = { wall: 1_700_000_000_000, mono: 0 };
+  const H = 3600_000;
+  const PASSWORD = 'Senha#Forte2026';
+
+  function telegramReplyingFrom(chatId: string) {
+    return {
+      sendPairingInvitation: async () => ({ ok: true, status: 200 }),
+      pollUpdates: async () => ({
+        ok: true,
+        updates: [{ update_id: 1, message: { message_id: 7, chat: { id: chatId }, text: `/senha ${PASSWORD}` } }],
+      }),
+      extractPasswordFromUpdate: (update: any, expected: string) =>
+        String(update?.message?.chat?.id) === expected
+          ? { valid: true, password: PASSWORD, messageId: 7 }
+          : { valid: false, error: 'chat diferente' },
+      sendEmergencyKit: async () => ({ ok: true, status: 200 }),
+      deleteMessage: async () => ({ ok: true, status: 200 }),
+    } as any;
+  }
+
+  function buildDaemon(telegramClient?: any): MonBlockDaemon {
+    const hostsPath = path.join(tmpDir, 'hosts');
+    if (!fs.existsSync(hostsPath)) fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath,
+      chromiumPlistPath: path.join(tmpDir, 'chrome.plist'),
+      firefoxPoliciesPath: path.join(tmpDir, 'policies.json'),
+      commandExecutor: async () => undefined,
+    });
+    const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
+    return new MonBlockDaemon({ store, enforcer, clock, telegramClient });
+  }
+
+  function wipeVaults(): void {
+    for (const f of ['a.json', 'b.json', 'c.seal']) fs.rmSync(path.join(tmpDir, f), { force: true });
+  }
+
+  async function pairViaTelegram(d: MonBlockDaemon, chatId: string) {
+    const init = await d.handleCommand({ type: 'INITIATE_PAIRING', partnerName: 'Ana', telegramChatId: chatId });
+    if (init.status !== 200) return init;
+    return d.handleCommand({ type: 'CHECK_PAIRING_STATUS' });
+  }
+
+  beforeEach(() => {
+    t.wall = 1_700_000_000_000;
+    t.mono = 0;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-tomb-'));
+    store = new TripleStateStore({
+      primaryPath: path.join(tmpDir, 'a.json'),
+      keychainPath: path.join(tmpDir, 'b.json'),
+      sealPath: path.join(tmpDir, 'c.seal'),
+      integrityKey: 'tomb-test-key',
+    });
+    daemon = buildDaemon();
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('cofres apagados após pareamento: PAIR_PARTNER direto é recusado (423)', async () => {
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: PASSWORD, telegramChatId: '111' });
+    wipeVaults();
+
+    const res = await buildDaemon().handleCommand({ type: 'PAIR_PARTNER', password: 'OutraSenha#99' });
+
+    expect(res.status).toBe(423);
+  });
+
+  it('cofres apagados: INITIATE_PAIRING com outro chatId é recusado (423)', async () => {
+    await pairViaTelegram(buildDaemon(telegramReplyingFrom('111')), '111');
+    wipeVaults();
+
+    const res = await buildDaemon(telegramReplyingFrom('999')).handleCommand({
+      type: 'INITIATE_PAIRING',
+      partnerName: 'Outro',
+      telegramChatId: '999',
+    });
+
+    expect(res.status).toBe(423);
+  });
+
+  it('cofres apagados: o Ajudante anterior (mesmo chatId) re-pareia pelo Telegram', async () => {
+    await pairViaTelegram(buildDaemon(telegramReplyingFrom('111')), '111');
+    wipeVaults();
+
+    const res = await pairViaTelegram(buildDaemon(telegramReplyingFrom('111')), '111');
+
+    expect(res.status).toBe(200);
+    expect('paired' in res && res.paired).toBe(true);
+  });
+
+  it('cofres apagados: novo Ajudante é aceito só após 72h de cooldown confiável', async () => {
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: PASSWORD, telegramChatId: '111' });
+    wipeVaults();
+    const d = buildDaemon();
+    await d.handleCommand({ type: 'TRIGGER_EMERGENCY_COOLDOWN' });
+
+    t.wall += 72 * H; // relógio adiantado não conta
+    const early = await d.handleCommand({ type: 'PAIR_PARTNER', password: 'OutraSenha#99' });
+    t.mono += 72 * H;
+    const late = await d.handleCommand({ type: 'PAIR_PARTNER', password: 'OutraSenha#99' });
+
+    expect(early.status).toBe(423);
+    expect(late.status).toBe(200);
+  });
+
+  it('primeira instalação (sem tombstone) pareia normalmente', async () => {
+    const res = await daemon.handleCommand({ type: 'PAIR_PARTNER', password: PASSWORD });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('6ª tentativa após 5 senhas erradas recebe 429 mesmo com a senha certa', async () => {
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: PASSWORD });
+    for (let i = 0; i < 5; i++) {
+      expect((await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'errada' })).status).toBe(403);
+    }
+
+    const locked = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: PASSWORD });
+    t.mono += 61_000;
+    const unlocked = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: PASSWORD });
+
+    expect(locked.status).toBe(429);
+    expect(unlocked.status).toBe(200);
+  });
+
+  it('o bloqueio por tentativas sobrevive ao reinício do daemon', async () => {
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: PASSWORD });
+    for (let i = 0; i < 5; i++) await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'errada' });
+
+    const res = await buildDaemon().handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: PASSWORD });
+
+    expect(res.status).toBe(429);
+  });
+
+  it('um sucesso zera o contador de falhas', async () => {
+    const secret = 'rl-secret';
+    await daemon.handleCommand({ type: 'PAIR_PARTNER', password: PASSWORD, hmacSecret: secret });
+    for (let i = 0; i < 4; i++) await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'errada' });
+    const ok = await daemon.handleCommand({
+      type: 'VERIFY_OFFLINE_TOKEN',
+      challengeCode: 'MB-5555-R1',
+      token: generateChallengeToken(secret, 'MB-5555-R1', '15m'),
+      target: 'x.com',
+    });
+    expect(ok.status).toBe(200);
+
+    for (let i = 0; i < 4; i++) await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'errada' });
+    const res = await daemon.handleCommand({ type: 'UNINSTALL_AUTHORIZED', password: 'errada' });
+
+    expect(res.status).toBe(403);
+  });
+});

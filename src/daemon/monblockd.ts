@@ -38,7 +38,7 @@ import type {
 export interface ProblemDetailsResponse {
   type: string;
   title: string;
-  status: 400 | 403 | 409 | 423 | 500;
+  status: 400 | 403 | 409 | 423 | 429 | 500;
   detail: string;
   instance: string;
 }
@@ -180,6 +180,14 @@ function buildProblem(
   };
 }
 
+/** Comandos que trazem credencial do Ajudante (contam para o rate limit). `PAIR_PARTNER.password` é a senha nova. */
+function carriesPartnerCredential(cmd: DaemonCommand): boolean {
+  const c = cmd as unknown as Record<string, unknown>;
+  const keys = ['token', 'code', 'currentPartnerPassword'];
+  if (cmd.type !== 'PAIR_PARTNER') keys.push('password');
+  return keys.some((k) => typeof c[k] === 'string' && (c[k] as string).length > 0);
+}
+
 function maskTelegramChatId(chatId?: string): string | undefined {
   if (!chatId) return undefined;
   const trimmed = chatId.trim();
@@ -214,7 +222,6 @@ export class MonBlockDaemon {
   private readonly telegramClient?: TelegramPartnerClient;
   private pendingPairing: PendingPairingState | null = null;
   private isCheckingPairing = false;
-  private wasPaired = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
 
   constructor(options: MonBlockDaemonOptions) {
@@ -305,19 +312,83 @@ export class MonBlockDaemon {
    * Processa de forma determinística um comando IPC recebido pelo daemon.
    */
   private async processCommand(cmd: DaemonCommand): Promise<DaemonResponse> {
-    const reconciled = this.store.loadAndReconcile({ expectPaired: this.wasPaired });
-    const { state } = reconciled;
+    const hasCredential = carriesPartnerCredential(cmd);
+    if (hasCredential) {
+      const { state } = this.loadState();
+      if ((state.authLockedUntilMs ?? 0) > this.clock.trustedNow()) {
+        return buildProblem(
+          429,
+          'Muitas Tentativas (RN-DAEMON-09)',
+          'Credenciais do Ajudante erradas várias vezes seguidas. Aguarde antes de tentar de novo.',
+          '/ipc/monblockd/auth'
+        );
+      }
+    }
+    const response = await this.runCommand(cmd);
+    if (hasCredential) this.recordAuthAttempt(response.status === 403);
+    return response;
+  }
+
+  /** Carrega e reconcilia os cofres; na primeira leitura, retoma o relógio persistido. */
+  private loadState(): ReturnType<TripleStateStore['loadAndReconcile']> {
+    const reconciled = this.store.loadAndReconcile();
     if (!this.clockRestored) {
-      if (state.clock) this.clock.restore(state.clock);
+      if (reconciled.state.clock) this.clock.restore(reconciled.state.clock);
       this.clockRestored = true;
     }
+    return reconciled;
+  }
+
+  /** RN-DAEMON-09: após 5 falhas, espera `min(2^(n-5) min, 24 h)` no tempo confiável. */
+  private recordAuthAttempt(failed: boolean): void {
+    const { state } = this.store.loadAndReconcile();
+    if (failed) {
+      const failures = (state.authFailures ?? 0) + 1;
+      const lockedUntil =
+        failures >= 5
+          ? this.clock.trustedNow() + Math.min(2 ** (failures - 5) * 60_000, 24 * 3600_000)
+          : state.authLockedUntilMs;
+      this.save({ ...state, authFailures: failures, authLockedUntilMs: lockedUntil });
+    } else if (state.authFailures) {
+      this.save({ ...state, authFailures: 0, authLockedUntilMs: undefined });
+    }
+  }
+
+  /**
+   * RN-DAEMON-07 (D1-B): com tombstone e sem credenciais (cofres perdidos), só o Ajudante
+   * anterior (mesmo chatId, provado ao responder pelo Telegram) ou 72h de cooldown liberam.
+   */
+  private repairingGate(
+    state: MonBlockPersistentState,
+    trustedNow: number,
+    telegramChatId: string | undefined,
+    instance: string
+  ): ProblemDetailsResponse | null {
+    if (state.partnerCredentials) return null;
+    const tombstone = this.store.readTombstone();
+    if (!tombstone) return null;
+    if (telegramChatId && tombstone.telegramChatId === telegramChatId) return null;
+    const startedAtMs = state.cooldown.startedAtMs;
+    if (
+      startedAtMs !== null &&
+      evaluateEmergencyCooldown(new Date(startedAtMs).toISOString(), trustedNow).unlocked
+    ) {
+      return null;
+    }
+    return buildProblem(
+      423,
+      'Re-pareamento Bloqueado (RN-DAEMON-07)',
+      'Os dados do Ajudante anterior sumiram. Re-pareie com o mesmo Ajudante pelo Telegram ou conclua o cooldown de 72 horas.',
+      instance
+    );
+  }
+
+  private async runCommand(cmd: DaemonCommand): Promise<DaemonResponse> {
+    const reconciled = this.loadState();
+    const { state } = reconciled;
     // `now` (expiração, updatedAtMs) nunca recua; `trustedNow` (cooldown) ignora a parede.
     const now = this.clock.nowForExpiry();
     const trustedNow = this.clock.trustedNow();
-
-    if (state.paired) {
-      this.wasPaired = true;
-    }
 
     const activeGrants = state.temporaryGrants.filter((g) => g.expiresAtMs > now);
     const grantsExpired = activeGrants.length !== state.temporaryGrants.length;
@@ -366,6 +437,14 @@ export class MonBlockDaemon {
             );
           }
         }
+
+        const initiateGate = this.repairingGate(
+          state,
+          trustedNow,
+          telegramChatId,
+          '/ipc/monblockd/initiate-pairing'
+        );
+        if (initiateGate) return initiateGate;
 
         const expiresAtMs = now + 15 * 60 * 1000;
         this.pendingPairing = {
@@ -459,6 +538,7 @@ export class MonBlockDaemon {
                   ...state,
                   version: state.version + 1,
                   paired: true,
+                  cooldown: { startedAtMs: null },
                   partnerCredentials: {
                     passwordHash,
                     salt,
@@ -470,8 +550,11 @@ export class MonBlockDaemon {
                   updatedAtMs: now,
                 };
 
-                this.wasPaired = true;
                 this.save(nextState);
+                this.store.writeTombstone({
+                  pairedAtMs: trustedNow,
+                  telegramChatId: this.pendingPairing.telegramChatId,
+                });
                 await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
                 // Envia os 5 códigos de emergência exclusivamente ao Telegram do Ajudante
@@ -547,6 +630,10 @@ export class MonBlockDaemon {
           }
         }
 
+        // PAIR_PARTNER não passa pelo Telegram: o chatId informado não prova nada, só o cooldown libera.
+        const pairGate = this.repairingGate(state, trustedNow, undefined, '/ipc/monblockd/pair-partner');
+        if (pairGate) return pairGate;
+
         const hmacSecret =
           cmd.hmacSecret && cmd.hmacSecret.trim().length > 0
             ? cmd.hmacSecret.trim()
@@ -559,6 +646,7 @@ export class MonBlockDaemon {
           ...state,
           version: state.version + 1,
           paired: true,
+          cooldown: { startedAtMs: null },
           partnerCredentials: {
             passwordHash,
             salt,
@@ -570,8 +658,8 @@ export class MonBlockDaemon {
           updatedAtMs: now,
         };
 
-        this.wasPaired = true;
         this.save(nextState);
+        this.store.writeTombstone({ pairedAtMs: trustedNow, telegramChatId: cmd.telegramChatId });
         await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
 
         return {
@@ -865,7 +953,7 @@ export class MonBlockDaemon {
         }
 
         await this.enforcer.restoreSystemCleanState();
-        this.wasPaired = false;
+        this.store.clearTombstone();
         this.save({
           ...state,
           version: state.version + 1,

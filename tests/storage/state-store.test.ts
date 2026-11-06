@@ -293,3 +293,27 @@ describe('TripleStateStore (MOD-03 — Persistência Tripla Self-Healing)', () =
     expect(() => resolveVaultIntegrityKey()).toThrow(/Chave de integridade/);
   });
 });
+
+describe('TripleStateStore — tombstone (RN-DAEMON-07)', () => {
+  it('grava, lê e trata tombstone corrompido como pareamento prévio (Fail-Closed)', () => {
+    // Arrange
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-tomb-store-'));
+    const store = new TripleStateStore({
+      primaryPath: path.join(dir, 'a.json'),
+      keychainPath: path.join(dir, 'b.json'),
+      sealPath: path.join(dir, 'c.seal'),
+      integrityKey: 'tomb-store-key',
+    });
+
+    // Act + Assert
+    expect(store.readTombstone()).toBeNull();
+    store.writeTombstone({ pairedAtMs: 123, telegramChatId: '111' });
+    expect(store.readTombstone()).toEqual({ pairedAtMs: 123, telegramChatId: '111' });
+    expect(fs.readFileSync(path.join(dir, 'tombstone'), 'utf8')).not.toContain('111');
+
+    fs.writeFileSync(path.join(dir, 'tombstone'), 'lixo');
+    expect(store.readTombstone()).toEqual({ pairedAtMs: 0 });
+    expect(store.loadAndReconcile().state.tamperLockdown).toBe(true);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
