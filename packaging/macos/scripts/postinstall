@@ -24,5 +24,8 @@ fi
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
   CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER")
   /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/open "$HELPER_DIR/monblock-browsers.mobileconfig" || true
+  # Leva direto ao painel onde o perfil baixado é aprovado (o alerta do macOS não diz onde fica).
+  /bin/sleep 2
+  /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/open "x-apple.systempreferences:com.apple.Profiles-Settings.extension" || true
 fi
 exit 0
