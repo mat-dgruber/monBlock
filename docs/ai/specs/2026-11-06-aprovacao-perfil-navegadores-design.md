@@ -79,7 +79,7 @@ Fora de escopo: MDM, instalar o perfil sem o usuário (o macOS não permite), Fi
   e os Ajustes abrem no painel de perfis.
 - **Dado** o perfil não instalado, **quando** abro o app, **então** vejo o aviso; **quando** clico
   "Abrir Ajustes", **então** os Ajustes abrem no painel de perfis.
-- **Dado** que aprovo o perfil, **então** em até ~60 s o aviso some sem reiniciar o app.
+- **Dado** que aprovo o perfil, **então** em até ~90 s (tick de 60 s do daemon + consulta da UI a cada 30 s) o aviso some sem reiniciar o app.
 - **Dado** que `profiles` falha ou estoura o timeout, **então** `browserProfileInstalled` é `null`,
   o aviso não aparece e o log registra o erro.
 - Aviso acessível: anunciado por leitor de tela (`role="status"`), foco visível, operável por teclado,

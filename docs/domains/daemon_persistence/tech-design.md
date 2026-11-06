@@ -82,4 +82,5 @@ Prevalece sobre as seções anteriores onde houver conflito. Detalhes em `docs/a
 | Chromium | `/Library/Managed Preferences` | Perfil `.mobileconfig` (aprovado pelo usuário) + escrita direta como reforço |
 | Firefox | `policies.json` | `/Library/Preferences/org.mozilla.firefox.plist` |
 | Binário | — | Node SEA por arquitetura (`lipo -create`), hardened runtime + `allow-jit`, instalado por `.pkg` |
+| Perfil dos navegadores | aprovação sem orientação | Daemon checa `profiles list -all` no watchdog e expõe `browserProfileInstalled` (`true`/`false`/`null`); app avisa só em `false` (spec `2026-11-06-aprovacao-perfil-navegadores-design.md`) |
 | App | `electron .` | `monBlock.app` (`npm run build:app`) com `Contents/Resources/monblockd.pkg`; o `.pkg` instala só o daemon, não o app: o socket não autentica o cliente, então `root:wheel` no app não protege nada (spec `2026-11-06-empacotamento-app-macos-design.md` §4) |
