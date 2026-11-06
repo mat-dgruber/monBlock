@@ -39,16 +39,44 @@ const HOSTNAME_RE =
 export function applyAtomicHostsBlock(
   hostsFilePath: string,
   blockedDomains: string[]
-): { backupPath: string; writtenCount: number } {
+): { backupPath: string; writtenCount: number; changed: boolean } {
   const backupPath = `${hostsFilePath}.monblock.bak`;
-  const tmpPath = `${hostsFilePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   const hostsExists = fs.existsSync(hostsFilePath);
   const current = hostsExists ? fs.readFileSync(hostsFilePath, 'utf8') : '';
+  const { content: nextContent, writtenCount } = buildManagedHostsContent(current, blockedDomains);
+
+  // Sem mudança, não reescreve: o watchdog reaplica a cada 60 s (ADR-0007).
+  if (hostsExists && nextContent === current) {
+    return { backupPath, writtenCount, changed: false };
+  }
 
   if (hostsExists && !fs.existsSync(backupPath)) {
     fs.writeFileSync(backupPath, current, 'utf8');
   }
 
+  const tmpPath = `${hostsFilePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, nextContent, 'utf8');
+    fs.renameSync(tmpPath, hostsFilePath);
+  } finally {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {
+      // Ignora erro residual de limpeza
+    }
+  }
+
+  return { backupPath, writtenCount, changed: true };
+}
+
+/**
+ * Monta o conteúdo do hosts: linhas do usuário intactas + bloco gerenciado do monBlock.
+ * Pura, para que `verifyApplied` compare o disco com o esperado.
+ */
+export function buildManagedHostsContent(
+  current: string,
+  blockedDomains: string[]
+): { content: string; writtenCount: number } {
   const baseContent = current
     .replace(new RegExp(`${START_MARKER}[\\s\\S]*?${END_MARKER}\\n?`, 'g'), '')
     .trimEnd();
@@ -69,19 +97,7 @@ export function applyAtomicHostsBlock(
   }
   lines.push(END_MARKER);
 
-  const nextContent = `${baseContent}\n\n${lines.join('\n')}\n`;
-  try {
-    fs.writeFileSync(tmpPath, nextContent, 'utf8');
-    fs.renameSync(tmpPath, hostsFilePath);
-  } finally {
-    try {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    } catch {
-      // Ignora erro residual de limpeza
-    }
-  }
-
-  return { backupPath, writtenCount: safeDomains.length };
+  return { content: `${baseContent}\n\n${lines.join('\n')}\n`, writtenCount: safeDomains.length };
 }
 
 /**

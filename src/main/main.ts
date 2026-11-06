@@ -279,8 +279,8 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   const enforcer = new MacOSPlatformEnforcer({
     hostsPath: path.join(enforcerDir, 'hosts.monblock'),
-    chromiumPlistPath: path.join(enforcerDir, 'com.google.Chrome.plist'),
-    firefoxPoliciesPath: path.join(enforcerDir, 'policies.json'),
+    chromiumPlistPaths: [path.join(enforcerDir, 'com.google.Chrome.plist')],
+    firefoxPlistPath: path.join(enforcerDir, 'org.mozilla.firefox.plist'),
   });
 
   const daemon = new MonBlockDaemon({ store, enforcer });
