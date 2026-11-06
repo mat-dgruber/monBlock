@@ -1,7 +1,7 @@
 # Rota inicial e revisão das telas do app — spec de design
 
 - Data: 2026-11-06 · Base: `main` @ `0caf20c` (v0.3.0, PR #4 incluído)
-- Status: **aprovada pelo usuário em 2026-11-06 (D1–D6 como propostas).** Implementação ainda não iniciada.
+- Status: **aprovada pelo usuário em 2026-11-06 (D1–D6 como propostas).** F0, F1 e F2 implementadas (PR #5); P0-4 (`empty`/`partial`), F3 e F4 pendentes. F2: D3 resolvido removendo o campo "Por que..." do dialog de pausa; tela final dispensada (o passo 4 com confirmação manual é o fechamento).
 - Escopo: `src/renderer/index.html`, `src/renderer/renderer-init.js`, `src/main/main.ts`, `docs/design/tokens.css`.
 - Relatórios completos das 5 revisões (separados, sem síntese opaca): pasta de notas da sessão, `revisao-1-ux-reviewer.md`, `revisao-2-design.md`, `revisao-3-design-review.md`, `revisao-4-design-critique.md`, `revisao-5-animacao.md`; evidências em `evidencias.md`.
 

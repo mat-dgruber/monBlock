@@ -332,6 +332,8 @@ globalThis.monblockRenderer = { pickInitialView };
       status.textContent = result.state.tamperLockdown ? 'Estado carregado — modo de segurança' : 'Estado da proteção carregado';
       status.dataset.status = result.state.tamperLockdown ? 'error' : 'loaded';
       if (quickStats) quickStats.textContent = result.state.tamperLockdown ? 'Modo de segurança' : 'Proteção ativa';
+      isPaired = result.state.paired === true;
+      renderOnboardingGate();
       partnerStatus.textContent = result.state.paired ? 'Ajudante pareado' : 'Ajudante ainda não pareado';
       htmlEl.dataset.uiState = 'active';
       return true;
@@ -395,28 +397,59 @@ globalThis.monblockRenderer = { pickInitialView };
     document.getElementById('batchDomainsTextarea')?.focus();
   });
 
-  // Stepper Interativo de Onboarding (Passos 1 a 4)
-  function switchOnboardingStep(stepNumber) {
+  // Stepper Interativo de Onboarding (Passos 1 a 4). O passo 4 (códigos de emergência) só existe depois do pareamento.
+  let isPaired = false;
+  const confirmCodesCheckbox = document.getElementById('onboardingConfirmCodesCheckbox');
+  const finishOnboardingBtn = document.getElementById('goToCategoriesBtn');
+  const nextToStep4Btn = document.getElementById('nextToStep4Btn');
+  const stepTab = (i) => document.getElementById(`stepIndicator${i}`);
+
+  function renderOnboardingGate() {
+    if (nextToStep4Btn) nextToStep4Btn.disabled = !isPaired;
+    const tab4 = stepTab(4);
+    if (tab4) {
+      if (isPaired) tab4.removeAttribute('aria-disabled');
+      else tab4.setAttribute('aria-disabled', 'true');
+    }
+    if (finishOnboardingBtn) finishOnboardingBtn.disabled = !confirmCodesCheckbox?.checked;
+  }
+  confirmCodesCheckbox?.addEventListener('change', renderOnboardingGate);
+
+  function switchOnboardingStep(stepNumber, moveFocus = false) {
+    if (stepNumber === 4 && !isPaired) return;
     for (let i = 1; i <= 4; i++) {
       const panel = document.getElementById(`onboardingStepPanel${i}`);
-      const tab = document.getElementById(`stepIndicator${i}`);
-      if (panel) panel.style.display = i === stepNumber ? 'block' : 'none';
+      const tab = stepTab(i);
+      if (panel) panel.hidden = i !== stepNumber;
       if (tab) {
         tab.classList.toggle('active', i === stepNumber);
         tab.setAttribute('aria-selected', String(i === stepNumber));
+        tab.tabIndex = i === stepNumber ? 0 : -1;
       }
     }
+    const progress = document.getElementById('onboardingProgress');
+    if (progress) progress.textContent = `Passo ${stepNumber} de 4`;
+    if (moveFocus) stepTab(stepNumber)?.focus();
   }
 
   for (let i = 1; i <= 4; i++) {
-    document.getElementById(`stepIndicator${i}`)?.addEventListener('click', () => switchOnboardingStep(i));
+    stepTab(i)?.addEventListener('click', () => switchOnboardingStep(i));
+    // Setas/Home/End movem entre abas (padrão ARIA tabs); o passo 4 bloqueado é pulado.
+    stepTab(i)?.addEventListener('keydown', (event) => {
+      const last = isPaired ? 4 : 3;
+      const next = { ArrowRight: i === last ? 1 : i + 1, ArrowLeft: i === 1 ? last : i - 1, Home: 1, End: last }[event.key];
+      if (!next) return;
+      event.preventDefault();
+      switchOnboardingStep(next, true);
+    });
   }
   document.getElementById('nextToStep2Btn')?.addEventListener('click', () => switchOnboardingStep(2));
   document.getElementById('backToStep1Btn')?.addEventListener('click', () => switchOnboardingStep(1));
   document.getElementById('nextToStep3Btn')?.addEventListener('click', () => switchOnboardingStep(3));
   document.getElementById('backToStep2Btn')?.addEventListener('click', () => switchOnboardingStep(2));
-  document.getElementById('nextToStep4Btn')?.addEventListener('click', () => switchOnboardingStep(4));
+  nextToStep4Btn?.addEventListener('click', () => switchOnboardingStep(4));
   document.getElementById('backToStep3Btn')?.addEventListener('click', () => switchOnboardingStep(3));
+  renderOnboardingGate();
 
   // Modal de Pausa Consciente & Respiração 10s
   let breathingInterval = null;
@@ -543,8 +576,6 @@ globalThis.monblockRenderer = { pickInitialView };
           const statusRes = await bridge.checkPairingStatus();
           if (statusRes?.status === 200 && statusRes.paired) {
             stopPairingPoll();
-            const cb = document.getElementById('onboardingConfirmCodesCheckbox');
-            if (cb) cb.checked = true;
             await loadState();
             notify('Ajudante configurou a Senha Mestra no Telegram! Proteção ativa.');
             switchOnboardingStep(4);

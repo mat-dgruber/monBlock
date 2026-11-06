@@ -66,3 +66,26 @@ describe('honestidade do cabeçalho', () => {
     expect(html).toContain('id="retryStateBtn"');
   });
 });
+
+describe('onboarding acessível e honesto (F2)', () => {
+  const js = fs.readFileSync(rendererPath, 'utf8');
+  it('abas ligadas aos painéis, sem display inline e com setas', () => {
+    for (const i of [1, 2, 3, 4]) {
+      expect(html).toContain(`aria-controls="onboardingStepPanel${i}"`);
+      expect(html).toContain(`id="onboardingStepPanel${i}" data-panel-step="${i}" role="tabpanel"`);
+    }
+    expect(html).not.toMatch(/onboardingStepPanel\d[^>]*style="display: none;"/);
+    expect(js).toContain('ArrowRight:');
+  });
+  it('passo 4 só após o pareamento e confirmação nunca marcada sozinha', () => {
+    expect(js).toContain('if (stepNumber === 4 && !isPaired) return;');
+    expect(js).not.toContain('cb.checked = true');
+    expect(html).toMatch(/id="goToCategoriesBtn"[^>]*disabled/);
+  });
+  it('dialog de pausa sem campo que não envia nada; dialogs com foco inicial', () => {
+    expect(html).not.toContain('dialogUnblockReasonInput');
+    expect(html).toMatch(/id="closePartnerDialogBtn" autofocus/);
+    expect(html).toMatch(/id="closeProfileStepsBtn" autofocus/);
+    expect(html).toContain('dialog#profileStepsDialog {');
+  });
+});

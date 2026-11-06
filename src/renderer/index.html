@@ -361,6 +361,8 @@
       gap: 0.5rem;
       margin-bottom: 0.5rem;
     }
+    .onboarding-step-panel[hidden] { display: none; }
+    .stepper-step[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
     .stepper-step {
       display: flex;
       align-items: center;
@@ -635,7 +637,8 @@
     [data-view][hidden] { display: none !important; }
 
     /* Modal de Pausa Consciente */
-    dialog#partnerAuthDialog {
+    dialog#partnerAuthDialog,
+    dialog#profileStepsDialog {
       margin: auto;
       max-width: 520px;
       width: calc(100% - 2rem);
@@ -646,7 +649,8 @@
       padding: 0;
       box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.35);
     }
-    dialog#partnerAuthDialog::backdrop {
+    dialog#partnerAuthDialog::backdrop,
+    dialog#profileStepsDialog::backdrop {
       background: rgba(15, 23, 42, 0.65);
       backdrop-filter: blur(6px);
     }
@@ -877,17 +881,18 @@
           </div>
 
           <!-- Stepper Tabs -->
+          <p class="app-subtitle tabular-nums" id="onboardingProgress">Passo 1 de 4</p>
           <div class="stepper-header" role="tablist" aria-label="Progresso da configuração inicial">
-            <button type="button" class="stepper-step active" id="stepIndicator1" data-onboarding-step-tab="1" role="tab" aria-selected="true">
+            <button type="button" class="stepper-step active" id="stepIndicator1" data-onboarding-step-tab="1" role="tab" aria-controls="onboardingStepPanel1" aria-selected="true">
               <span class="step-number">1</span> Propósito
             </button>
-            <button type="button" class="stepper-step" id="stepIndicator2" data-onboarding-step-tab="2" role="tab" aria-selected="false">
+            <button type="button" class="stepper-step" id="stepIndicator2" data-onboarding-step-tab="2" role="tab" aria-controls="onboardingStepPanel2" aria-selected="false" tabindex="-1">
               <span class="step-number">2</span> Escudo Base
             </button>
-            <button type="button" class="stepper-step" id="stepIndicator3" data-onboarding-step-tab="3" role="tab" aria-selected="false">
+            <button type="button" class="stepper-step" id="stepIndicator3" data-onboarding-step-tab="3" role="tab" aria-controls="onboardingStepPanel3" aria-selected="false" tabindex="-1">
               <span class="step-number">3</span> Ajudante Telegram
             </button>
-            <button type="button" class="stepper-step" id="stepIndicator4" data-onboarding-step-tab="4" role="tab" aria-selected="false">
+            <button type="button" class="stepper-step" id="stepIndicator4" data-onboarding-step-tab="4" role="tab" aria-controls="onboardingStepPanel4" aria-selected="false" tabindex="-1">
               <span class="step-number">4</span> Chaves de Emergência
             </button>
           </div>
@@ -901,7 +906,7 @@
           </ol>
 
           <!-- PAINEL 1: Propósito & Filosofia da Catraca -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel1" data-panel-step="1">
+          <div class="onboarding-step-panel" id="onboardingStepPanel1" data-panel-step="1" role="tabpanel" aria-labelledby="stepIndicator1">
             <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1rem;">
               <div style="display: flex; align-items: center; gap: 0.75rem;">
                 <span style="font-size: 1.75rem;" aria-hidden="true">🛡️</span>
@@ -927,7 +932,7 @@
           </div>
 
           <!-- PAINEL 2: Escudo Base Recomendado -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel2" data-panel-step="2" style="display: none;">
+          <div class="onboarding-step-panel" id="onboardingStepPanel2" data-panel-step="2" role="tabpanel" aria-labelledby="stepIndicator2" hidden>
             <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1rem;">
               <h3>Selecione o Escudo Inicial Recomendado</h3>
               <p class="ccat-field-hint">A categoria Conteúdo Adulto já começa ativa. Você pode escolher ativar outras agora.</p>
@@ -962,7 +967,7 @@
           </div>
 
           <!-- PAINEL 3: Tutorial Detalhado do Telegram & Formulário de Pareamento -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel3" data-panel-step="3" style="display: none;">
+          <div class="onboarding-step-panel" id="onboardingStepPanel3" data-panel-step="3" role="tabpanel" aria-labelledby="stepIndicator3" hidden>
             <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1.25rem;">
               <div>
                 <h3>Tutorial de Pareamento com o Ajudante (Telegram)</h3>
@@ -1020,15 +1025,16 @@
                 </div>
               </div>
 
+              <p class="ccat-field-hint" id="nextToStep4Hint">Os códigos de emergência só existem depois que o Ajudante concluir o pareamento.</p>
               <div style="display: flex; justify-content: space-between;">
                 <button type="button" class="ccat-btn" id="backToStep2Btn">← Voltar</button>
-                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep4Btn">Avançar: Chaves de Emergência →</button>
+                <button type="button" class="ccat-btn ccat-btn-primary" id="nextToStep4Btn" disabled aria-describedby="nextToStep4Hint">Avançar: Chaves de Emergência →</button>
               </div>
             </div>
           </div>
 
           <!-- PAINEL 4: Chaves de Emergência REC-* -->
-          <div class="onboarding-step-panel" id="onboardingStepPanel4" data-panel-step="4" style="display: none;">
+          <div class="onboarding-step-panel" id="onboardingStepPanel4" data-panel-step="4" role="tabpanel" aria-labelledby="stepIndicator4" hidden>
             <div style="background: var(--ccat-bg-elevated); padding: 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--ccat-border); display: grid; gap: 1.25rem;">
               <div>
                 <h3>Custódia Exclusiva dos 5 Códigos de Emergência (REC-*)</h3>
@@ -1060,7 +1066,7 @@
 
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <button type="button" class="ccat-btn" id="backToStep3Btn">← Voltar</button>
-                <button type="button" id="goToCategoriesBtn" class="ccat-btn ccat-btn-primary">Concluir e Ver Categorias →</button>
+                <button type="button" id="goToCategoriesBtn" class="ccat-btn ccat-btn-primary" disabled>Concluir e Ver Categorias →</button>
               </div>
             </div>
           </div>
@@ -1476,15 +1482,11 @@
         <p class="app-subtitle" style="font-size: 0.8rem;">O que você busca acessar apoia o seu foco ou é um impulso passageiro?</p>
       </div>
 
-      <div style="display: grid; gap: 0.5rem;">
-        <label for="dialogUnblockReasonInput" class="ccat-field-label">Por que você precisa deste acesso?</label>
-        <input id="dialogUnblockReasonInput" type="text" class="ccat-input" placeholder="Justificativa sincera para o seu Ajudante..." />
-      </div>
 
       <p class="ccat-field-hint">Esta categoria já está protegida. Para retirar um bloqueio ativo, combine a autorização com seu Ajudante. Esta tela ainda não envia pedidos pelo Telegram.</p>
 
       <div style="display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap;">
-        <button type="button" class="ccat-btn" id="closePartnerDialogBtn">Voltar às categorias</button>
+        <button type="button" class="ccat-btn ccat-btn-primary" id="closePartnerDialogBtn" autofocus>Voltar às categorias</button>
       </div>
     </div>
   </dialog>
@@ -1492,6 +1494,7 @@
   <dialog id="profileStepsDialog" aria-labelledby="profile-steps-title">
     <div class="dialog-content">
       <h2 id="profile-steps-title">Como aprovar o perfil dos navegadores</h2>
+      <p>Sem este perfil, Chrome, Brave e Edge podem ignorar o bloqueio do monBlock.</p>
       <ol>
         <li>Clique em <strong>Abrir Ajustes</strong>. O monBlock abre Ajustes do Sistema &gt; Geral &gt; Gerenciamento de Dispositivos.</li>
         <li>Dê dois cliques em <strong>monBlock — Proteção dos navegadores</strong>.</li>
@@ -1499,7 +1502,7 @@
       </ol>
       <p class="ccat-field-hint">Este aviso some sozinho em até meio minuto depois da aprovação.</p>
       <div class="profile-banner-actions">
-        <button type="button" class="ccat-btn" id="closeProfileStepsBtn">Fechar</button>
+        <button type="button" class="ccat-btn ccat-btn-primary" id="closeProfileStepsBtn" autofocus>Fechar</button>
       </div>
     </div>
   </dialog>
