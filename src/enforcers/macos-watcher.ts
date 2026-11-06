@@ -169,7 +169,7 @@ export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
       // Antes era silencioso: sem permissão de Automação o bloqueio por palavras-chave simplesmente não age.
       if (!this.warnedFailure) {
         this.warnedFailure = true;
-        console.error('[monBlock] Watcher não conseguiu ler a aba (permissão de Automação negada ou navegador fechado?):', (err as Error).message);
+        console.error('[monBlock] Watcher não conseguiu ler a aba (permissão de Automação negada ou navegador fechado?):', (err as Error | null | undefined)?.message ?? String(err));
       }
       return null;
     }

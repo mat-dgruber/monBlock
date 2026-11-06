@@ -8,3 +8,11 @@ describe('build-app.sh: permissão de Automação (watcher de palavras-chave)', 
     expect(sh).toContain('NSAppleEventsUsageDescription');
   });
 });
+
+describe('watcher: falha de leitura da aba', () => {
+  it('não lança quando o executor rejeita com valor vazio', async () => {
+    const { OsascriptBrowserTabAdapter } = await import('../../src/enforcers/macos-watcher.js');
+    const adapter = new OsascriptBrowserTabAdapter(async () => Promise.reject(undefined));
+    await expect(adapter.getActiveTab()).resolves.toBeNull();
+  });
+});
