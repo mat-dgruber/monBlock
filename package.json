@@ -12,7 +12,8 @@
     "test:integration": "vitest run tests/server",
     "typecheck": "tsc --noEmit",
     "build:daemon": "sh scripts/build-daemon-sea.sh",
-    "build:pkg": "sh scripts/build-pkg.sh"
+    "build:pkg": "sh scripts/build-pkg.sh",
+    "build:app": "sh scripts/build-app.sh"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
