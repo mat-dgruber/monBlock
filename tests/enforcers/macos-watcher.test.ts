@@ -46,7 +46,7 @@ function createMockAdapter(initialTab: ActiveTabSnapshot | null = null): Browser
 }
 
 describe('MOD-01: MacOSBrowserWatcher (Camada 3 - Watcher Universal macOS)', () => {
-  it('deve listar todos os navegadores macOS suportados (Safari, Chrome, Brave, Arc, Edge, Dia, Firefox)', () => {
+  it('deve listar todos os navegadores macOS suportados (Safari, Chrome, Brave, Arc, Edge, Dia, Vivaldi, Opera, Chromium, Chrome Beta/Canary, Firefox)', () => {
     // Arrange & Act & Assert
     expect(SUPPORTED_MACOS_BROWSERS).toEqual([
       'Safari',
@@ -55,6 +55,11 @@ describe('MOD-01: MacOSBrowserWatcher (Camada 3 - Watcher Universal macOS)', () 
       'Arc',
       'Microsoft Edge',
       'Dia',
+      'Vivaldi',
+      'Opera',
+      'Chromium',
+      'Google Chrome Beta',
+      'Google Chrome Canary',
       'Firefox',
     ]);
   });

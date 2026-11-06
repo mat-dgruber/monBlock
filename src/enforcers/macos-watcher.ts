@@ -28,6 +28,11 @@ export const SUPPORTED_MACOS_BROWSERS = [
   'Arc',
   'Microsoft Edge',
   'Dia',
+  'Vivaldi',
+  'Opera',
+  'Chromium',
+  'Google Chrome Beta',
+  'Google Chrome Canary',
   'Firefox',
 ] as const;
 
@@ -77,7 +82,7 @@ on run argv
       set tabTitle to name of current tab of front window
       return frontApp & "\\n" & tabUrl & "\\n" & tabTitle
     end tell
-  else if frontApp is in {"Google Chrome", "Brave Browser", "Arc", "Microsoft Edge"} then
+  else if frontApp is in {"Google Chrome", "Brave Browser", "Arc", "Microsoft Edge", "Vivaldi", "Opera", "Chromium", "Google Chrome Beta", "Google Chrome Canary"} then
     using terms from application "Google Chrome"
       tell application frontApp
         if (count of windows) is 0 then return ""
@@ -115,7 +120,7 @@ on run argv
         set URL of current tab of front window to safeRedirectUrl
       end if
     end tell
-  else if browserName is in {"Google Chrome", "Brave Browser", "Arc", "Microsoft Edge"} then
+  else if browserName is in {"Google Chrome", "Brave Browser", "Arc", "Microsoft Edge", "Vivaldi", "Opera", "Chromium", "Google Chrome Beta", "Google Chrome Canary"} then
     using terms from application "Google Chrome"
       tell application browserName
         if (count of windows) > 0 then

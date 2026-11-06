@@ -145,7 +145,16 @@ export function generateFirefoxPlist(params: BrowserPolicyParams): string {
 }
 
 /** Bundle IDs Chromium cobertos pelo perfil e pela escrita direta. */
-export const CHROMIUM_BUNDLE_IDS = ['com.google.Chrome', 'com.brave.Browser', 'com.microsoft.Edge'] as const;
+export const CHROMIUM_BUNDLE_IDS = [
+  'com.google.Chrome',
+  'com.brave.Browser',
+  'com.microsoft.Edge',
+  'com.vivaldi.Vivaldi',
+  'com.operasoftware.Opera',
+  'org.chromium.Chromium',
+  'com.google.Chrome.beta',
+  'com.google.Chrome.canary',
+] as const;
 
 /** UUID estável derivado de um nome, para que o perfil regenerado substitua o anterior. */
 function stableUuid(name: string): string {
