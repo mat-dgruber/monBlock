@@ -209,7 +209,11 @@ export async function checkBrowserProfileInstalled(
 ): Promise<boolean | null> {
   try {
     const out = await run('/usr/bin/profiles', ['list', '-all']);
-    return out.includes('profileIdentifier: com.ccat.monblock.browsers');
+    if (out.includes('profileIdentifier: com.ccat.monblock.browsers')) return true;
+    // Só "ausente" com saída reconhecida; formato novo do macOS vira "não verificado".
+    if (out.includes('profileIdentifier:') || /no configuration profiles/i.test(out)) return false;
+    console.error('[monblockd] saída do profiles não reconhecida; perfil dos navegadores não verificado');
+    return null;
   } catch (err) {
     console.error('[monblockd] falha ao verificar o perfil dos navegadores:', (err as Error).message);
     return null;

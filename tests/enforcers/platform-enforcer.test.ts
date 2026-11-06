@@ -326,6 +326,15 @@ describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
     expect(result).toBe(false);
   });
 
+  it('false quando há outros perfis listados e o do monBlock não', async () => {
+    const other = '_computerlevel[1] attribute: profileIdentifier: com.example.vpn\n';
+    expect(await checkBrowserProfileInstalled(async () => other)).toBe(false);
+  });
+
+  it('null quando a saída tem formato desconhecido (não acusa perfil ausente por engano)', async () => {
+    expect(await checkBrowserProfileInstalled(async () => 'formato novo do macOS\n')).toBeNull();
+  });
+
   it('null quando o comando falha (ex.: timeout), sem lançar', async () => {
     const result = await checkBrowserProfileInstalled(async () => {
       throw new Error('timeout');

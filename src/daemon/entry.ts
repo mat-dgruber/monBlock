@@ -139,7 +139,8 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
     enforcer,
     clock: new TrustedClock(),
     onUninstalled: options.onUninstalled,
-    checkBrowserProfile: () => checkBrowserProfileInstalled(),
+    // Sem root o `profiles` não vê perfis de sistema e acusaria "ausente" por engano.
+    checkBrowserProfile: isRoot ? () => checkBrowserProfileInstalled() : undefined,
   });
 
   const tick = async (): Promise<void> => {

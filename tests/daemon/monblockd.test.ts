@@ -966,16 +966,43 @@ describe('MonBlockDaemon — watchdog (tick) e detecção de inatividade (spec �
       commandExecutor: async () => undefined,
     });
     const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
-    const d = new MonBlockDaemon({ store, enforcer, clock, checkBrowserProfile: async () => false });
-    const before = await d.handleCommand({ type: 'GET_STATE' });
+    let installed: boolean | null = false;
+    const d = new MonBlockDaemon({ store, enforcer, clock, checkBrowserProfile: async () => installed });
+    const profileOf = async () => {
+      const res = await d.handleCommand({ type: 'GET_STATE' });
+      if (!('state' in res)) throw new Error(`GET_STATE falhou: ${res.status}`);
+      return res.state.browserProfileInstalled;
+    };
+    const before = await profileOf();
 
     // Act
     await d.tick();
-    const after = await d.handleCommand({ type: 'GET_STATE' });
+    await d.refreshBrowserProfile();
+    const afterTick = await profileOf();
+    installed = true; // usuário aprovou o perfil
+    await d.refreshBrowserProfile();
 
     // Assert
-    expect('state' in before && before.state.browserProfileInstalled).toBeNull();
-    expect('state' in after && after.state.browserProfileInstalled).toBe(false);
+    expect(before).toBeNull();
+    expect(afterTick).toBe(false);
+    expect(await profileOf()).toBe(true);
+  });
+
+  it('tick não espera a checagem do perfil (um `profiles` lento não atrasa o socket)', async () => {
+    // Arrange
+    const enforcer = new MacOSPlatformEnforcer({
+      hostsPath,
+      firefoxPlistPath: path.join(tmpDir, 'ff.plist'),
+      commandExecutor: async () => undefined,
+    });
+    const clock = new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono });
+    const d = new MonBlockDaemon({ store, enforcer, clock, checkBrowserProfile: () => new Promise(() => undefined) });
+
+    // Act
+    const result = await Promise.race([d.tick().then(() => 'ok'), new Promise((r) => setTimeout(() => r('travou'), 500))]);
+
+    // Assert
+    expect(result).toBe('ok');
   });
 
   it('aplica as regras no boot, sem precisar de comando', async () => {
