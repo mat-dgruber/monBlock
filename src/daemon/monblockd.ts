@@ -318,6 +318,8 @@ export class MonBlockDaemon {
   private readonly onUninstalled?: () => void;
   private readonly checkBrowserProfile?: () => Promise<boolean | null>;
   private browserProfileInstalled: boolean | null = null;
+  private profileCheck: Promise<void> | null = null;
+  private lastProfileCheckMs = 0;
   private pendingPairing: PendingPairingState | null = null;
   private isCheckingPairing = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
@@ -408,13 +410,23 @@ export class MonBlockDaemon {
       () => this.runTick()
     );
     this.commandQueue = next.catch(() => undefined);
-    // Fora da fila: o `profiles` pode levar até 5 s e não deve segurar os comandos da UI.
-    const [result] = await Promise.all([next, this.refreshBrowserProfile()]);
-    return result;
+    // Sem await e fora da fila: o `profiles` (até 5 s) não segura comandos nem a subida do socket.
+    void this.refreshBrowserProfile();
+    return next;
   }
 
-  private async refreshBrowserProfile(): Promise<void> {
-    if (this.checkBrowserProfile) this.browserProfileInstalled = await this.checkBrowserProfile();
+  /** Checa o perfil dos navegadores; chamadas simultâneas compartilham a mesma execução. */
+  public refreshBrowserProfile(): Promise<void> {
+    if (!this.checkBrowserProfile) return Promise.resolve();
+    this.profileCheck ??= (async () => {
+      try {
+        this.browserProfileInstalled = await this.checkBrowserProfile!();
+      } finally {
+        this.lastProfileCheckMs = Date.now();
+        this.profileCheck = null;
+      }
+    })();
+    return this.profileCheck;
   }
 
   /** Marca desligamento limpo (`SIGTERM`), para não acusar inatividade no próximo boot. */
@@ -589,6 +601,11 @@ export class MonBlockDaemon {
 
     switch (cmd.type) {
       case 'GET_STATE': {
+        // Enquanto o perfil não estiver confirmado, a UI (que consulta a cada 15 s) vê a aprovação sem
+        // esperar o watchdog de 60 s. ponytail: throttle de 10 s para não rodar `profiles` a cada consulta.
+        if (this.browserProfileInstalled !== true && Date.now() - this.lastProfileCheckMs > 10_000) {
+          void this.refreshBrowserProfile();
+        }
         return {
           status: 200,
           state: this.toPublicState(state),
