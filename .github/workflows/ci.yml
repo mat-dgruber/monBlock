@@ -23,3 +23,28 @@ jobs:
       - run: npm run lint --if-present
       - run: npm run typecheck --if-present
       - run: npm test --if-present
+      # Scripts do instalador rodam como root: qualquer aviso do shellcheck quebra o build.
+      - run: shellcheck packaging/macos/scripts/preinstall packaging/macos/scripts/postinstall packaging/macos/uninstall.sh scripts/*.sh
+
+  macos-package:
+    name: macOS — binário SEA e .pkg do monblockd
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      # Sem segredos de assinatura aqui: assinatura ad-hoc. Release assina com Developer ID (MONBLOCK_CODESIGN_ID / MONBLOCK_INSTALLER_ID).
+      # O node do setup-node tem só a fatia do runner; o binário universal sai de um node universal (instalador do nodejs.org).
+      - run: npm run build:pkg
+      - run: |
+          plutil -lint packaging/macos/com.ccat.monblockd.plist
+          codesign --verify --strict build/daemon/monblockd
+          pkgutil --payload-files build/monblockd.pkg | grep -q 'PrivilegedHelperTools/com.ccat.monblockd/monblockd$'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monblockd-pkg
+          path: build/monblockd.pkg
+          retention-days: 7

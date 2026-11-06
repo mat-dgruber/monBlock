@@ -301,6 +301,8 @@ export interface MonBlockDaemonOptions {
   nowFn?: () => number;
   clock?: TrustedClock;
   telegramClient?: TelegramPartnerClient;
+  /** Chamado depois da limpeza autorizada: o entry root dispara o `uninstall.sh` desacoplado. */
+  onUninstalled?: () => void;
 }
 
 export class MonBlockDaemon {
@@ -309,6 +311,7 @@ export class MonBlockDaemon {
   private readonly clock: TrustedClock;
   private clockRestored = false;
   private readonly telegramClient?: TelegramPartnerClient;
+  private readonly onUninstalled?: () => void;
   private pendingPairing: PendingPairingState | null = null;
   private isCheckingPairing = false;
   private commandQueue: Promise<unknown> = Promise.resolve();
@@ -320,6 +323,7 @@ export class MonBlockDaemon {
       options.clock ??
       new TrustedClock(options.nowFn ? { wallNow: options.nowFn, monoNowMs: options.nowFn } : {});
     this.telegramClient = options.telegramClient;
+    this.onUninstalled = options.onUninstalled;
   }
 
   /**
@@ -1191,6 +1195,14 @@ export class MonBlockDaemon {
           temporaryGrants: [],
           updatedAtMs: now,
         });
+        const uninstallChatId = state.partnerCredentials?.telegramChatId;
+        if (uninstallChatId) {
+          await this.telegramFor(uninstallChatId).sendAlert(
+            'ℹ️ O monBlock foi desinstalado com autorização (credencial do Ajudante ou cooldown de 72h concluído).',
+            uninstallChatId
+          );
+        }
+        this.onUninstalled?.();
 
         return {
           status: 200,

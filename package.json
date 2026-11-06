@@ -10,11 +10,14 @@
     "test": "vitest run --dir tests",
     "test:unit": "vitest run tests/domain tests/enforcers",
     "test:integration": "vitest run tests/server",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:daemon": "sh scripts/build-daemon-sea.sh",
+    "build:pkg": "sh scripts/build-pkg.sh"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "electron": "^45.2.2",
+    "esbuild": "0.21.5",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }

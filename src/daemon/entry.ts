@@ -7,7 +7,7 @@
  * `MONBLOCK_DEV_ROOT_DIR=<dir curto>`: o mesmo layout, prefixado pelo diretório.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -84,11 +84,17 @@ function loadConfig(configPath: string): { telegramBotToken?: string } {
   }
 }
 
+/** Instalado pelo `.pkg` ao lado do binário (packaging/macos). */
+export const HELPER_DIR = '/Library/PrivilegedHelperTools/com.ccat.monblockd';
+
 export interface StartDaemonOptions {
   rootDir?: string;
   isRoot: boolean;
   tickMs?: number;
   blockServerPort?: number | null;
+  /** Pasta com `blocked-page.html`/`tokens.css`; no SEA fica em `HELPER_DIR/design`. */
+  designDir?: string;
+  onUninstalled?: () => void;
 }
 
 export interface RunningDaemon {
@@ -128,7 +134,12 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
     firefoxPlistPath: layout.firefoxPlistPath,
     flushDns: isRoot,
   });
-  const daemon = new MonBlockDaemon({ store, enforcer, clock: new TrustedClock() });
+  const daemon = new MonBlockDaemon({
+    store,
+    enforcer,
+    clock: new TrustedClock(),
+    onUninstalled: options.onUninstalled,
+  });
 
   const tick = async (): Promise<void> => {
     try {
@@ -147,7 +158,8 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   }
   if (isRoot) fs.chownSync(layout.socketPath, 0, gid ?? 0);
 
-  const blockServer = options.blockServerPort === null ? null : createMonBlockHttpServer();
+  const blockServer =
+    options.blockServerPort === null ? null : createMonBlockHttpServer({ designDir: options.designDir });
   blockServer?.on('error', (err) => {
     console.error('[monblockd] página de bloqueio indisponível:', (err as NodeJS.ErrnoException).code ?? err);
   });
@@ -167,7 +179,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   };
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const isRoot = process.getuid?.() === 0;
   const rootDir = process.env.MONBLOCK_DEV_ROOT_DIR;
   if (!isRoot && !rootDir) {
@@ -175,7 +187,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   process.umask(0o077);
-  const running = await startDaemon({ rootDir, isRoot });
+  const { isSea } = await import('node:sea');
+  const running = await startDaemon({
+    rootDir,
+    isRoot,
+    designDir: isSea() ? path.join(path.dirname(process.execPath), 'design') : undefined,
+    // Desacoplado e fora do grupo de processos: o `bootout` do job não pode matar o desinstalador.
+    onUninstalled: () => {
+      if (!isRoot || rootDir) return console.error('[monblockd] desinstalação autorizada (modo dev: nada removido).');
+      spawn('/bin/sh', [path.join(HELPER_DIR, 'uninstall.sh')], { detached: true, stdio: 'ignore' }).unref();
+    },
+  });
   const stop = () => {
     void running.close().finally(() => process.exit(0));
   };

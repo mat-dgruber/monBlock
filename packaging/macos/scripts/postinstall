@@ -1,0 +1,28 @@
+#!/bin/sh
+# Instala o monblockd (ADR-0007): grupo do socket, permissões, launchd e perfil dos navegadores.
+set -eu
+
+HELPER_DIR="/Library/PrivilegedHelperTools/com.ccat.monblockd"
+PLIST="/Library/LaunchDaemons/com.ccat.monblockd.plist"
+
+# Grupo que pode abrir o socket (/var/run/monblock é root:monblock 0750).
+if ! /usr/bin/dscl . -read /Groups/monblock >/dev/null 2>&1; then
+  /usr/sbin/dseditgroup -o create -r "monBlock" monblock
+fi
+CONSOLE_USER=$(/usr/bin/stat -f%Su /dev/console)
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
+  /usr/sbin/dseditgroup -o edit -a "$CONSOLE_USER" -t user monblock
+fi
+
+/usr/sbin/chown -R root:wheel "$HELPER_DIR" "$PLIST"
+/bin/chmod 0755 "$HELPER_DIR" "$HELPER_DIR/monblockd" "$HELPER_DIR/uninstall.sh"
+/bin/chmod 0644 "$PLIST"
+
+/bin/launchctl bootstrap system "$PLIST" 2>/dev/null || /bin/launchctl kickstart -k system/com.ccat.monblockd
+
+# Perfil das políticas Chromium: o macOS exige aprovação do usuário em Ajustes (spike S1).
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
+  CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER")
+  /bin/launchctl asuser "$CONSOLE_UID" /usr/bin/open "$HELPER_DIR/monblock-browsers.mobileconfig" || true
+fi
+exit 0
