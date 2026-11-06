@@ -92,6 +92,8 @@ Validar o que a spec marcou com 🟡 antes de escrever código que depende disso
 
 **Pronto:** commit `feat(ipc): socket unix entre electron e monblockd`.
 
+> **Execução (2026-11-05):** `createIpcServer` devolve `{ close(), connections() }`; `close()` derruba as conexões abertas (usado no `SIGTERM` da Fase 6). O servidor valida só o envelope e o `type` (lista `DAEMON_COMMAND_TYPES`, com checagem de exaustividade no build); os campos de cada comando continuam validados no daemon. Socket velho só é removido se for socket ou arquivo vazio. `chmod 0660` depois do `listen`: com `umask 077` no daemon, não há janela com permissão mais aberta. O Electron ainda usa o daemon em processo; a troca para o `DaemonClient` é na Fase 6.
+
 ## Fase 6 — Entry root e corte do Electron
 
 - **Novo:** `src/daemon/entry.ts` — exige `getuid() === 0` (sai com erro caso contrário, exceto `MONBLOCK_DEV_ROOT_DIR` em build de dev); `umask 077`; cria/valida dono e modo dos diretórios da spec §4.1; carrega `vault.key` (cria se não existir), `config.json`; instancia store/enforcer/clock/telegram/daemon/`block-server`; aplica regras no boot; timers: reaplicar + `verifyApplied` a cada 60 s, heartbeat a cada 5 min, persistir `trustedNowMs` a cada 60 s; detecção de inatividade (§3.3); `SIGTERM` → grava shutdown limpo e fecha o socket.
