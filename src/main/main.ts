@@ -340,11 +340,15 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     return error ? { status: 500, detail: `Não foi possível abrir o instalador: ${error}` } : { status: 200 };
   });
 
-  // Sem parâmetros do renderer: caminho e URL fixos. Reabre o perfil (o macOS descarta perfis baixados
-  // e não aprovados depois de alguns minutos) e leva o usuário ao painel onde ele aprova.
+  // Sem parâmetros do renderer: caminho e URL fixos. Rebaixa o perfil só se o daemon não o vê instalado
+  // (o macOS descarta perfis baixados e não aprovados; baixar de novo um já instalado duplica a entrada).
   ipcMain.handle('monblock:open-profile-settings', async () => {
     try {
-      await shell.openPath(BROWSER_PROFILE_PATH);
+      const res = await call({ type: 'GET_STATE' });
+      if (!('state' in res && res.state.browserProfileInstalled === true)) {
+        const error = await shell.openPath(BROWSER_PROFILE_PATH);
+        if (error) return { status: 500, detail: `Não foi possível abrir o perfil dos navegadores: ${error}` };
+      }
       await shell.openExternal(PROFILES_SETTINGS_URL);
       return { status: 200 };
     } catch (err) {

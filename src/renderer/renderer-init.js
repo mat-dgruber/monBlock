@@ -600,16 +600,16 @@
   );
   document.getElementById('showProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.showModal());
   document.getElementById('closeProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.close());
-  // Enquanto o aviso estiver visível, confere a cada 30 s só ele (sem re-renderizar o painel).
+  // Confere a cada 15 s só o aviso (sem re-renderizar o painel): some após a aprovação e volta se o perfil for removido.
   setInterval(async () => {
-    if (!profileBanner || profileBanner.hidden) return;
+    if (!profileBanner) return;
     try {
       const result = await bridge.getState();
       if (result?.status === 200) renderProfileBanner(result.state);
     } catch {
       // Falha de consulta: mantém o aviso; o loadState trata o daemon offline.
     }
-  }, 30_000);
+  }, 15_000);
 
   if (bridge?.onTrayNavigate) bridge.onTrayNavigate((viewId) => switchView(viewId, true));
   switchView('categories');
