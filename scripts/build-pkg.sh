@@ -7,7 +7,10 @@ VERSION=$(node -p "require('./package.json').version")
 ROOT=build/pkgroot
 HELPER="$ROOT/Library/PrivilegedHelperTools/com.ccat.monblockd"
 
-[ -x build/daemon/monblockd ] || sh scripts/build-daemon-sea.sh
+# Recompila o daemon se não existe ou se algum fonte mudou depois dele (evita .pkg com daemon velho).
+if [ ! -x build/daemon/monblockd ] || [ -n "$(find src package.json -newer build/daemon/monblockd -type f | head -1)" ]; then
+  sh scripts/build-daemon-sea.sh
+fi
 npm run build >/dev/null
 
 rm -rf "$ROOT"
