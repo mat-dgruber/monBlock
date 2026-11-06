@@ -195,7 +195,11 @@ export async function main(): Promise<void> {
     // Desacoplado e fora do grupo de processos: o `bootout` do job não pode matar o desinstalador.
     onUninstalled: () => {
       if (!isRoot || rootDir) return console.error('[monblockd] desinstalação autorizada (modo dev: nada removido).');
-      spawn('/bin/sh', [path.join(HELPER_DIR, 'uninstall.sh')], { detached: true, stdio: 'ignore' }).unref();
+      // 2 s de folga para a resposta 200 sair pelo socket antes do `bootout` derrubar o daemon.
+      spawn('/bin/sh', ['-c', 'sleep 2; exec /bin/sh "$0"', path.join(HELPER_DIR, 'uninstall.sh')], {
+        detached: true,
+        stdio: 'ignore',
+      }).unref();
     },
   });
   const stop = () => {
