@@ -29,6 +29,7 @@ export interface MonBlockHttpServerOptions {
     challengeCode?: string;
     reason?: string;
     durationMinutes?: number;
+    permanent?: boolean;
   }) => Promise<{ status: string; requestId: string; domain: string | null }>;
 }
 
@@ -254,6 +255,7 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
             reason: typeof payload.reason === 'string' ? payload.reason : undefined,
             durationMinutes:
               typeof payload.durationMinutes === 'number' ? payload.durationMinutes : undefined,
+            permanent: payload.permanent === true ? true : undefined,
           });
 
           if (idempotencyKey) {
@@ -288,6 +290,19 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
         }
       });
       return;
+    }
+
+    // Validar código: a verificação acontece no app (IPC do daemon). Por HTTP local qualquer página poderia
+    // tentar liberar bloqueios, então esta rota nunca libera nada e orienta o uso do app.
+    if (req.method === 'POST' && url.pathname === '/api/unlock-code') {
+      req.resume();
+      return sendProblemDetails(
+        res,
+        501,
+        'Validação feita no app',
+        'Cole o código no app monBlock, em Ajudante e recuperação: é lá que ele é validado. Nada foi liberado por esta página.',
+        url.pathname
+      );
     }
 
     return sendProblemDetails(

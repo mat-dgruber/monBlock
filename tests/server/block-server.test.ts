@@ -118,3 +118,24 @@ describe('Local Block Server, Idempotency & RFC 9457 Problem Details', () => {
     }
   });
 });
+
+describe('POST /api/unlock-code', () => {
+  it('nunca libera nada: 501 Problem Details orientando a validar no app', async () => {
+    const server = createMonBlockHttpServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const addr = server.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 49152;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/unlock-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'UNLOCK-15M-ABCDEF' }),
+      });
+      expect(res.status).toBe(501);
+      expect(res.headers.get('content-type')).toContain('application/problem+json');
+      expect((await res.json()).detail).toContain('Nada foi liberado');
+    } finally {
+      server.close();
+    }
+  });
+});

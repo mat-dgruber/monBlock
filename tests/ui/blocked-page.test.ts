@@ -12,7 +12,7 @@ interface Stub {
   addEventListener: (t: string, f: Listener) => void; appendChild: (c: unknown) => void; cloneNode: () => Stub; removeAttribute: () => void;
   alt?: string; children: unknown[];
 }
-interface PageOpts { dark?: boolean; contrast?: boolean; reduced?: boolean; fetch?: (url: string, init: { body: string; headers: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }> }
+interface PageOpts { duration?: string; dark?: boolean; contrast?: boolean; reduced?: boolean; fetch?: (url: string, init: { body: string; headers: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }> }
 
 // Executa o script da página num contexto simulado (sem DOM real) para pegar regressões de comportamento.
 function runPage(search: string, opts: PageOpts = {}) {
@@ -53,7 +53,7 @@ function runPage(search: string, opts: PageOpts = {}) {
     cancelAnimationFrame: () => undefined,
     performance: { now: () => 0 },
     URL, URLSearchParams, AbortController, setTimeout, clearTimeout,
-    FormData: class { get() { return '15'; } },
+    FormData: class { get() { return opts.duration ?? '15'; } },
     crypto: { randomUUID: () => 'uuid-fixo' },
     fetch: opts.fetch ?? (async () => ({ status: 503, json: async () => ({}) })),
   };
@@ -70,7 +70,7 @@ async function submit(r: ReturnType<typeof runPage>, reason: string) {
 
 describe('blocked-page.html: conteúdo', () => {
   it('não afirma verificação nem liberação que o sistema não faz (catraca unidirecional)', () => {
-    for (const lie of ['Acesso liberado', 'Código verificado', 'Comprovante', 'Validar e Liberar', 'Permanente', 'unlockTokenInput']) {
+    for (const lie of ['Acesso liberado', 'Código verificado', 'Comprovante', 'Validar e Liberar']) {
       expect(html).not.toContain(lie);
     }
     expect(html).toContain('Esta página não libera acessos');
@@ -158,10 +158,42 @@ describe('blocked-page.html: pedido ao Ajudante (só "enviado" com confirmação
     expect(r.el('sendStatus').dataset.kind).toBe('error');
   });
 
+  it('oferece 15 min, 1 hora e Permanente; Permanente vai como permanent:true', async () => {
+    expect(html).toMatch(/value="15"[\s\S]*value="60"[\s\S]*value="permanent"/);
+    expect(html).toContain('Pedir aprovação no Telegram');
+    let sent = '';
+    const r = runPage('?domain=x.com', { duration: 'permanent', fetch: async (_u, init) => { sent = init.body; return { status: 202, json: async () => ({}) }; } });
+    await submit(r, 'estudo');
+    expect(JSON.parse(sent)).toEqual({ domain: 'x.com', reason: 'estudo', permanent: true });
+  });
+
   it('falha de rede diz que nada foi enviado e libera o botão', async () => {
     const r = runPage('?domain=x.com', { fetch: async () => { throw new Error('rede'); } });
     expect(await submit(r, 'estudo')).toContain('Nada foi enviado');
     expect(r.el('sendBtn').disabled).toBe(false);
+  });
+});
+
+describe('blocked-page.html: código do Ajudante (a página nunca libera nada)', () => {
+  const submitCode = async (r: ReturnType<typeof runPage>, code: string) => {
+    r.el('unlockCode').value = code;
+    await r.el('codeForm').listeners.submit![0]!({ preventDefault: () => undefined });
+    return r.el('codeStatus').textContent;
+  };
+
+  it('sem código não chama o servidor', async () => {
+    let calls = 0;
+    const r = runPage('', { fetch: async () => { calls += 1; return { status: 501, json: async () => ({}) }; } });
+    expect(await submitCode(r, ' ')).toContain('Nada foi liberado');
+    expect(calls).toBe(0);
+  });
+
+  it('mostra a orientação do servidor (validar no app) e nunca diz que liberou', async () => {
+    const r = runPage('', { fetch: async () => ({ status: 501, json: async () => ({ detail: 'Cole o código no app monBlock. Nada foi liberado por esta página.' }) }) });
+    const text = await submitCode(r, 'UNLOCK-15M-ABC');
+    expect(text).toContain('app monBlock');
+    expect(text).not.toMatch(/liberado conforme|Acesso liberado|verificado/i);
+    expect(r.el('codeStatus').dataset.kind).toBe('error');
   });
 });
 

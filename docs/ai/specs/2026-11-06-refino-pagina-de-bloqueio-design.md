@@ -108,3 +108,9 @@ O endpoint `POST /api/unblock-requests` existe, mas hoje devolve `202 accepted` 
 - Respiração **automática e etérea** (halo suave atrás do logo, 4 s/6 s, `opacity`/`transform`), com "Pausar animação" (WCAG 2.2.2) e parada sob `prefers-reduced-motion`. Substitui a respiração por opt-in da seção 4.
 - **Pedido ao Ajudante restaurado** (15 min / 1 hora + motivo; sem "Permanente" nem campo de código): `POST /api/unblock-requests` com `Idempotency-Key` e timeout de 8 s. A página só diz "enviado" com `202`; qualquer outra resposta diz "Nada foi enviado". O servidor sem Ajudante ligado responde `503` (antes devolvia `202` sem entregar nada).
 - Pendente (spec do Ajudante/Telegram): ligar um `onUnblockRequest` real, idempotência persistente e entrega ao Ajudante (seção 8).
+
+## 11. Ajuste final do usuário (2026-11-06)
+- Sem logo dentro da respiração: o halo é só o orbe etéreo; o logo fica no cabeçalho.
+- Liberação como no desenho antigo, por decisão do usuário: **15 min / 1 hora / Permanente**, motivo, botão "Pedir aprovação no Telegram" e **campo de código** ("Validar código"). Permanente vai como `permanent: true`.
+- Honestidade mantida: o pedido só é "enviado" com `202`; o campo de código chama `POST /api/unlock-code`, que **nunca libera nada** e responde `501` orientando a validar no app (liberar por HTTP local deixaria qualquer página tentar derrubar bloqueios). A validação real do código fica no app/daemon (IPC).
+- Espaçamentos: grade de 0,9–1,1 rem entre campos, `dl` com espaço entre linhas, divisor "ou use um código".

@@ -36,39 +36,44 @@
     .brand strong { display: block; color: var(--text-color); font-size: var(--text-base); letter-spacing: -0.01em; }
     .brand img { width: 3.25rem; height: 3.25rem; border-radius: 50%; }
     h1 { font-family: var(--font-display); font-size: clamp(2rem, 6vw, 2.75rem); line-height: 1.15; font-weight: 700; margin-top: 1rem; }
-    .lead { font-size: var(--text-base); color: var(--text-color-secondary); }
+    .lead { font-size: var(--text-base); color: var(--text-color-secondary); margin-top: 0.75rem; }
 
     .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; }
+    .divider { display: flex; align-items: center; gap: 0.75rem; font-size: var(--text-xs); color: var(--text-color-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
+    .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--surface-border); }
+    .code-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .code-row input { flex: 1 1 12rem; min-width: 0; min-height: 2.75rem; padding: 0.5rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--surface-border); background: var(--surface-ground); color: var(--text-color); font: inherit; font-family: var(--font-mono, ui-monospace, monospace); }
     .hint { font-size: var(--text-xs); color: var(--text-color-secondary); }
     #status { font-size: var(--text-sm); color: var(--text-color-secondary); min-height: 1.5em; }
 
     /* Respiração etérea e automática: um halo suave atrás do logo; só opacity/transform. */
     .calm { display: grid; justify-items: center; gap: 0.25rem; }
-    .halo { position: relative; display: grid; place-items: center; width: 100%; height: 12rem; }
+    .halo { position: relative; display: grid; place-items: center; width: 100%; height: 10rem; }
     .halo::before, .halo::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; will-change: transform, opacity; }
     .halo::before { width: 10rem; height: 10rem; background: radial-gradient(circle, color-mix(in srgb, var(--primary-color) 40%, transparent), transparent 68%); transform: scale(var(--breath-scale, 1)); opacity: var(--breath-opacity, 0.7); }
     .halo::after { width: 7rem; height: 7rem; background: radial-gradient(circle, color-mix(in srgb, var(--detail-color, var(--accent-color)) 32%, transparent), transparent 70%); transform: scale(calc(2.1 - var(--breath-scale, 1))); opacity: calc(1.3 - var(--breath-opacity, 0.7)); }
-    .halo img { position: relative; width: 6rem; height: 6rem; border-radius: 50%; }
     .breath-label { font-size: var(--text-sm); color: var(--text-color-secondary); min-height: 1.5em; transition: opacity 600ms ease; }
     .link-btn { background: none; border: 0; color: var(--text-color-secondary); text-decoration: underline; font: inherit; font-size: var(--text-xs); cursor: pointer; padding: 0.5rem; min-height: 2.75rem; }
 
-    .facts, .request { display: grid; gap: 0.75rem; background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: var(--radius-lg); padding: 1.25rem; }
+    .facts, .request { display: grid; gap: 1rem; background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: var(--radius-lg); padding: 1.25rem; }
     .facts h2, .request h2 { font-size: var(--text-base); font-weight: 700; }
-    .fact { display: grid; gap: 0.15rem; }
+    dl { display: grid; gap: 0.9rem; }
+    .fact { display: grid; gap: 0.2rem; }
     .fact[hidden] { display: none; }
     .fact dt { font-size: var(--text-xs); color: var(--detail-color, var(--text-color-secondary)); text-transform: uppercase; letter-spacing: 0.06em; }
     .fact dd { font-size: var(--text-sm); overflow-wrap: anywhere; }
     .fact code { font-family: var(--font-mono, ui-monospace, monospace); }
     .notice { border-left: 3px solid var(--primary-color); padding: 0.25rem 0 0.25rem 1rem; color: var(--text-color-secondary); font-size: var(--text-sm); }
 
-    .field { display: grid; gap: 0.35rem; border: 0; }
+    form { display: grid; gap: 1.1rem; }
+    .field { display: grid; gap: 0.5rem; border: 0; min-width: 0; }
     .field label, .field legend { font-size: var(--text-sm); font-weight: 600; }
     .field textarea { min-height: 5rem; resize: vertical; padding: 0.7rem 0.9rem; border-radius: var(--radius-md); border: 1px solid var(--surface-border); background: var(--surface-ground); color: var(--text-color); font: inherit; }
-    .durations { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .durations { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.15rem; }
     .durations label { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; padding: 0.5rem 0.9rem; border: 1px solid var(--surface-border); border-radius: var(--radius-pill); cursor: pointer; min-height: 2.75rem; }
     .durations label:has(input:checked) { border-color: var(--primary-color); font-weight: 600; }
-    #sendStatus { font-size: var(--text-sm); min-height: 1.5em; color: var(--text-color-secondary); }
-    #sendStatus[data-kind="error"] { color: var(--danger-color); }
+    #sendStatus, #codeStatus { font-size: var(--text-sm); min-height: 1.5em; color: var(--text-color-secondary); }
+    #sendStatus[data-kind="error"], #codeStatus[data-kind="error"] { color: var(--danger-color); }
 
     /* Entrada calma: só opacity/transform, nunca no botão "Fechar" (responde em t=0). */
     @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
@@ -119,8 +124,9 @@
         <fieldset class="field">
           <legend>Por quanto tempo</legend>
           <div class="durations">
-            <label><input type="radio" name="duration" value="15" checked /><span>15 minutos</span></label>
+            <label><input type="radio" name="duration" value="15" checked /><span>15 min</span></label>
             <label><input type="radio" name="duration" value="60" /><span>1 hora</span></label>
+            <label><input type="radio" name="duration" value="permanent" /><span>Permanente</span></label>
           </div>
         </fieldset>
         <div class="field">
@@ -128,9 +134,21 @@
           <textarea id="reason" name="reason" maxlength="300" placeholder="Ex.: pesquisa para o trabalho de conclusão"></textarea>
         </div>
         <div class="actions">
-          <button type="submit" id="sendBtn" class="ccat-btn">Enviar pedido ao Ajudante</button>
+          <button type="submit" id="sendBtn" class="ccat-btn ccat-btn-primary">Pedir aprovação no Telegram</button>
         </div>
         <p id="sendStatus" role="status" aria-live="polite"></p>
+      </form>
+
+      <div class="divider"><span>ou use um código</span></div>
+      <form id="codeForm" novalidate>
+        <div class="field">
+          <label for="unlockCode">Código de liberação do Ajudante</label>
+          <div class="code-row">
+            <input id="unlockCode" name="code" type="text" autocomplete="one-time-code" spellcheck="false" placeholder="Ex.: UNLOCK-15M-…" />
+            <button type="submit" id="codeBtn" class="ccat-btn">Validar código</button>
+          </div>
+        </div>
+        <p id="codeStatus" role="status" aria-live="polite"></p>
       </form>
     </section>
   </main>
@@ -174,7 +192,8 @@
       event.preventDefault();
       const reason = document.getElementById('reason').value.trim();
       if (!reason) { setSend('error', 'Conte ao seu Ajudante por que você precisa deste acesso. Nada foi enviado.'); return; }
-      const durationMinutes = Number(new FormData(form).get('duration')) || 15;
+      const choice = new FormData(form).get('duration');
+      const duration = choice === 'permanent' ? { permanent: true } : { durationMinutes: Number(choice) || 15 };
       idemKey = idemKey || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
       sendBtn.disabled = true;
       setSend('info', 'Enviando…');
@@ -184,7 +203,7 @@
         const res = await fetch('/api/unblock-requests', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idemKey },
-          body: JSON.stringify({ domain: blockedDomain || undefined, reason, durationMinutes }),
+          body: JSON.stringify({ domain: blockedDomain || undefined, reason, ...duration }),
           signal: controller.signal,
         });
         if (res.status === 202) {
@@ -206,17 +225,31 @@
       }
     });
 
+    // Código do Ajudante: a validação real acontece no app monBlock; esta página nunca libera nada por conta própria.
+    const codeForm = document.getElementById('codeForm');
+    const codeStatus = document.getElementById('codeStatus');
+    codeForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const code = document.getElementById('unlockCode').value.trim();
+      if (!code) { codeStatus.dataset.kind = 'error'; codeStatus.textContent = 'Cole o código que o seu Ajudante enviou. Nada foi liberado.'; return; }
+      try {
+        const res = await fetch('/api/unlock-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch { /* corpo sem JSON */ }
+        codeStatus.dataset.kind = 'error';
+        codeStatus.textContent = detail || 'Não foi possível validar o código. Nada foi liberado.';
+      } catch {
+        codeStatus.dataset.kind = 'error';
+        codeStatus.textContent = 'Não foi possível falar com o monBlock. Nada foi liberado.';
+      }
+    });
+
     // Respiração etérea e automática (4 s inspira, 6 s solta). A fase vem do tempo decorrido; com
     // prefers-reduced-motion, ou ao pausar, o halo fica parado. Pausar existe por exigência de acessibilidade (WCAG 2.2.2).
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     const halo = document.getElementById('halo');
     const label = document.getElementById('breathLabel');
     const toggle = document.getElementById('breathToggle');
-    const logo = document.getElementById('logo');
-    const haloLogo = logo.cloneNode();
-    haloLogo.removeAttribute('id');
-    haloLogo.alt = '';
-    halo.appendChild(haloLogo);
     const IN_MS = 4000, OUT_MS = 6000;
     let rafId = 0, startedAt = 0, playing = true;
 
