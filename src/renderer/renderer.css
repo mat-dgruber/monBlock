@@ -34,6 +34,23 @@
   --ccat-card-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.4);
 }
 
+[data-theme="capycro-dark"] {
+  --ccat-bg-canvas: #121A1A;
+  --ccat-bg-surface: #1A2423;
+  --ccat-bg-elevated: #24312F;
+  --ccat-border: #5A4636;
+  --ccat-border-subtle: #3A2F27;
+  --ccat-text-primary: #F3EFE6;
+  --ccat-text-secondary: #B7B2A5;
+  --ccat-text-muted: #C9A27E;
+  --ccat-brand-primary: #6FB3B5;
+  --ccat-brand-primary-hover: #8CC6C7;
+  --ccat-on-brand: #0B1514;
+  --ccat-brand-accent: #E0805F;
+  --ccat-focus-ring: #6FB3B5;
+  --ccat-card-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.5);
+}
+
 [data-theme="light-fintech"] {
   --ccat-bg-canvas: #F8FAFC;
   --ccat-bg-surface: #FFFFFF;

@@ -43,12 +43,13 @@ O `monBlock` aplica a linguagem visual da holding **CCAT** a um contexto de **pr
   4. **Ajudante (`Accountability Partner`):** Configuração do Bot Telegram, teste de notificação, validação de Token `HMAC` / Senha Mestra e histórico de solicitações.
 
 ### 3.2 Tela de Bloqueio & Solicitação ao Ajudante (`127.0.0.1:49152/blocked`)
-- Exibida automaticamente quando qualquer navegador tenta acessar um domínio ou palavra-chave bloqueada:
-  - **Cabeçalho Sereno (Playfair Display):** *"Acesso pausado para proteger seu foco."*
-  - **Card de Diagnóstico (Raio-X):** Exibe a URL higienizada, o título extraído da página e a **causa exata do bloqueio** (ex: `Categoria: Apostas e Cassinos` ou `Palavra-chave: cassino,bonus`).
-  - **Preview Visual Seguro (Print Offscreen com Blur):** Miniatura borrada (`filter: blur(18px)`) com aviso de que o Ajudante poderá inspecionar ou revelar a imagem.
-  - **Ação 1 — Enviar Pedido ao Ajudante (Telegram / Card HTML):** Campo de justificativa + botão de envio instantâneo.
-  - **Ação 2 — Desbloqueio Presencial / Código Token:** Campo para inserir o código `HMAC` enviado pelo Ajudante ou a Senha Mestra presencial, escolhendo a janela (`15 min`, `1 hora`, `Permanente`).
+- Exibida quando o vigia de abas leva o navegador à página (domínio ou palavra-chave bloqueada). Tema pelo sistema: alto contraste > **Capycro escuro** > Capycro.
+  - **Cabeçalho:** logo da CCAT (Capycro Avectech), *"Esta página está pausada."* (Playfair Display) e a saída segura em destaque (**Fechar esta aba**, atalho `Esc`).
+  - **Respiração etérea e automática:** orbe, anel e brilho suaves (4 s inspira, 6 s solta, calculados pelo tempo decorrido), com **Pausar animação** (WCAG 2.2.2) e parada sob `prefers-reduced-motion`.
+  - **Por que foi pausada:** dados reais da query (`domain` em punycode, `rule`); a linha sem dado fica oculta; "Quem bloqueou" é sempre o vigia de abas. Nada de exemplos fixos.
+  - **Pedir liberação ao Ajudante:** duração (`15 min`, `1 hora`, `Permanente`), motivo e **Pedir aprovação no Telegram** (`POST /api/unblock-requests`, `Idempotency-Key`, timeout de 8 s). Só diz "enviado" com `202`; sem Ajudante pareado o servidor responde `503` e a página diz "Nada foi enviado".
+  - **Código do Ajudante:** campo "Validar código" (`POST /api/unlock-code`) que **nunca libera nada**: responde `501` orientando a validar no app (Ajudante e recuperação).
+  - Não há seletor de tema, preview borrado nem comprovante offline nesta página.
 
 ---
 

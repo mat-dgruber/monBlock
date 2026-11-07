@@ -8,7 +8,7 @@
     *   Tokens semânticos organizados em superfícies (`--color-bg-canvas`, `--color-bg-surface`, `--color-bg-elevated`), texto (`--color-text-primary`, `--color-text-secondary`, `--color-text-muted`), marca (`--color-brand-primary: #005A64`, `--color-brand-accent: #C84B31`), status (`--color-status-success`, `--color-status-warning`, `--color-status-danger`) e escala de `z-index` controlada (`--z-base`, `--z-sticky`, `--z-modal`, `--z-toast`).
     *   Utilitários nativos `.ccat-card`, `.ccat-btn`, `.ccat-btn-primary`, `.ccat-btn-accent`, `.ccat-badge`, `.ccat-code` e `.tabular-nums`.
 *   **Superfícies Implementadas (`docs/design/`):**
-    *   `docs/design/blocked-page.html`: Tela de interceptação servida em `http://127.0.0.1:49152/blocked` com seletor dos 4 temas, card de diagnóstico da regra, acionamento idempotente do Ajudante e validação de código de desafio.
+    *   `docs/design/blocked-page.html`: Tela de interceptação servida em `http://127.0.0.1:49152/blocked` somente leitura (0.4.0): tema pelo sistema (Capycro, Capycro escuro, alto contraste), dados reais da query (`domain`, `rule`), saída segura (fechar aba/Esc) e respiração guiada opcional. Não há formulário de pedido, campo de código nem seletor de tema: a liberação depende de um Ajudante pareado no app (spec `docs/ai/specs/2026-11-06-refino-pagina-de-bloqueio-design.md`).
     *   `docs/design/tokens-showcase.html`: Catálogo vivo dos tokens e componentes servido em `http://127.0.0.1:49152/showcase`.
 *   **Ponte Segura Electron (`src/preload/preload.ts`):**
     ```typescript
@@ -81,3 +81,5 @@ No contexto de `desktop_ui_ccat`, a camada backend imediata compreende o **Proce
     *   Ao acionar o botão de pedido ao Ajudante na tela `/blocked`, o botão entra em estado `disabled` com indicador textual imediato e envia um cabeçalho `Idempotency-Key` único por sessão de bloqueio, garantindo que cliques duplos ou reconexões recebam `202 Accepted` com `"deduplicated": true`.
 *   **Degradação Graciosa quando o Daemon ou Rede Estão Indisponíveis:**
     *   Se a chamada assíncrona ao Telegram falhar ou a máquina estiver offline, a interface transiciona sem travamentos para o **Modo de Desafio-Resposta Offline**, destacando o `challengeCode` local para validação via `HMAC-SHA256`.
+
+*   **Temas (0.5.0):** `capycro-ivory` (padrão), `capycro-dark` (marca à noite com detalhes marrons, `tokens.css` + `renderer.css`), `dark-tech`, `light-fintech` e `high-contrast-aaa`. A página de bloqueio escolhe pelo sistema: alto contraste > `capycro-dark` > `capycro`.

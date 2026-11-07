@@ -43,8 +43,29 @@ describe('Local Block Server, Idempotency & RFC 9457 Problem Details', () => {
     }
   });
 
-  it('processa POST /api/unblock-requests com 202 Accepted e deduplicação por Idempotency-Key', async () => {
+  it('POST /api/unblock-requests sem Ajudante ligado responde 503 Problem Details (nada foi enviado)', async () => {
     const server = createMonBlockHttpServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const addr = server.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 49152;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/unblock-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'k-sem-ajudante' },
+        body: JSON.stringify({ domain: 'bet365.com', reason: 'estudo', durationMinutes: 15 }),
+      });
+      expect(res.status).toBe(503);
+      expect(res.headers.get('content-type')).toContain('application/problem+json');
+      expect((await res.json()).detail).toContain('Nada foi enviado');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('processa POST /api/unblock-requests com 202 Accepted e deduplicação por Idempotency-Key', async () => {
+    const server = createMonBlockHttpServer({
+      onUnblockRequest: async (p) => ({ status: 'accepted', requestId: `req_${p.domain}`, domain: p.domain ?? null, deduplicated: false } as never),
+    });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const addr = server.address();
     const port = typeof addr === 'object' && addr ? addr.port : 49152;
@@ -92,6 +113,27 @@ describe('Local Block Server, Idempotency & RFC 9457 Problem Details', () => {
       });
       expect(tooLargeRes.status).toBe(413);
       expect(tooLargeRes.headers.get('content-type')).toContain('application/problem+json');
+    } finally {
+      server.close();
+    }
+  });
+});
+
+describe('POST /api/unlock-code', () => {
+  it('nunca libera nada: 501 Problem Details orientando a validar no app', async () => {
+    const server = createMonBlockHttpServer();
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const addr = server.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 49152;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/unlock-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'UNLOCK-15M-ABCDEF' }),
+      });
+      expect(res.status).toBe(501);
+      expect(res.headers.get('content-type')).toContain('application/problem+json');
+      expect((await res.json()).detail).toContain('Nada foi liberado');
     } finally {
       server.close();
     }

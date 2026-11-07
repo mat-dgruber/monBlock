@@ -1,7 +1,7 @@
 # Refino da página de bloqueio — spec de design
 
 - Data: 2026-11-06 · Base: `main` @ `4beff65`
-- Status: **rascunho — aguardando `/plan-criticize` e aprovação do usuário. Nada implementado.**
+- Status: **aprovada pelo usuário em 2026-11-06 (D1–D5 como recomendadas) e implementada** (formulário removido, sem campo de código/"Permanente", tom sóbrio, respiração guiada incluída). Pendente: pedido ao Ajudante com `POST /api/unblock-requests` quando houver Ajudante pareado.
 - Escopo: `docs/design/blocked-page.html` (711 linhas, servida em `http://127.0.0.1:49152/blocked` por `src/server/block-server.ts`), `docs/design/tokens.css`, `src/enforcers/macos-watcher.ts` (parâmetros do redirecionamento).
 - Revisões completas e separadas (fan-out, sem síntese opaca): pasta de notas da sessão, `pb-1-design.md` (8 perspectivas) e `pb-2-animacao.md` (4 vertentes); evidências em `evidencias-pagina-bloqueio.md`.
 - Contexto confirmado pelo usuário: no Chrome e no Dia o watcher já leva a aba até esta página.
@@ -102,3 +102,15 @@ O endpoint `POST /api/unblock-requests` existe, mas hoje devolve `202 accepted` 
 ## 9. Limitações conhecidas do watcher (fora do escopo desta spec)
 - Corrida de abas: se a pessoa trocar de aba entre a leitura (`getActiveTab`) e o redirecionamento, a aba ativa no momento é redirecionada, não a lida. Mitigação futura: reler e comparar o snapshot antes de redirecionar, ou redirecionar por identificador de aba (o Dia e o Chromium expõem `id`).
 - Firefox não expõe a URL: a página omite o endereço nesse caso.
+
+## 10. Revisão do usuário (2026-11-06, noite)
+- Logo da CCAT (Capycro Avectech, de `CCAT/public/Images/logo-ccat.png`, reduzido a 128 px e embutido em base64) no cabeçalho e no centro da respiração.
+- Respiração **automática e etérea** (halo suave atrás do logo, 4 s/6 s, `opacity`/`transform`), com "Pausar animação" (WCAG 2.2.2) e parada sob `prefers-reduced-motion`. Substitui a respiração por opt-in da seção 4.
+- **Pedido ao Ajudante restaurado** (15 min / 1 hora + motivo; sem "Permanente" nem campo de código): `POST /api/unblock-requests` com `Idempotency-Key` e timeout de 8 s. A página só diz "enviado" com `202`; qualquer outra resposta diz "Nada foi enviado". O servidor sem Ajudante ligado responde `503` (antes devolvia `202` sem entregar nada).
+- Pendente (spec do Ajudante/Telegram): ligar um `onUnblockRequest` real, idempotência persistente e entrega ao Ajudante (seção 8).
+
+## 11. Ajuste final do usuário (2026-11-06)
+- Sem logo dentro da respiração: o halo é só o orbe etéreo; o logo fica no cabeçalho.
+- Liberação como no desenho antigo, por decisão do usuário: **15 min / 1 hora / Permanente**, motivo, botão "Pedir aprovação no Telegram" e **campo de código** ("Validar código"). Permanente vai como `permanent: true`.
+- Honestidade mantida: o pedido só é "enviado" com `202`; o campo de código chama `POST /api/unlock-code`, que **nunca libera nada** e responde `501` orientando a validar no app (liberar por HTTP local deixaria qualquer página tentar derrubar bloqueios). A validação real do código fica no app/daemon (IPC).
+- Espaçamentos: grade de 0,9–1,1 rem entre campos, `dl` com espaço entre linhas, divisor "ou use um código".
