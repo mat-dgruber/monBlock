@@ -1,0 +1,28 @@
+# monBlock: curadoria propria; palavras-chave inequivocas (vazio = so dominios).
+# Virgula = todos os termos. Um por linha.
+free,proxy,websites
+free,web,proxy
+web,proxy,unblock
+proxy,site,unblocked
+unblock,websites
+unblocked,websites
+bypass,firewall
+bypass,filter
+anonymous,proxy
+anonymous,browsing
+free,vpn
+vpn,gratis
+vpn,grátis
+vpn,gratuita
+vpn,free,download
+melhor,vpn
+vpn,gratuito
+proxy,gratis
+proxy,grátis
+tor,browser,download
+tor,gateway
+onion,proxy
+burlar,bloqueio
+burlar,restrição
+desbloquear,sites
+acessar,sites,bloqueados

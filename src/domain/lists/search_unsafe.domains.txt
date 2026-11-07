@@ -1,0 +1,27 @@
+# monBlock: curadoria propria (conhecimento do autor; nao copiada de listas de terceiros).
+# Ordem = prioridade (mais conhecidos primeiro). Um dominio por linha.
+yandex.com
+yandex.ru
+yandex.by
+yandex.kz
+yandex.com.tr
+ya.ru
+duckduckgo.com
+duck.com
+search.brave.com
+startpage.com
+ecosia.org
+qwant.com
+metager.org
+metager.de
+swisscows.com
+mojeek.com
+baidu.com
+sogou.com
+so.com
+naver.com
+daum.net
+seznam.cz
+ask.com
+search.aol.com
+search.yahoo.com

@@ -11,6 +11,8 @@
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildProblem, type DaemonCommand, type DaemonResponse } from '../daemon/monblockd.js';
+import { PREDEFINED_CATEGORIES } from '../domain/categories.js';
+import { evaluateUrlAndTitle } from '../domain/rule-engine.js';
 import { MacOSBrowserWatcher } from '../enforcers/macos-watcher.js';
 import { createDefaultPersistentState } from '../storage/state-store.js';
 import { DaemonClient } from './daemon-client.js';
@@ -333,6 +335,33 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   // Registro dos canais IPC conectados ao MonBlockDaemon
   ipcMain.handle('monblock:get-state', () => call({ type: 'GET_STATE' }));
+  // Fonte única das categorias para a UI (RN-WEB-08): resumo + amostra, nunca a lista inteira.
+  ipcMain.handle('monblock:get-categories', () =>
+    PREDEFINED_CATEGORIES.map((c) => ({
+      id: c.id,
+      namePt: c.namePt,
+      domainCount: c.domains.length,
+      keywordCount: c.keywords.length,
+      sampleDomains: c.domains.slice(0, 12),
+      sampleKeywords: c.keywords.slice(0, 8),
+    }))
+  );
+  // Teste de endereço com o mesmo motor do vigia (palavra inteira, sufixo de domínio).
+  ipcMain.handle('monblock:check-url', (_event, payload: { input: string; rules: Record<string, unknown> }) => {
+    const r = (payload?.rules ?? {}) as Record<string, unknown>;
+    const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+    return evaluateUrlAndTitle({
+      url: String(payload?.input ?? ''),
+      title: '',
+      state: {
+        enabledCategories: arr(r.enabledCategories),
+        blockedDomains: arr(r.blockedDomains),
+        allowlistDomains: arr(r.allowlistDomains),
+        keywords: arr(r.keywords),
+        lockIncognito: false,
+      },
+    });
+  });
   ipcMain.handle('monblock:daemon-status', () => daemonClient.status);
 
   // Reinstala o serviço abrindo o .pkg embutido no app (Fase 8); erro vira mensagem para a UI.
@@ -355,6 +384,22 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     } catch (err) {
       return { status: 500, detail: `Não foi possível abrir os Ajustes: ${(err as Error).message}` };
     }
+  });
+
+  ipcMain.handle('monblock:set-bot-token', async (_event, payload: { token?: string; currentPartnerPassword?: string }) => {
+    return call({
+      type: 'SET_BOT_TOKEN',
+      token: payload?.token ?? '',
+      currentPartnerPassword: payload?.currentPartnerPassword,
+    });
+  });
+
+  ipcMain.handle('monblock:initiate-pairing-link', async (_event, payload: { partnerName?: string; currentPartnerPassword?: string }) => {
+    return call({
+      type: 'INITIATE_PAIRING_LINK',
+      partnerName: payload?.partnerName ?? '',
+      currentPartnerPassword: payload?.currentPartnerPassword,
+    });
   });
 
   ipcMain.handle('monblock:initiate-pairing', async (_event, payload: {

@@ -30,7 +30,22 @@ export interface MonBlockHttpServerOptions {
     reason?: string;
     durationMinutes?: number;
     permanent?: boolean;
-  }) => Promise<{ status: string; requestId: string; domain: string | null }>;
+    ruleLabel?: string;
+    title?: string;
+  }) => Promise<Record<string, unknown>>;
+  /** Estado de um pedido já criado (a página consulta a cada poucos segundos). `null` = não existe. */
+  getUnblockRequest?: (requestId: string) => Promise<Record<string, unknown> | null>;
+}
+
+/** Recusa do handler de pedido (limites, sem Ajudante…): vira Problem Details com o status certo. */
+export class UnblockRequestError extends Error {
+  constructor(
+    readonly status: 400 | 403 | 429 | 502 | 503,
+    readonly title: string,
+    readonly detail: string
+  ) {
+    super(detail);
+  }
 }
 
 export interface ProblemDetailsPayload {
@@ -89,8 +104,30 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
   const HTML_CSP =
     "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:";
 
+  // Token de página por sessão: só a página servida por este processo o conhece. Um site qualquer aberto no
+  // navegador pode mandar POST para 127.0.0.1, mas não consegue ler este token (política de mesma origem).
+  const pageToken = crypto.randomBytes(24).toString('base64url');
+  const tokenOk = (req: http.IncomingMessage): boolean => {
+    const given = Buffer.from(String(req.headers['x-monblock-token'] ?? ''), 'utf8');
+    const wanted = Buffer.from(pageToken, 'utf8');
+    return given.length === wanted.length && crypto.timingSafeEqual(given, wanted);
+  };
+  // Host precisa ser o loopback: bloqueia DNS rebinding (nome externo apontando para 127.0.0.1).
+  const hostOk = (req: http.IncomingMessage): boolean => /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(String(req.headers.host ?? ''));
+
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', `http://127.0.0.1:${port}`);
+    const isApi = url.pathname.startsWith('/api/') && url.pathname !== '/api/health';
+    if (isApi && (!hostOk(req) || !tokenOk(req))) {
+      req.resume();
+      return sendProblemDetails(
+        res,
+        403,
+        'Acesso negado',
+        'Esta rota só aceita chamadas feitas pela própria página de bloqueio.',
+        url.pathname
+      );
+    }
 
     if (req.method === 'GET' && url.pathname === '/tokens.css') {
       try {
@@ -117,7 +154,7 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
       try {
         const htmlPath = path.join(designDir, 'blocked-page.html');
         if (!fs.existsSync(htmlPath)) throw new Error('Arquivo não encontrado');
-        const html = fs.readFileSync(htmlPath);
+        const html = fs.readFileSync(htmlPath, 'utf8').replace('</head>', `<meta name="monblock-token" content="${pageToken}" />\n</head>`);
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Content-Security-Policy': HTML_CSP,
@@ -256,6 +293,8 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
             durationMinutes:
               typeof payload.durationMinutes === 'number' ? payload.durationMinutes : undefined,
             permanent: payload.permanent === true ? true : undefined,
+            ruleLabel: typeof payload.ruleLabel === 'string' ? payload.ruleLabel.slice(0, 120) : undefined,
+            title: typeof payload.title === 'string' ? payload.title.slice(0, 120) : undefined,
           });
 
           if (idempotencyKey) {
@@ -274,7 +313,10 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
             'X-Frame-Options': 'DENY',
           });
           return res.end(JSON.stringify(record));
-        } catch {
+        } catch (err) {
+          if (err instanceof UnblockRequestError) {
+            return sendProblemDetails(res, err.status, err.title, err.detail, url.pathname);
+          }
           // Falha do handler não pode virar unhandled rejection nem deixar a requisição pendurada.
           return sendProblemDetails(
             res,
@@ -289,6 +331,28 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
           }
         }
       });
+      return;
+    }
+
+    // Estado de um pedido (a página consulta até a resposta do Ajudante).
+    const statusMatch = /^\/api\/unblock-requests\/([A-Za-z0-9_-]{4,64})$/.exec(url.pathname);
+    if (req.method === 'GET' && statusMatch) {
+      if (!options?.getUnblockRequest) {
+        return sendProblemDetails(res, 404, 'Pedido não encontrado', 'Não há pedidos nesta versão.', url.pathname);
+      }
+      options
+        .getUnblockRequest(statusMatch[1]!)
+        .then((record) => {
+          if (!record) return sendProblemDetails(res, 404, 'Pedido não encontrado', 'Esse pedido não existe ou já foi limpo.', url.pathname);
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+            'X-Frame-Options': 'DENY',
+          });
+          return res.end(JSON.stringify(record));
+        })
+        .catch(() => sendProblemDetails(res, 502, 'Falha ao consultar o pedido', 'Tente novamente em instantes.', url.pathname));
       return;
     }
 

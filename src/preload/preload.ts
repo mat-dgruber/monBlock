@@ -11,6 +11,10 @@ export type IpcInvokeFn = (channel: string, payload?: unknown) => Promise<unknow
 
 export interface MonBlockPreloadApi {
   getState: () => Promise<unknown>;
+  setBotToken: (payload: { token: string; currentPartnerPassword?: string }) => Promise<unknown>;
+  initiatePairingLink: (payload: { partnerName: string; currentPartnerPassword?: string }) => Promise<unknown>;
+  getCategories: () => Promise<unknown>;
+  checkUrl: (input: string, rules: unknown) => Promise<unknown>;
   initiatePairing: (payload: { partnerName: string; telegramChatId: string }) => Promise<unknown>;
   checkPairingStatus: () => Promise<unknown>;
   cancelPairing: () => Promise<unknown>;
@@ -56,6 +60,21 @@ export function createMonBlockPreloadApi(ipcInvoker: IpcInvokeFn): MonBlockPrelo
   const api: MonBlockPreloadApi = {
     getState() {
       return ipcInvoker('monblock:get-state');
+    },
+    setBotToken(payload) {
+      if (!payload || !payload.token) return Promise.reject(new Error('Cole o token do bot.'));
+      return ipcInvoker('monblock:set-bot-token', payload);
+    },
+    initiatePairingLink(payload) {
+      if (!payload || !payload.partnerName) return Promise.reject(new Error('Informe o nome do Ajudante.'));
+      return ipcInvoker('monblock:initiate-pairing-link', payload);
+    },
+    getCategories() {
+      return ipcInvoker('monblock:get-categories');
+    },
+    checkUrl(input: string, rules: unknown) {
+      if (typeof input !== 'string') return Promise.reject(new Error('input inválido.'));
+      return ipcInvoker('monblock:check-url', { input, rules });
     },
     initiatePairing(payload) {
       if (!payload || !payload.partnerName || !payload.telegramChatId) {

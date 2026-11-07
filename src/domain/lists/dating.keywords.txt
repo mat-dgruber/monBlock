@@ -1,0 +1,29 @@
+# monBlock: curadoria propria; palavras-chave inequivocas (vazio = so dominios).
+# Virgula = todos os termos. Um por linha.
+site,relacionamento
+site,namoro
+sites,namoro
+app,namoro
+app,encontros
+aplicativo,namoro
+aplicativo,encontros
+aplicativo,paquera
+site,encontros
+conhecer,solteiros
+solteiros,perto
+singles,near
+online,dating
+dating,app
+dating,site
+dating,profile
+meet,singles
+find,love,online
+encontros,casuais
+namoro,online
+paquera,online
+match,swipe
+swipe,matches
+perfil,namoro
+hookup,app
+sugar,daddy
+sugar,baby

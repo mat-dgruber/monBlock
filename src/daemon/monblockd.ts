@@ -8,7 +8,8 @@
  */
 
 import crypto from 'node:crypto';
-import { TelegramPartnerClient } from './telegram-client.js';
+import { TelegramPartnerClient, type TelegramTransportAdapter, type TelegramUpdate } from './telegram-client.js';
+import { createRequest, decideRequest, expireStale, type DecisionKind } from './unblock-requests.js';
 import { TrustedClock } from './trusted-clock.js';
 import {
   canMutateProtectionRule,
@@ -40,7 +41,7 @@ import type {
 export interface ProblemDetailsResponse {
   type: string;
   title: string;
-  status: 400 | 403 | 409 | 423 | 429 | 500 | 503;
+  status: 400 | 403 | 404 | 409 | 423 | 429 | 500 | 503;
   detail: string;
   instance: string;
 }
@@ -56,6 +57,8 @@ export interface PublicSanitizedState {
   tamperLockdown: boolean;
   /** Perfil dos navegadores aprovado? `null` = ainda não verificado ou falha na verificação. */
   browserProfileInstalled: boolean | null;
+  /** Bot do Telegram: só se está configurado e o @username (o token nunca atravessa o IPC). */
+  bot: { configured: boolean; username?: string };
   partner: {
     paired: boolean;
     telegramChatId?: string;
@@ -64,8 +67,23 @@ export interface PublicSanitizedState {
 }
 
 /** Comandos IPC suportados pelo `MonBlockDaemon`. */
+/** Visão do pedido para a página de bloqueio: sem motivo livre, sem credenciais. */
+export interface PublicUnblockRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED';
+  delivery: 'sent' | 'failed';
+  expiresAtMs: number;
+  grantMinutes?: number;
+  /** Só quando a entrega ao Telegram falhou: o código que a pessoa pode usar offline. */
+  fallbackChallengeCode?: string;
+}
+
 export type DaemonCommand =
   | { type: 'GET_STATE' }
+  | { type: 'SET_BOT_TOKEN'; token: string; currentPartnerPassword?: string }
+  | { type: 'INITIATE_PAIRING_LINK'; partnerName: string; currentPartnerPassword?: string }
+  | { type: 'CREATE_UNBLOCK_REQUEST'; domain: string; reason: string; durationMinutes?: number; ruleLabel?: string; title?: string }
+  | { type: 'GET_UNBLOCK_REQUEST'; requestId: string }
   | {
       type: 'INITIATE_PAIRING';
       partnerName: string;
@@ -171,6 +189,9 @@ export type DaemonSuccessResponse =
       status: 200;
       uninstalled: true;
     }
+  | { status: 200; botConfigured: true; botUsername: string }
+  | { status: 200; request: PublicUnblockRequest }
+  | { status: 200; pairingLink: string; pairingCode: string; partnerName: string; expiresAtMs: number }
   | { status: 200; migrated: true; format: 'MBV1' | 'LEGACY_JSON'; paired: boolean };
 
 export type DaemonResponse = DaemonSuccessResponse | ProblemDetailsResponse;
@@ -178,6 +199,10 @@ export type DaemonResponse = DaemonSuccessResponse | ProblemDetailsResponse;
 /** Tipos aceitos na fronteira IPC (RN-DAEMON-04). O `satisfies` + checagem abaixo quebram o build se faltar um. */
 export const DAEMON_COMMAND_TYPES = [
   'GET_STATE',
+  'SET_BOT_TOKEN',
+  'INITIATE_PAIRING_LINK',
+  'CREATE_UNBLOCK_REQUEST',
+  'GET_UNBLOCK_REQUEST',
   'INITIATE_PAIRING',
   'CHECK_PAIRING_STATUS',
   'CANCEL_PAIRING',
@@ -290,7 +315,10 @@ function maskTelegramChatId(chatId?: string): string | undefined {
 
 export interface PendingPairingState {
   partnerName: string;
+  /** Vazio enquanto o Ajudante não abriu o link de convite (`/start <código>`). */
   telegramChatId: string;
+  /** Código de uso único do convite por link; só existe no pareamento por link. */
+  pairingCode?: string;
   initiatedAtMs: number;
   expiresAtMs: number;
   lastUpdateOffset?: number;
@@ -303,6 +331,8 @@ export interface MonBlockDaemonOptions {
   nowFn?: () => number;
   clock?: TrustedClock;
   telegramClient?: TelegramPartnerClient;
+  /** Transporte do Telegram (testes e `getMe` do token novo). */
+  telegramTransport?: TelegramTransportAdapter;
   /** Chamado depois da limpeza autorizada: o entry root dispara o `uninstall.sh` desacoplado. */
   onUninstalled?: () => void;
   /** Checagem do perfil dos navegadores no watchdog (`checkBrowserProfileInstalled` no entry root). */
@@ -315,6 +345,7 @@ export class MonBlockDaemon {
   private readonly clock: TrustedClock;
   private clockRestored = false;
   private readonly telegramClient?: TelegramPartnerClient;
+  private readonly telegramTransport?: TelegramTransportAdapter;
   private readonly onUninstalled?: () => void;
   private readonly checkBrowserProfile?: () => Promise<boolean | null>;
   private browserProfileInstalled: boolean | null = null;
@@ -331,6 +362,7 @@ export class MonBlockDaemon {
       options.clock ??
       new TrustedClock(options.nowFn ? { wallNow: options.nowFn, monoNowMs: options.nowFn } : {});
     this.telegramClient = options.telegramClient;
+    this.telegramTransport = options.telegramTransport;
     this.onUninstalled = options.onUninstalled;
     this.checkBrowserProfile = options.checkBrowserProfile;
   }
@@ -349,6 +381,7 @@ export class MonBlockDaemon {
       updatedAtMs: state.updatedAtMs,
       tamperLockdown: Boolean(state.tamperLockdown),
       browserProfileInstalled: this.browserProfileInstalled,
+      bot: { configured: Boolean(state.telegramBot), ...(state.telegramBot ? { username: state.telegramBot.username } : {}) },
       partner: {
         paired: state.paired,
         telegramChatId: maskTelegramChatId(state.partnerCredentials?.telegramChatId),
@@ -396,8 +429,16 @@ export class MonBlockDaemon {
   private firstTick = true;
   private lastPingMs = -Infinity;
 
-  private telegramFor(chatId: string): TelegramPartnerClient {
-    return this.telegramClient ?? new TelegramPartnerClient({ pairedChatId: chatId, onServerDate: this.onServerDate });
+  private telegramFor(chatId: string, botToken?: string): TelegramPartnerClient {
+    return (
+      this.telegramClient ??
+      new TelegramPartnerClient({
+        pairedChatId: chatId,
+        botToken,
+        transport: this.telegramTransport,
+        onServerDate: this.onServerDate,
+      })
+    );
   }
 
   /**
@@ -447,7 +488,7 @@ export class MonBlockDaemon {
   private async runTick(): Promise<{ drift: string[] }> {
     const { state } = this.loadState();
     const chatId = state.partnerCredentials?.telegramChatId;
-    const telegram = chatId ? this.telegramFor(chatId) : undefined;
+    const telegram = chatId ? this.telegramFor(chatId, state.telegramBot?.token) : undefined;
     if (telegram && this.clock.trustedNow() - this.lastPingMs >= 10 * 60_000) {
       await telegram.ping();
       this.lastPingMs = this.clock.trustedNow();
@@ -525,6 +566,106 @@ export class MonBlockDaemon {
     const response = await this.runCommand(cmd);
     if (hasCredential) this.recordAuthAttempt(response.status === 403);
     return response;
+  }
+
+  private toPublicRequest(r: import('./unblock-requests.js').UnblockRequest): PublicUnblockRequest {
+    return {
+      id: r.id,
+      status: r.status,
+      delivery: r.delivery,
+      expiresAtMs: r.expiresAtMs,
+      ...(r.grantMinutes ? { grantMinutes: r.grantMinutes } : {}),
+      ...(r.delivery === 'failed' && r.challengeCode && r.status === 'PENDING' ? { fallbackChallengeCode: r.challengeCode } : {}),
+    };
+  }
+
+  /** Executa `fn` na mesma fila serializada dos comandos IPC e do watchdog (sem corrida com `runTick`). */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.commandQueue.then(fn, fn);
+    this.commandQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Um ciclo do broker do Telegram: lê os updates FORA da fila (o long poll pode durar 25 s) e processa
+   * cada um DENTRO dela. Só roda com bot e Ajudante pareado e sem convite pendente (um único leitor).
+   */
+  public async pollTelegramOnce(timeoutSec = 25): Promise<'idle' | 'ok' | 'error'> {
+    const { state } = this.loadState();
+    const chatId = state.partnerCredentials?.telegramChatId;
+    if (!state.paired || !chatId || !state.telegramBot || this.pendingPairing) return 'idle';
+    const botId = state.telegramBot.token.split(':')[0] ?? '';
+    const offset = state.telegramOffset?.botId === botId ? state.telegramOffset.offset : undefined;
+    const res = await this.telegramFor(chatId, state.telegramBot.token).pollUpdates({ offset, timeoutSec });
+    if (!res.ok) return 'error';
+    for (const update of res.updates) {
+      await this.runExclusive(() => this.handleTelegramUpdate(update));
+    }
+    return 'ok';
+  }
+
+  /**
+   * Trata um update (dentro da fila). A decisão do pedido, a concessão e o novo offset vão no MESMO `save`:
+   * se o daemon cair antes, o Telegram reenvia o update; se cair depois, nada se perde.
+   */
+  public async handleTelegramUpdate(update: TelegramUpdate): Promise<void> {
+    const { state } = this.loadState();
+    const chatId = state.partnerCredentials?.telegramChatId;
+    const bot = state.telegramBot;
+    if (!chatId || !bot) return;
+    const now = this.clock.nowForExpiry();
+    const client = this.telegramFor(chatId, bot.token);
+    const botId = bot.token.split(':')[0] ?? '';
+    const offsetState = { botId, offset: update.update_id + 1 };
+
+    const cb = update.callback_query;
+    if (!cb?.data || !cb.message) {
+      this.save({ ...state, telegramOffset: offsetState });
+      return;
+    }
+
+    // Só vale o Ajudante pareado: o chat E quem tocou o botão precisam coincidir (em grupo, `from.id` ≠ chat).
+    const verified = client.parseAndVerifyCallback({ chatId: String(cb.message.chat.id), callbackData: cb.data });
+    if (!verified.authorized || String(cb.from.id) !== chatId || !verified.requestId) {
+      await client.answerCallbackQuery(cb.id, 'Você não pode responder a este pedido.');
+      this.save({ ...state, telegramOffset: offsetState });
+      return;
+    }
+
+    const kind: DecisionKind | null =
+      verified.decision === '15M' ? 'APPROVE_15M' : verified.decision === '60M' ? 'APPROVE_60M' : verified.decision === 'DENY' ? 'DENY' : null;
+    // "Permanente" fica desligado na T1 (sem segunda confirmação): um botão antigo não o ativa.
+    const outcome = kind ? decideRequest(state.unblockRequests ?? [], verified.requestId, kind, now) : ({ kind: 'unknown' } as const);
+
+    if (outcome.kind !== 'applied') {
+      const text =
+        outcome.kind === 'expired' ? 'Este pedido expirou.' : outcome.kind === 'already-decided' ? 'Este pedido já foi respondido.' : 'Não encontrei este pedido.';
+      await client.answerCallbackQuery(cb.id, text);
+      await client.editMessageText(String(cb.message.chat.id), cb.message.message_id, `${text}`);
+      this.save({ ...state, telegramOffset: offsetState });
+      return;
+    }
+
+    const grants = [...state.temporaryGrants];
+    if (outcome.request.status === 'APPROVED' && outcome.request.grantMinutes) {
+      grants.push({ target: outcome.request.domain, expiresAtMs: now + outcome.request.grantMinutes * 60_000 });
+    }
+    const next: MonBlockPersistentState = {
+      ...state,
+      unblockRequests: outcome.requests,
+      temporaryGrants: grants,
+      telegramOffset: offsetState,
+      updatedAtMs: now,
+    };
+    this.save(next);
+    await this.enforcer.applyWebRules(next.rules, next.temporaryGrants);
+
+    const done =
+      outcome.request.status === 'APPROVED'
+        ? `Liberado por ${outcome.request.grantMinutes === 60 ? '1 hora' : '15 minutos'}: ${outcome.request.domain}`
+        : `Pedido negado: ${outcome.request.domain}`;
+    await client.answerCallbackQuery(cb.id, done);
+    await client.editMessageText(String(cb.message.chat.id), cb.message.message_id, done);
   }
 
   /** Carrega e reconcilia os cofres; na primeira leitura, retoma o relógio persistido. */
@@ -612,6 +753,50 @@ export class MonBlockDaemon {
         };
       }
 
+      case 'SET_BOT_TOKEN': {
+        const token = typeof cmd.token === 'string' ? cmd.token.trim() : '';
+        // Formato do BotFather: <id numérico>:<35 caracteres>. Valida antes de qualquer chamada de rede.
+        if (!/^\d{6,12}:[A-Za-z0-9_-]{30,50}$/.test(token)) {
+          return buildProblem(
+            400,
+            'Token do bot inválido',
+            'Cole o token completo que o @BotFather enviou (algo como 123456789:ABC…).',
+            '/ipc/monblockd/set-bot-token'
+          );
+        }
+        // Trocar o bot depois do pareamento é adulterável (desvia as mensagens): exige a senha do Ajudante.
+        if (state.paired && state.partnerCredentials) {
+          const authorized =
+            Boolean(cmd.currentPartnerPassword) &&
+            verifyPartnerPassword(cmd.currentPartnerPassword!, state.partnerCredentials.passwordHash);
+          if (!authorized) {
+            return buildProblem(
+              403,
+              'Troca de bot não autorizada',
+              'Com um Ajudante pareado, trocar o bot exige a senha atual do Ajudante.',
+              '/ipc/monblockd/set-bot-token'
+            );
+          }
+        }
+        const probe = new TelegramPartnerClient({
+          botToken: token,
+          pairedChatId: '',
+          transport: this.telegramTransport,
+          onServerDate: this.onServerDate,
+        });
+        const me = await probe.getMe();
+        if (!me.ok || !me.username) {
+          return buildProblem(
+            400,
+            'Não foi possível validar o bot',
+            'O Telegram não reconheceu esse token (ou está inacessível). Confira o token e tente de novo.',
+            '/ipc/monblockd/set-bot-token'
+          );
+        }
+        this.save({ ...state, telegramBot: { token, username: me.username, setAtMs: now }, updatedAtMs: now });
+        return { status: 200, botConfigured: true, botUsername: me.username };
+      }
+
       case 'INITIATE_PAIRING': {
         const partnerName = cmd.partnerName?.trim();
         const telegramChatId = cmd.telegramChatId?.trim();
@@ -657,9 +842,7 @@ export class MonBlockDaemon {
           expiresAtMs,
         };
 
-        const client =
-          this.telegramClient ??
-          new TelegramPartnerClient({ pairedChatId: telegramChatId, onServerDate: this.onServerDate });
+        const client = this.telegramFor(telegramChatId, state.telegramBot?.token);
         await client.sendPairingInvitation({
           partnerName,
           chatId: telegramChatId,
@@ -670,6 +853,108 @@ export class MonBlockDaemon {
           pairingInitiated: true,
           partnerName,
           telegramChatId,
+          expiresAtMs,
+        };
+      }
+
+      case 'CREATE_UNBLOCK_REQUEST': {
+        const instance = '/ipc/monblockd/create-unblock-request';
+        const chatId = state.partnerCredentials?.telegramChatId;
+        if (!state.paired || !chatId || !state.telegramBot) {
+          return buildProblem(
+            503,
+            'Pedido não enviado',
+            'Ainda não há um Ajudante pareado para receber o pedido. Nada foi enviado.',
+            instance
+          );
+        }
+        const normalized = sanitizeAndNormalizeUrl(cmd.domain ?? '');
+        if (!normalized) {
+          return buildProblem(400, 'Endereço inválido', 'Não foi possível entender o endereço do pedido.', instance);
+        }
+        const challengeCode = `MB-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+        const created = createRequest(
+          state.unblockRequests ?? [],
+          {
+            domain: normalized.domain,
+            reason: cmd.reason ?? '',
+            ruleLabel: cmd.ruleLabel?.trim() || 'Regra do monBlock',
+            requestedMinutes: cmd.durationMinutes ?? 15,
+            challengeCode,
+          },
+          now
+        );
+        if (!created.ok) {
+          return buildProblem(created.status, created.status === 429 ? 'Pedido recusado por ora' : 'Pedido inválido', created.detail, instance);
+        }
+        // O pedido é gravado ANTES do envio: se o daemon cair no meio, o Ajudante não responde a um id desconhecido.
+        this.save({ ...state, unblockRequests: created.requests, updatedAtMs: now });
+        const delivery = await this.telegramFor(chatId, state.telegramBot.token).sendUnblockRequest({
+          requestId: created.request.id,
+          url: normalized.cleanUrl,
+          title: cmd.title ?? '',
+          ruleLabel: created.request.ruleLabel,
+          userReason: created.request.reason,
+          challengeCode,
+          requestedMinutes: created.request.requestedMinutes,
+          allowPermanent: false,
+        });
+        const finalRequest = { ...created.request, delivery: delivery.delivered ? ('sent' as const) : ('failed' as const) };
+        const { state: fresh } = this.loadState();
+        this.save({
+          ...fresh,
+          unblockRequests: (fresh.unblockRequests ?? created.requests).map((r) => (r.id === finalRequest.id ? finalRequest : r)),
+          updatedAtMs: now,
+        });
+        return { status: 200, request: this.toPublicRequest(finalRequest) };
+      }
+
+      case 'GET_UNBLOCK_REQUEST': {
+        const request = expireStale(state.unblockRequests ?? [], now).find((r) => r.id === cmd.requestId);
+        if (!request) {
+          return buildProblem(404, 'Pedido não encontrado', 'Esse pedido não existe ou já foi limpo.', '/ipc/monblockd/get-unblock-request');
+        }
+        return { status: 200, request: this.toPublicRequest(request) };
+      }
+
+      case 'INITIATE_PAIRING_LINK': {
+        const partnerName = cmd.partnerName?.trim();
+        if (!partnerName) {
+          return buildProblem(400, 'Nome do Ajudante ausente', 'Informe o nome do Ajudante.', '/ipc/monblockd/initiate-pairing-link');
+        }
+        if (!state.telegramBot) {
+          return buildProblem(
+            400,
+            'Bot do Telegram não conectado',
+            'Conecte o seu bot do Telegram antes de convidar o Ajudante.',
+            '/ipc/monblockd/initiate-pairing-link'
+          );
+        }
+        if (state.paired && state.partnerCredentials) {
+          const authorized =
+            Boolean(cmd.currentPartnerPassword) &&
+            verifyPartnerPassword(cmd.currentPartnerPassword!, state.partnerCredentials.passwordHash);
+          if (!authorized) {
+            return buildProblem(
+              403,
+              'Pareamento Já Ativo (INV-RATCHET-01)',
+              'O sistema já possui um Ajudante vinculado. Substituir o pareamento exige a senha atual do Ajudante.',
+              '/ipc/monblockd/initiate-pairing-link'
+            );
+          }
+        }
+        const linkGate = this.repairingGate(state, trustedNow, undefined, '/ipc/monblockd/initiate-pairing-link');
+        if (linkGate) return linkGate;
+
+        // Código de uso único e vida curta: quem abrir o link primeiro e apresentar o código vira o Ajudante.
+        const pairingCode = crypto.randomBytes(8).toString('base64url');
+        const expiresAtMs = now + 15 * 60 * 1000;
+        this.pendingPairing = { partnerName, telegramChatId: '', pairingCode, initiatedAtMs: now, expiresAtMs };
+        return {
+          status: 200,
+          pairingLink: `https://t.me/${state.telegramBot.username}?start=${pairingCode}`,
+          pairingCode,
+          partnerName,
           expiresAtMs,
         };
       }
@@ -708,12 +993,7 @@ export class MonBlockDaemon {
 
         this.isCheckingPairing = true;
         try {
-          const client =
-            this.telegramClient ??
-            new TelegramPartnerClient({
-              pairedChatId: this.pendingPairing.telegramChatId,
-              onServerDate: this.onServerDate,
-            });
+          const client = this.telegramFor(this.pendingPairing.telegramChatId, state.telegramBot?.token);
 
           const pollRes = await client.pollUpdates({
             offset: this.pendingPairing.lastUpdateOffset,
@@ -726,6 +1006,25 @@ export class MonBlockDaemon {
                 this.pendingPairing.lastUpdateOffset ?? 0,
                 update.update_id + 1
               );
+
+              // Pareamento por link: o primeiro `/start <código>` válido, em chat privado, vira o Ajudante.
+              if (this.pendingPairing.pairingCode && !this.pendingPairing.telegramChatId) {
+                const start = /^\/start\s+(\S+)$/.exec(update.message?.text?.trim() ?? '');
+                const msg = update.message;
+                if (start && msg && msg.chat.type === 'private') {
+                  const given = Buffer.from(start[1]!, 'utf8');
+                  const wanted = Buffer.from(this.pendingPairing.pairingCode, 'utf8');
+                  if (given.length === wanted.length && crypto.timingSafeEqual(given, wanted)) {
+                    this.pendingPairing.telegramChatId = String(msg.chat.id);
+                    this.pendingPairing.pairingCode = undefined; // uso único
+                    await client.sendPairingInvitation({
+                      partnerName: this.pendingPairing.partnerName,
+                      chatId: this.pendingPairing.telegramChatId,
+                    });
+                  }
+                }
+                continue;
+              }
 
               const pwdCheck = client.extractPasswordFromUpdate(
                 update,
@@ -1186,7 +1485,7 @@ export class MonBlockDaemon {
         // ponytail: aviso só informativo. Ele vai ao chatId do próprio payload migrado, então um
         // "não reconheço" não protegeria contra um payload forjado (risco aceito na ADR-0007).
         if (credentials?.telegramChatId) {
-          await this.telegramFor(credentials.telegramChatId).sendAlert(
+          await this.telegramFor(credentials.telegramChatId, state.telegramBot?.token).sendAlert(
             '🛡️ O monBlock passou para o modo protegido (serviço do sistema) e o seu vínculo como Ajudante foi mantido.',
             credentials.telegramChatId
           );
@@ -1228,7 +1527,7 @@ export class MonBlockDaemon {
         });
         const uninstallChatId = state.partnerCredentials?.telegramChatId;
         if (uninstallChatId) {
-          await this.telegramFor(uninstallChatId).sendAlert(
+          await this.telegramFor(uninstallChatId, state.telegramBot?.token).sendAlert(
             'ℹ️ O monBlock foi desinstalado com autorização (credencial do Ajudante ou cooldown de 72h concluído).',
             uninstallChatId
           );

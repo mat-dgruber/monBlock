@@ -10,6 +10,12 @@ const api = Object.freeze({
   getState() {
     return ipcRenderer.invoke('monblock:get-state');
   },
+  setBotToken(payload) {
+    return ipcRenderer.invoke('monblock:set-bot-token', payload);
+  },
+  initiatePairingLink(payload) {
+    return ipcRenderer.invoke('monblock:initiate-pairing-link', payload);
+  },
   initiatePairing(payload) {
     return ipcRenderer.invoke('monblock:initiate-pairing', payload);
   },
@@ -21,6 +27,12 @@ const api = Object.freeze({
   },
   pairPartner(payload) {
     return ipcRenderer.invoke('monblock:pair-partner', payload);
+  },
+  getCategories() {
+    return ipcRenderer.invoke('monblock:get-categories');
+  },
+  checkUrl(input, rules) {
+    return ipcRenderer.invoke('monblock:check-url', { input, rules });
   },
   enableCategory(categoryId) {
     return ipcRenderer.invoke('monblock:enable-category', { categoryId });

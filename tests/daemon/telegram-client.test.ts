@@ -268,8 +268,8 @@ describe('MOD-02: TelegramPartnerClient (Bot API, Resiliência, Raio-X e Callbac
     expect(firstText).toContain('[EMAIL_REDACTED]');
     expect(firstText).not.toContain('joao.silva@empresa.com.br');
 
-    const titleLine = firstText.split('\n').find((line) => line.startsWith('• Título da Aba: '))!;
-    const extractedTitle = titleLine.replace('• Título da Aba: ', '');
+    const titleLine = firstText.split('\n').find((line) => line.startsWith('Título: '))!;
+    const extractedTitle = titleLine.replace('Título: ', '');
     expect(extractedTitle.length).toBeLessThanOrEqual(120);
 
     // 2. Agora força abertura do circuito com HTTP 503 (3 tentativas em 1 chamada)
@@ -431,5 +431,13 @@ describe('TelegramPartnerClient — âncora de tempo (RN-DAEMON-08)', () => {
 
     // Assert
     expect(dates).toEqual(['Thu, 05 Nov 2026 12:00:00 GMT']);
+  });
+});
+
+import { maskBotToken } from '../../src/daemon/telegram-client.js';
+describe('maskBotToken', () => {
+  it('oculta o token em mensagens de erro', () => {
+    const token = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
+    expect(maskBotToken(`fetch failed https://api.telegram.org/bot${token}/getMe`)).not.toContain(token);
   });
 });

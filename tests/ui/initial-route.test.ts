@@ -160,3 +160,25 @@ describe('stepper: sublinhado do passo ativo', () => {
     expect(css).toMatch(/prefers-reduced-motion: reduce\) \{ \.stepper-step::after \{ transition: none; \}/);
   });
 });
+
+describe('T0: bot do Telegram na interface', () => {
+  it('o app envia o token ao serviço, limpa o campo e nunca o exibe', () => {
+    const js = fs.readFileSync(rendererPath, 'utf8');
+    expect(html).toMatch(/id="botTokenInput" type="password"/);
+    expect(js).toContain('bridge.setBotToken({ token })');
+    expect(js).toContain("if (input) input.value = '';");
+    expect(js).toContain('Bot conectado: @');
+  });
+});
+
+describe('T0b: pareamento por link na interface', () => {
+  it('gera o link, mostra com botão de copiar e reaproveita a espera por pareamento', () => {
+    const js = fs.readFileSync(rendererPath, 'utf8');
+    expect(html).toContain('id="onboardingLinkBtn"');
+    expect(html).toContain('id="copyPairingLinkBtn"');
+    expect(js).toContain('bridge.initiatePairingLink({ partnerName })');
+    expect(js).toContain('function startPairingPoll()');
+    // o Chat ID continua disponível, mas como alternativa
+    expect(html).toMatch(/<details>\s*<summary>Prefiro informar o Chat ID/);
+  });
+});
