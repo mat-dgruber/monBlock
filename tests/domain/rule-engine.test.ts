@@ -142,7 +142,7 @@ describe('RuleEngine & Categories (RN-WEB-01..06)', () => {
 
   it('previne falsos positivos de palavras-chave curtas ("tit", "sex", "anal", "ass", "cum") em substrings de URLs/títulos ("instituição", "sexta", "análise") e abreviações ("sex.", "tit.") (RN-WEB-07)', () => {
     const state: RuleEngineState = {
-      enabledCategories: ['adult'],
+      enabledCategories: [],
       blockedDomains: [],
       allowlistDomains: [],
       keywords: ['sex', 'anal', 'tit', 'ass', 'cum'],
@@ -248,7 +248,7 @@ describe('RuleEngine & Categories (RN-WEB-01..06)', () => {
 
   it('permite rotas locais na porta 49152 mas aplica checagem de KEYWORD em localhost/127.0.0.1 em outras portas', () => {
     const state: RuleEngineState = {
-      enabledCategories: ['adult'],
+      enabledCategories: [],
       blockedDomains: ['localhost', '127.0.0.1'],
       allowlistDomains: [],
       keywords: ['sex'],

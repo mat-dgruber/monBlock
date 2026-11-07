@@ -8,7 +8,7 @@
  */
 
 import { domainToUnicode } from 'node:url';
-import { PREDEFINED_CATEGORIES, type CategoryDefinition } from './categories.js';
+import { PREDEFINED_CATEGORIES, findCategoryForHost, type CategoryDefinition } from './categories.js';
 
 export { PREDEFINED_CATEGORIES, type CategoryDefinition };
 
@@ -233,17 +233,10 @@ export function evaluateUrlAndTitle(input: {
   }
 
   if (!isLocalLoopback) {
-    // Categorias ativas
-    for (const catId of input.state.enabledCategories) {
-      const cat = PREDEFINED_CATEGORIES.find((c) => c.id === catId);
-      if (!cat) continue;
-      if (cat.domains.some((d) => matchesDomain(domain, d))) {
-        return {
-          blocked: true,
-          reason: 'CATEGORY',
-          ruleLabel: `Categoria: ${cat.namePt}`,
-        };
-      }
+    // Categorias ativas (índice por sufixo: custo independente do tamanho das listas)
+    const cat = findCategoryForHost(domain, input.state.enabledCategories);
+    if (cat) {
+      return { blocked: true, reason: 'CATEGORY', ruleLabel: `Categoria: ${cat.namePt}` };
     }
 
     // Domínios customizados (blackWebsites)

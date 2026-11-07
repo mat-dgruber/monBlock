@@ -1,0 +1,20 @@
+monBlock — avisos de terceiros e atribuições
+
+Listas de bloqueio (src/domain/lists/*.domains.txt)
+---------------------------------------------------
+Todas as listas são curadoria própria do projeto, com uma exceção: parte da categoria "adult" é derivada de
+
+  blocklistproject/Lists (arquivo porn.txt, versão alt-version/porn-nl.txt)
+  https://github.com/blocklistproject/Lists
+  Licença: The Unlicense (domínio público). Nenhuma atribuição é exigida; registrada por cortesia.
+
+Fontes usadas SOMENTE como sinal de ranking (nenhum domínio foi copiado delas; apenas se escolheu, entre os
+domínios do blocklistproject, os que também aparecem nelas):
+  - mhxion/pornaway (MIT)                      https://github.com/mhxion/pornaway
+  - Bon-Appetit/porn-domains (CC BY-SA 4.0)    https://github.com/Bon-Appetit/porn-domains
+  - Clefspeare13/pornhosts, via StevenBlack/hosts (MIT)   repositório de origem indisponível (bloqueado pelo GitHub)
+
+Fontes avaliadas e NÃO usadas, por licença copyleft (GPL-3.0 / CC BY-SA 4.0) ou indisponibilidade:
+  OISD, hagezi/dns-blocklists, UT1 (Université Toulouse Capitole), Cloudflare Gateway.
+
+Os arquivos *.keywords.txt são autorais. Veja docs/ai/specs/2026-11-06-listas-de-categorias-ampliadas-design.md.

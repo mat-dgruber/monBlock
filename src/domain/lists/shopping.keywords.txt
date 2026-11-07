@@ -1,0 +1,8 @@
+# monBlock: curadoria propria; palavras-chave inequivocas (vazio = so dominios).
+# Virgula = todos os termos. Um por linha.
+cupom,desconto,loja
+frete,gratis,comprar
+frete,grátis,comprar
+flash,sale
+oferta,relampago
+oferta,relâmpago

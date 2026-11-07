@@ -12,7 +12,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { PREDEFINED_CATEGORIES } from '../domain/categories.js';
+import { HOSTS_MAX_DOMAINS, POLICY_DOMAIN_LIMIT, PREDEFINED_CATEGORIES } from '../domain/categories.js';
 import { sanitizeAndNormalizeUrl } from '../domain/rule-engine.js';
 import type { ProtectionRuleset } from '../storage/state-store.js';
 import {
@@ -334,17 +334,20 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     const categoryDomains = rules.enabledCategories.flatMap(
       (catId) => PREDEFINED_CATEGORIES.find((c) => c.id === catId)?.domains ?? []
     );
+    // Domínios do usuário primeiro: o corte por teto (RN-WEB-09) só atinge o fim das categorias.
     const normalizedBlocked = this.normalizeDomainList([
-      ...categoryDomains,
       ...rules.blockedDomains,
+      ...categoryDomains,
     ]);
 
-    const effectiveBlockedDomains = normalizedBlocked.filter(
-      (d) =>
-        Boolean(d) &&
-        !CRITICAL_INFRA_ALLOWLIST.has(d) &&
-        !allAllowed.some((allowed) => d === allowed || d.endsWith(`.${allowed}`))
-    );
+    const allowedSet = new Set(allAllowed);
+    const isAllowed = (d: string): boolean => {
+      for (let h = d; h; h = h.includes('.') ? h.slice(h.indexOf('.') + 1) : '') if (allowedSet.has(h)) return true;
+      return false;
+    };
+    const effectiveBlockedDomains = normalizedBlocked
+      .filter((d) => Boolean(d) && !CRITICAL_INFRA_ALLOWLIST.has(d) && !isAllowed(d))
+      .slice(0, HOSTS_MAX_DOMAINS);
 
     return {
       effectiveBlockedDomains,
@@ -400,7 +403,7 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
     const { effectiveBlockedDomains, effectiveAllowlistDomains } =
       this.resolveEffectiveBlockedDomains(rules, activeGrants);
     const policyParams: BrowserPolicyParams = {
-      blockedDomains: effectiveBlockedDomains,
+      blockedDomains: effectiveBlockedDomains.slice(0, POLICY_DOMAIN_LIMIT),
       allowlistDomains: effectiveAllowlistDomains,
       lockIncognito: rules.lockIncognito,
     };

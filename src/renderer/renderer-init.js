@@ -28,74 +28,35 @@ globalThis.monblockRenderer = { pickInitialView };
     keywords: [],
   };
 
-  const CATEGORIES_DATA = [
-    {
-      id: 'adult',
-      namePt: 'Conteúdo Adulto & Pornografia',
-      domains: ['pornhub.com', 'xvideos.com', 'xnxx.com', 'onlyfans.com', 'redtube.com'],
-      keywords: ['porn', 'xxx', 'nsfw', 'hentai'],
-    },
-    {
-      id: 'gambling',
-      namePt: 'Apostas & Cassinos (Bets)',
-      domains: ['bet365.com', 'blaze.com', 'stake.com', 'betano.com', 'sportingbet.com'],
-      keywords: ['cassino,online', 'roleta,aposta', 'slot,bonus'],
-    },
-    {
-      id: 'games',
-      namePt: 'Jogos Online',
-      domains: ['roblox.com', 'poki.com', 'twitch.tv'],
-      keywords: ['jogos,online,gratis'],
-    },
-    {
-      id: 'proxy',
-      namePt: 'Proxies, VPNs & Bypass',
-      domains: ['hidemyass.com', 'croxyproxy.com', 'kproxy.com'],
-      keywords: ['web,proxy,unblock'],
-    },
-    {
-      id: 'dating',
-      namePt: 'Sites de Relacionamento',
-      domains: ['tinder.com', 'badoo.com', 'bumble.com'],
-      keywords: ['encontros,casuais'],
-    },
-    {
-      id: 'social',
-      namePt: 'Redes Sociais',
-      domains: ['instagram.com', 'tiktok.com', 'x.com', 'facebook.com'],
-      keywords: [],
-    },
-    {
-      id: 'video',
-      namePt: 'Streaming & Vídeos',
-      domains: ['netflix.com', 'primevideo.com'],
-      keywords: [],
-    },
-    {
-      id: 'forums',
-      namePt: 'Fóruns & Comunidades Mistas',
-      domains: ['reddit.com', '4chan.org', '9gag.com'],
-      keywords: [],
-    },
-    {
-      id: 'shopping',
-      namePt: 'Compras por Impulso',
-      domains: ['shopee.com.br', 'aliexpress.com', 'shein.com'],
-      keywords: [],
-    },
-    {
-      id: 'news',
-      namePt: 'Notícias & Portais',
-      domains: ['tmz.com', 'buzzfeed.com'],
-      keywords: [],
-    },
-    {
-      id: 'search_unsafe',
-      namePt: 'Buscadores sem SafeSearch',
-      domains: ['yandex.com', 'duckduckgo.com'],
-      keywords: [],
-    },
-  ];
+  // Resumo das categorias vindo do catálogo do app (IPC), a mesma fonte do daemon e do vigia.
+  let categoryCatalog = [];
+
+  async function loadCategoryCatalog() {
+    try {
+      categoryCatalog = (await bridge.getCategories()) || [];
+    } catch {
+      categoryCatalog = [];
+    }
+    for (const cat of categoryCatalog) {
+      const card = document.querySelector(`[data-category-id="${cat.id}"]`);
+      if (!card) continue;
+      const count = card.querySelector('.category-rule-count');
+      if (count) count.textContent = `${cat.domainCount.toLocaleString('pt-BR')} domínios + ${cat.keywordCount.toLocaleString('pt-BR')} palavras-chave`;
+      const list = card.querySelector('.category-tags-list');
+      if (!list) continue;
+      list.replaceChildren();
+      const chip = (kind, text) => {
+        const el = document.createElement('span');
+        el.className = `category-tag-chip category-tag-chip--${kind}`;
+        el.textContent = text;
+        list.append(el);
+      };
+      for (const d of cat.sampleDomains) chip('domain', `🌐 ${d}`);
+      for (const k of cat.sampleKeywords) chip('keyword', `🔤 termo: ${k.replaceAll(',', ' + ')}`);
+      const more = cat.domainCount - cat.sampleDomains.length;
+      if (more > 0) chip('keyword', `e mais ${more.toLocaleString('pt-BR')} domínios`);
+    }
+  }
 
   let pairingPollInterval = null;
   let userNavigated = false;
@@ -199,28 +160,18 @@ globalThis.monblockRenderer = { pickInitialView };
     const query = filterQuery.trim().toLowerCase();
     const rows = [];
 
-    // Adiciona regras das categorias ativas
+    // Categorias ativas: amostra (a lista completa vive no daemon e no vigia)
     for (const catId of currentRules.enabledCategories || []) {
-      const cat = CATEGORIES_DATA.find((c) => c.id === catId);
+      const cat = categoryCatalog.find((c) => c.id === catId);
       if (!cat) continue;
-      for (const d of cat.domains) {
-        if (!query || d.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
-          rows.push({
-            item: d,
-            type: 'Domínio',
-            origin: `Categoria: ${cat.namePt}`,
-            status: '🔒 Protegido',
-          });
+      for (const d of cat.sampleDomains) {
+        if (!query || d.includes(query) || cat.namePt.toLowerCase().includes(query)) {
+          rows.push({ item: d, type: 'Domínio', origin: `Categoria: ${cat.namePt} (amostra de ${cat.domainCount.toLocaleString('pt-BR')})`, status: '🔒 Protegido' });
         }
       }
-      for (const kw of cat.keywords) {
-        if (!query || kw.toLowerCase().includes(query) || cat.namePt.toLowerCase().includes(query)) {
-          rows.push({
-            item: kw.replaceAll(',', ' + '),
-            type: 'Palavra-chave',
-            origin: `Categoria: ${cat.namePt}`,
-            status: '🔒 Protegido',
-          });
+      for (const kw of cat.sampleKeywords) {
+        if (!query || kw.includes(query) || cat.namePt.toLowerCase().includes(query)) {
+          rows.push({ item: kw.replaceAll(',', ' + '), type: 'Palavra-chave', origin: `Categoria: ${cat.namePt}`, status: '🔒 Protegido' });
         }
       }
     }
@@ -268,43 +219,11 @@ globalThis.monblockRenderer = { pickInitialView };
       .join('');
   }
 
-  function checkUrlBlockStatus(rawInput) {
-    const input = rawInput.trim().toLowerCase().replace(/^https?:\/\//i, '').replace(/[\/:].*$/, '');
+  async function checkUrlBlockStatus(rawInput) {
+    const input = rawInput.trim();
     if (!input) return null;
-
-    // Checa categorias ativas
-    for (const catId of currentRules.enabledCategories || []) {
-      const cat = CATEGORIES_DATA.find((c) => c.id === catId);
-      if (!cat) continue;
-      for (const d of cat.domains) {
-        if (input === d || input.endsWith('.' + d)) {
-          return { blocked: true, reason: `Categoria: ${cat.namePt}`, item: d };
-        }
-      }
-      for (const kw of cat.keywords) {
-        const terms = kw.split(',').map((t) => t.trim());
-        if (terms.every((t) => input.includes(t))) {
-          return { blocked: true, reason: `Termo da Categoria ${cat.namePt}`, item: kw };
-        }
-      }
-    }
-
-    // Checa domínios customizados
-    for (const d of currentRules.blockedDomains || []) {
-      if (input === d.toLowerCase() || input.endsWith('.' + d.toLowerCase())) {
-        return { blocked: true, reason: 'Lista Customizada de Bloqueios', item: d };
-      }
-    }
-
-    // Checa palavras customizadas
-    for (const kw of currentRules.keywords || []) {
-      const terms = kw.toLowerCase().split(',').map((t) => t.trim());
-      if (terms.every((t) => input.includes(t))) {
-        return { blocked: true, reason: 'Palavra-chave Customizada', item: kw };
-      }
-    }
-
-    return { blocked: false };
+    const r = await bridge.checkUrl(input, currentRules);
+    return r.blocked ? { blocked: true, reason: r.ruleLabel || 'regra ativa', item: r.ruleLabel || input } : { blocked: false };
   }
 
   function updateCooldown() {
@@ -549,18 +468,18 @@ globalThis.monblockRenderer = { pickInitialView };
   const urlCheckerBtn = document.getElementById('urlCheckerBtn');
   const urlCheckerResult = document.getElementById('urlCheckerResult');
 
-  function runUrlCheck() {
+  async function runUrlCheck() {
     if (!urlCheckerInput || !urlCheckerResult) return;
     const value = urlCheckerInput.value.trim();
     if (!value) {
       urlCheckerResult.style.display = 'none';
       return;
     }
-    const check = checkUrlBlockStatus(value);
+    const check = await checkUrlBlockStatus(value);
     urlCheckerResult.style.display = 'flex';
     if (check && check.blocked) {
       urlCheckerResult.dataset.status = 'blocked';
-      urlCheckerResult.textContent = `🚫 Bloqueado por: ${check.reason} (regra: ${check.item})`;
+      urlCheckerResult.textContent = `🚫 Bloqueado por: ${check.reason}`;
     } else {
       urlCheckerResult.dataset.status = 'allowed';
       urlCheckerResult.textContent = '🟢 Acesso livre: este endereço não coincide com nenhuma categoria ou bloqueio ativo.';
@@ -733,6 +652,7 @@ globalThis.monblockRenderer = { pickInitialView };
     if (viewId === 'rules') document.getElementById('batchDomainsTextarea')?.focus();
   });
   switchView('categories');
+  void loadCategoryCatalog().then(() => renderActiveRulesTable());
   void loadState();
   setInterval(updateCooldown, 1000);
 })();
