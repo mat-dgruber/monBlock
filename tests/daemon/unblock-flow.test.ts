@@ -193,4 +193,24 @@ describe('fluxo do pedido de liberação', () => {
     await d.pollTelegramOnce(0);
     expect(method('getUpdates')[0]!.payload).toMatchObject({ offset: 21 });
   });
+
+  it('reinício do daemon no meio do pedido: o pedido sobrevive, libera uma vez e o offset não volta', async () => {
+    const { d, requestId } = await setup();
+    // novo processo sobre o mesmo cofre
+    const d2 = new MonBlockDaemon({
+      store,
+      enforcer: new MacOSPlatformEnforcer({ hostsPath, commandExecutor: async () => undefined }),
+      clock: new TrustedClock({ wallNow: () => t.wall, monoNowMs: () => t.mono }),
+      telegramTransport: transport,
+    });
+    expect(await status(d2, requestId)).toBe('PENDING');
+    updates = [cb(30, `approve_15m:${requestId}`)];
+    expect(await d2.pollTelegramOnce(0)).toBe('ok');
+    expect(await status(d2, requestId)).toBe('APPROVED');
+    // o mesmo botão reentregue após outro reinício não duplica nada
+    const grantsBefore = JSON.stringify((store.loadAndReconcile().state as { temporaryGrants?: unknown }).temporaryGrants);
+    updates = [cb(30, `approve_15m:${requestId}`)];
+    await d.pollTelegramOnce(0);
+    expect(JSON.stringify((store.loadAndReconcile().state as { temporaryGrants?: unknown }).temporaryGrants)).toBe(grantsBefore);
+  });
 });
