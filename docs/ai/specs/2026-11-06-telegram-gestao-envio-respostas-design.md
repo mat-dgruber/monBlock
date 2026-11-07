@@ -34,7 +34,7 @@
 2. **`UnblockRequestStore`**: pedidos `PENDING → APPROVED(15m|60m|PERMANENT) | DENIED | EXPIRED`, TTL de 15 min, `requestId` de uso único, persistido no cofre. Aprovação cria `temporaryGrants` (15/60 min) ou entrada permanente de allowlist e chama `applyWebRules`; expiração reaplica o bloqueio.
 3. **Comandos IPC:** `SET_BOT_TOKEN` (só antes do pareamento ou com autorização do Ajudante; valida com `getMe`, guarda `botUsername`, **nunca devolve o token** — `GET_STATE` expõe só `botUsername` e `botConfigured`), `CREATE_UNBLOCK_REQUEST`, `GET_UNBLOCK_REQUEST`.
 4. **Página de bloqueio:** `onUnblockRequest` do `block-server` chama o `UnblockRequestStore`; devolve `202 {requestId}`; a página consulta `GET /api/unblock-requests/:id` (a cada 3 s, com limite) e mostra "aguardando / aprovado por 15 min / negado / expirado / o Telegram não respondeu (código offline: MB-…)".
-5. **App (Ajudante e recuperação):** passo "Criar o bot" (instrução do `@BotFather`, `/newbot`), campo do token (coberto por `SET_BOT_TOKEN`; o app nunca o guarda), link/QR de convite, estado do bot e do pareamento, botão "Testar mensagem".
+5. **App (Ajudante e recuperação):** passo "Criar o bot" (instrução do `@BotFather`, `/newbot`), campo do token (coberto por `SET_BOT_TOKEN`; o app o repassa uma única vez ao serviço, limpa o campo e nunca o guarda nem o registra), link/QR de convite, estado do bot e do pareamento, botão "Testar mensagem".
 6. **Mensagens ao Ajudante em pt-BR claro** (sem "HMAC"/"Raio-X"): quem pede, qual endereço (higienizado), por quê, por quanto tempo; depois da decisão a mensagem é editada ("Liberado por 15 min às 14:32 / Negado") e o `callback_query` é respondido para parar o carregamento do botão.
 
 **Fases (cada uma = PR atômico, TDD com transporte falso):**
@@ -52,7 +52,7 @@
 - **D6** O Ajudante pode também aprovar o domínio inteiro ou só a URL/domínio pedido? (recomendado: só o domínio pedido)
 
 ## 4. Restrições, bordas e rollback
-- **Restrições:** sem dependência nova; só HTTPS para `api.telegram.org`; daemon root sem acesso ao navegador; o app nunca vê o token; a porta local `49152` não pode liberar nada por HTTP sem uma aprovação real no store (nada de `unlock-code` por HTTP).
+- **Restrições:** sem dependência nova; só HTTPS para `api.telegram.org`; daemon root sem acesso ao navegador; o token passa pelo processo do app uma única vez, no momento em que é digitado (campo `password`, limpo logo após o envio, sem log nem persistência no app); depois disso vive só no cofre do daemon; a porta local `49152` não pode liberar nada por HTTP sem uma aprovação real no store (nada de `unlock-code` por HTTP).
 - **Bordas:** Telegram fora do ar (circuit breaker + código offline); `409 Conflict` de dois pollers; callback duplicado ou fora de ordem (o `requestId` é de uso único e a transição de estado é atômica); pedido que expira com a mensagem ainda aberta (botões viram "expirado"); reinício do daemon no meio do pedido (store e `offset` persistidos); relógio adulterado (`TrustedClock` já usado nos grants); Ajudante troca de chat (novo pareamento invalida pedidos pendentes).
 - **Resiliência:** timeout 3 s por chamada, backoff exponencial com jitter, circuit breaker (já existem) e *long poll* com timeout; falha de entrega nunca vira "enviado".
 - **Rollback:** cada fase só adiciona comandos/estado atrás de `botConfigured`; sem bot o comportamento atual (`503 Nada foi enviado`) permanece. Remover o bot = `SET_BOT_TOKEN` vazio com autorização.
@@ -70,3 +70,35 @@ Escolha: **A**; B continua como contingência (já é o fallback quando o Telegr
 - **Contrato de erros:** as rotas novas (`GET /api/unblock-requests/:id`, estados `EXPIRED`/`DENIED`) respondem em `application/problem+json` (RFC 9457), como as atuais.
 - **Motion:** a página só atualiza texto de estado (sem animação nova); o halo de respiração já respeita `prefers-reduced-motion`.
 - **Artefatos:** esta spec vive em `docs/ai/specs/`; a T1 (broker + store no daemon, token no cofre) pede um **ADR** em `docs/adrs/` ("Telegram broker único com long polling e cofre do token"), a escrever antes de implementar a T1.
+
+## 7. Endurecimento a partir da revisão do PR #13
+
+**Ordem das fases revisada:** o `TelegramBroker` (laço único de `getUpdates`) nasce na **T0**, junto com o pareamento por *deep link*; a **T1** só acrescenta pedidos e grants. Assim o `/start` tem quem o consuma desde a primeira entrega.
+
+| # | Risco apontado | Decisão |
+| :-- | :-- | :-- |
+| 1 | Sites podem postar em `127.0.0.1:49152` e cansar o Ajudante | O servidor gera um **token de página por sessão** (aleatório), injeta na página servida e o exige no cabeçalho `X-MonBlock-Token` de todo `POST`; confere `Host` e `Origin`; além do limite por domínio, **limite global** (no máximo 3 pedidos pendentes e 1 pedido novo a cada 2 min), que girar domínios não contorna |
+| 2 | Qualquer membro de um grupo poderia aprovar | O pareamento só aceita **chat privado** (`chat.type = private`) e guarda também o `from.id` do Ajudante; callbacks só valem se `from.id` **e** `chat.id` coincidirem |
+| 3 | "Permanente" a um toque na T1 | **Permanente fica desligado na T1** (o teclado só oferece 15 min, 1 hora e Negar); volta na T2 com a segunda confirmação |
+| 4 | O app lida com o token | Garantia reescrita (acima): passa uma vez pelo app, que não o guarda |
+| 5 | Offset avança antes de a decisão ficar durável | Uma única transição grava, **no mesmo `save` atômico do estado**, `{estado do pedido, grant, offset}`; só depois disso o offset avança. No reinício, o enforcer é reconciliado a partir do estado gravado |
+| 6 | Watchdog sobrescreve a aprovação | Callbacks do broker entram na **fila serializada de comandos** do daemon (`commandQueue`), a mesma do `tick` e dos comandos IPC |
+| 7 | Aprovação offline não fecha o pedido | `VERIFY_OFFLINE_TOKEN` liga-se ao pedido pelo `challengeCode` e usa a **mesma transição** do callback (pedido → `APPROVED`, grant, sem duplicar) |
+| 8 | Pedido expirado aprovado por botão antigo | A transição confere o TTL com o `TrustedClock` **dentro** dela; fora do prazo devolve `EXPIRED` |
+| 9 | `/start` de quem ainda não é o Ajudante é descartado | Sem Ajudante pareado, o broker aceita `/start <código>` de qualquer remetente **só depois** de validar o código de pareamento de uso único e curta validade; então grava `chat.id` e `from.id` |
+| 10 | Long poll com timeout de 3 s | `getUpdates` usa timeout próprio (`timeoutSec + 5 s`; já é assim em `pollUpdates`), nunca o de 3 s das demais chamadas |
+| 11 | Dois leitores de `getUpdates` (409) | O `CHECK_PAIRING_STATUS` deixa de ler o Telegram: consulta o estado do broker |
+| 12 | Falha de entrega não chega à página | O pedido grava `delivery: failed` e o `fallbackChallengeCode`; `GET /api/unblock-requests/:id` os devolve e a página mostra o código offline |
+| 13 | `answerCallbackQuery` só na T2 | Passa para a **T1** (inclusive em erro, pedido já respondido ou expirado) |
+| 14 | A página não tem como consultar o daemon | O `block-server` recebe dois callbacks injetados: `onUnblockRequest` e `getUnblockRequest`; ambos rodam no mesmo processo do daemon |
+| 15 | Contexto do pedido se perde | DTO único, validado e higienizado na fronteira HTTP: `{ domain, url?, title?, ruleLabel, reason, durationMinutes \| permanent }`; a página envia `domain` e `rule` (da query); o servidor limita tamanhos e remove e-mails do título |
+| 16 | Trocar de bot reaproveita o offset antigo | O offset é guardado junto do **id do bot** (parte numérica do token); trocar de bot zera o offset |
+| 17 | Falta PRD | Esta é a evolução do MOD-02 (`2026-11-04-mod02-partner-guard-telegram-design.md`); os critérios de aceite abaixo substituem o PRD enquanto a iniciativa não for tratada como produto novo |
+
+### Critérios de aceite (BDD)
+- **Dado** um bot conectado e um Ajudante pareado em chat privado, **quando** a página envia um pedido com o token de página, **então** o Ajudante recebe a mensagem com 15 min/1 hora/Negar e a página mostra "aguardando".
+- **Dado** o pedido pendente, **quando** o Ajudante toca "Liberar 15 min", **então** o pedido vira `APPROVED`, o domínio é liberado por 15 min, a mensagem é editada e o botão para de carregar.
+- **Dado** um callback de outro usuário ou de um grupo, **então** nada é liberado.
+- **Dado** um pedido com mais de 15 min, **quando** o botão antigo é tocado, **então** a resposta é "expirado" e nada é liberado.
+- **Dado** o Telegram fora do ar, **então** a página mostra "nada foi enviado" e o código offline.
+- **Dado** um site externo tentando postar sem o token de página, **então** o servidor recusa com `403`.
