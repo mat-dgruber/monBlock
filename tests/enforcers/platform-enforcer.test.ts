@@ -9,6 +9,7 @@ import {
 import { buildBrowserPolicies } from '../../src/enforcers/browser-policy-enforcer.js';
 import { execFileSync } from 'node:child_process';
 import {
+  CHROMIUM_BUNDLE_IDS,
   MacOSPlatformEnforcer,
   checkBrowserProfileInstalled,
   defaultCommandExecutor,
@@ -317,9 +318,9 @@ describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
         `${prefix}            payload[${i + 1}] type\t\t\t= ${t}`,
       ]),
     ].join('\n') + '\n';
-  const all = ['com.microsoft.Edge', 'com.google.Chrome', 'com.brave.Browser'];
+  const all = [...CHROMIUM_BUNDLE_IDS];
 
-  it('true com o perfil de sistema e as 3 políticas Chromium', async () => {
+  it('true com o perfil de sistema e todas as políticas Chromium', async () => {
     // Arrange
     const calls: string[][] = [];
     const run = async (cmd: string, args: string[]) => (calls.push([cmd, ...args]), block('_computerlevel[1]', all));
@@ -334,6 +335,17 @@ describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
 
   it('false quando o perfil com o mesmo identificador é de usuário, não de sistema', async () => {
     expect(await checkBrowserProfileInstalled(async () => block('mat-dgruber[1]', all))).toBe(false);
+  });
+
+  it('false quando o perfil instalado é anterior à lista ampliada (só Chrome, Brave e Edge): exige reaprovar', async () => {
+    const old = block('_computerlevel[1]', ['com.google.Chrome', 'com.brave.Browser', 'com.microsoft.Edge']);
+    expect(await checkBrowserProfileInstalled(async () => old)).toBe(false);
+  });
+
+  it('o perfil cobre Vivaldi, Opera, Chromium e Chrome Beta/Canary', () => {
+    for (const id of ['com.vivaldi.Vivaldi', 'com.operasoftware.Opera', 'org.chromium.Chromium', 'com.google.Chrome.beta', 'com.google.Chrome.canary']) {
+      expect(CHROMIUM_BUNDLE_IDS).toContain(id);
+    }
   });
 
   it('false quando falta a política de algum navegador', async () => {
