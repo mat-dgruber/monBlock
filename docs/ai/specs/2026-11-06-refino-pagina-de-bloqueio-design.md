@@ -56,9 +56,9 @@ Sombras com o primário antigo; estilos inline (CSP do servidor ainda aceita `un
 ## 4. Proposta (a aprovar)
 
 Fase 1 — **honestidade e dados reais** (P0, sem decisão estética): 
-- A página lê `domain`, `reason`, `rule` (e aceita `url`); linhas sem dado são omitidas; protocolo, categoria e camada saem do hard-code (a camada vem de `reason`: palavra-chave → "Watcher"; domínio → "DNS + política").
+- A página lê `domain`, `reason`, `rule` (e aceita `url`); linhas sem dado são omitidas; protocolo, categoria e camada saem do hard-code (a página só é alcançada pelo redirecionamento do vigia de abas, então a camada exibida é sempre "Vigia de abas do monBlock"; `reason` descreve a regra, não a camada).
 - Sem Ajudante pareado: o bloco de pedido vira aviso honesto ("Sem um Ajudante pareado não há como pedir liberação. Isso é a proteção funcionando.") e o campo de código, "Salvar pedido offline" e "Permanente" **não são renderizados**. Quando houver Ajudante, o pedido usa `POST /api/unblock-requests` com `Idempotency-Key`, timeout e erro RFC 9457, e o status vai numa região `aria-live` permanente.
-- "Voltar" determinístico: tenta fechar a aba (`window.close()`); se não puder, mostra o texto "Pode fechar esta aba" (sem `history.back()` em loop).
+- "Voltar" determinístico: tenta fechar a aba (`window.close()`) e **mantém sempre visível** a instrução de fechamento manual (Cmd+W), pois `window.close()` não informa se funcionou; sem `history.back()` em loop.
 - Criação de teste que falha se algum toast afirmar envio/liberação sem resposta do servidor.
 
 Fase 2 — **design** (depende de D1–D4): hierarquia, tema do SO, contraste do badge, remoção de inline/faixa lateral, copy sem culpa.
@@ -91,3 +91,14 @@ Artefatos em `docs/ai/` (spec) e ADR só se o contrato do redirecionamento (`dom
 Escolha: **A**; B é o piso se D1–D4 demorarem (a Fase 1 inteira já é quase B); C é YAGNI até o Ajudante existir.
 
 **Pre-mortem / bordas:** parâmetro ausente ou com caracteres especiais (renderizar com `textContent`, nunca `innerHTML`; limitar tamanho); `domain` com Unicode/IDN; página aberta sem redirecionamento (query vazia → omitir linhas); `window.close()` bloqueado pelo navegador (cair no texto "Pode fechar esta aba"); `prefers-reduced-motion`; contraste nos 4 temas; resposta do daemon fora do ar (erro estático, sem spinner infinito).
+
+## 8. Pré-requisitos do pedido ao Ajudante (fase futura, não faz parte desta entrega)
+O endpoint `POST /api/unblock-requests` existe, mas hoje devolve `202 accepted` sem entregar nada. Antes de a página voltar a oferecer um pedido:
+- ligar um `onUnblockRequest` real no daemon e só reportar sucesso depois da confirmação de entrega ao Ajudante;
+- idempotência persistente e atômica (a atual é um cache em memória de 1.000 chaves, perdido ao reiniciar);
+- tratar `409` de chave em andamento como "pendente" (repetir/consultar com a mesma chave), não como erro;
+- exigir Ajudante pareado antes de exibir o formulário.
+
+## 9. Limitações conhecidas do watcher (fora do escopo desta spec)
+- Corrida de abas: se a pessoa trocar de aba entre a leitura (`getActiveTab`) e o redirecionamento, a aba ativa no momento é redirecionada, não a lida. Mitigação futura: reler e comparar o snapshot antes de redirecionar, ou redirecionar por identificador de aba (o Dia e o Chromium expõem `id`).
+- Firefox não expõe a URL: a página omite o endereço nesse caso.
