@@ -8,7 +8,7 @@
     *   Tokens semânticos organizados em superfícies (`--color-bg-canvas`, `--color-bg-surface`, `--color-bg-elevated`), texto (`--color-text-primary`, `--color-text-secondary`, `--color-text-muted`), marca (`--color-brand-primary: #005A64`, `--color-brand-accent: #C84B31`), status (`--color-status-success`, `--color-status-warning`, `--color-status-danger`) e escala de `z-index` controlada (`--z-base`, `--z-sticky`, `--z-modal`, `--z-toast`).
     *   Utilitários nativos `.ccat-card`, `.ccat-btn`, `.ccat-btn-primary`, `.ccat-btn-accent`, `.ccat-badge`, `.ccat-code` e `.tabular-nums`.
 *   **Superfícies Implementadas (`docs/design/`):**
-    *   `docs/design/blocked-page.html`: Tela de interceptação servida em `http://127.0.0.1:49152/blocked` com seletor dos 4 temas, card de diagnóstico da regra, acionamento idempotente do Ajudante e validação de código de desafio.
+    *   `docs/design/blocked-page.html`: Tela de interceptação servida em `http://127.0.0.1:49152/blocked` somente leitura (0.4.0): tema pelo sistema (Capycro, Capycro escuro, alto contraste), dados reais da query (`domain`, `rule`), saída segura (fechar aba/Esc) e respiração guiada opcional. Não há formulário de pedido, campo de código nem seletor de tema: a liberação depende de um Ajudante pareado no app (spec `docs/ai/specs/2026-11-06-refino-pagina-de-bloqueio-design.md`).
     *   `docs/design/tokens-showcase.html`: Catálogo vivo dos tokens e componentes servido em `http://127.0.0.1:49152/showcase`.
 *   **Ponte Segura Electron (`src/preload/preload.ts`):**
     ```typescript

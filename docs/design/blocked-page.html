@@ -4,6 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Página pausada — monBlock</title>
+  <script>
+    // Tema pelo sistema, sem depender da especificidade do tokens.css: alto contraste > Capycro escuro > Capycro.
+    (function () {
+      const pick = () => document.documentElement.setAttribute('data-theme',
+        matchMedia('(prefers-contrast: more)').matches ? 'high-contrast'
+          : matchMedia('(prefers-color-scheme: dark)').matches ? 'capycro-dark' : 'capycro');
+      pick();
+      ['(prefers-contrast: more)', '(prefers-color-scheme: dark)'].forEach((q) => matchMedia(q).addEventListener('change', pick));
+    })();
+  </script>
   <link rel="stylesheet" href="./tokens.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,7 +28,7 @@
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
     }
-    main { width: min(100%, 38rem); display: grid; gap: 1.5rem; }
+    main { width: min(100%, 38rem); margin-inline: auto; display: grid; gap: 1.5rem; }
     .skip-link { position: absolute; left: -9999px; }
     .skip-link:focus { left: 1rem; top: 1rem; }
 
@@ -72,7 +82,7 @@
     <section class="breath rise rise-2" id="breath" aria-label="Respiração guiada" hidden>
       <div class="ring" id="ring" aria-hidden="true"></div>
       <p class="breath-label" id="breathLabel">Inspire 4 s • Solte 6 s</p>
-      <button type="button" id="breathToggle" class="ccat-btn">Pausar respiração</button>
+      <button type="button" id="breathToggle" class="ccat-btn">Respirar comigo</button>
     </section>
 
     <section class="facts rise rise-3" aria-labelledby="why-title">
@@ -80,11 +90,11 @@
       <dl>
         <div class="fact" id="factDomain" hidden><dt>Endereço</dt><dd><code id="domain"></code></dd></div>
         <div class="fact" id="factRule" hidden><dt>Motivo</dt><dd id="rule"></dd></div>
-        <div class="fact" id="factLayer" hidden><dt>Quem bloqueou</dt><dd id="layer"></dd></div>
+        <div class="fact"><dt>Quem bloqueou</dt><dd>Vigia de abas do monBlock</dd></div>
       </dl>
       <p class="notice">
-        Para liberar este endereço, fale com o seu Ajudante pelo app monBlock. Esta página não libera acessos
-        e nada é enviado daqui. Isso é a proteção funcionando.
+        Esta página não libera acessos e nada é enviado daqui. A liberação depende de um Ajudante pareado no app
+        monBlock; sem ele, o bloqueio simplesmente permanece. Isso é a proteção funcionando.
       </p>
     </section>
   </main>
@@ -99,12 +109,14 @@
       document.getElementById(valueId).textContent = text;
       document.getElementById(factId).hidden = false;
     }
-    const reason = clean(params.get('reason')).toUpperCase();
-    show('factDomain', 'domain', clean(params.get('domain') || params.get('url')));
+    // Domínio em ASCII/punycode (sem Unicode que imite outro site) e sem o marcador interno do Firefox.
+    function asciiHost(raw) {
+      const value = clean(raw);
+      if (!value || value === 'firefox.active.tab') return '';
+      try { return new URL('http://' + value.replace(/^https?:\/\//i, '')).hostname; } catch { return value; }
+    }
+    show('factDomain', 'domain', asciiHost(params.get('domain') || params.get('url')));
     show('factRule', 'rule', clean(params.get('rule')));
-    show('factLayer', 'layer',
-      reason === 'KEYWORD' ? 'Vigia de abas (palavra-chave)'
-        : reason ? 'Bloqueio de rede e política do navegador' : '');
 
     // Saída determinística: tenta fechar; se o navegador não permitir, orienta sem prometer nada.
     const status = document.getElementById('status');
@@ -123,7 +135,7 @@
     const label = document.getElementById('breathLabel');
     const toggle = document.getElementById('breathToggle');
     const IN_MS = 4000, OUT_MS = 6000;
-    let rafId = 0, startedAt = 0, running = true;
+    let rafId = 0, startedAt = 0, running = false; // só começa por escolha de quem está na página
 
     function frame(now) {
       const phase = (now - startedAt) % (IN_MS + OUT_MS);
@@ -142,7 +154,7 @@
     }
     toggle.addEventListener('click', () => {
       running = !running;
-      toggle.textContent = running ? 'Pausar respiração' : 'Retomar respiração';
+      toggle.textContent = running ? 'Pausar respiração' : 'Respirar comigo';
       startBreath();
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) cancelAnimationFrame(rafId); else startBreath(); });
