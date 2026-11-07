@@ -22,10 +22,10 @@ cp packaging/macos/com.ccat.monblockd.plist "$ROOT/Library/LaunchDaemons/"
 # Perfil com a categoria "adult" (sempre ativa pela catraca): o perfil só muda com nova aprovação
 # do usuário, então leva o que nunca sai. Demais categorias: hosts + escrita direta (ADR-0007).
 node --input-type=module -e "
-import { PREDEFINED_CATEGORIES } from './dist/domain/categories.js';
+import { PREDEFINED_CATEGORIES, policyDomains } from './dist/domain/categories.js';
 import { generateBrowserMobileconfig } from './dist/enforcers/platform-enforcer.js';
 const adult = PREDEFINED_CATEGORIES.find((c) => c.id === 'adult');
-process.stdout.write(generateBrowserMobileconfig({ blockedDomains: adult.domains, allowlistDomains: [], lockIncognito: true }));
+process.stdout.write(generateBrowserMobileconfig({ blockedDomains: policyDomains(adult), allowlistDomains: [], lockIncognito: true }));
 " > "$HELPER/monblock-browsers.mobileconfig"
 plutil -lint "$HELPER/monblock-browsers.mobileconfig"
 

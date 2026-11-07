@@ -28,6 +28,12 @@ const api = Object.freeze({
   pairPartner(payload) {
     return ipcRenderer.invoke('monblock:pair-partner', payload);
   },
+  getCategories() {
+    return ipcRenderer.invoke('monblock:get-categories');
+  },
+  checkUrl(input, rules) {
+    return ipcRenderer.invoke('monblock:check-url', { input, rules });
+  },
   enableCategory(categoryId) {
     return ipcRenderer.invoke('monblock:enable-category', { categoryId });
   },

@@ -13,6 +13,8 @@ export interface MonBlockPreloadApi {
   getState: () => Promise<unknown>;
   setBotToken: (payload: { token: string; currentPartnerPassword?: string }) => Promise<unknown>;
   initiatePairingLink: (payload: { partnerName: string; currentPartnerPassword?: string }) => Promise<unknown>;
+  getCategories: () => Promise<unknown>;
+  checkUrl: (input: string, rules: unknown) => Promise<unknown>;
   initiatePairing: (payload: { partnerName: string; telegramChatId: string }) => Promise<unknown>;
   checkPairingStatus: () => Promise<unknown>;
   cancelPairing: () => Promise<unknown>;
@@ -66,6 +68,13 @@ export function createMonBlockPreloadApi(ipcInvoker: IpcInvokeFn): MonBlockPrelo
     initiatePairingLink(payload) {
       if (!payload || !payload.partnerName) return Promise.reject(new Error('Informe o nome do Ajudante.'));
       return ipcInvoker('monblock:initiate-pairing-link', payload);
+    },
+    getCategories() {
+      return ipcInvoker('monblock:get-categories');
+    },
+    checkUrl(input: string, rules: unknown) {
+      if (typeof input !== 'string') return Promise.reject(new Error('input inválido.'));
+      return ipcInvoker('monblock:check-url', { input, rules });
     },
     initiatePairing(payload) {
       if (!payload || !payload.partnerName || !payload.telegramChatId) {

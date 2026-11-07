@@ -1,0 +1,6 @@
+# monBlock: curadoria propria; palavras-chave inequivocas (vazio = so dominios).
+# Virgula = todos os termos. Um por linha.
+fofoca,famosos
+fofocas,celebridades
+celebrity,gossip
+celeb,gossip
