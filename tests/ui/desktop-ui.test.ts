@@ -191,9 +191,11 @@ describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
         'getCategories',
         'getState',
         'initiatePairing',
+        'initiatePairingLink',
         'pairPartner',
         'requestAuthorizedUninstall',
         'requestUnblock',
+        'setBotToken',
         'triggerEmergencyCooldown',
         'verifyOfflineToken',
       ].sort()

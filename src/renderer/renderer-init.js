@@ -281,6 +281,11 @@ globalThis.monblockRenderer = { pickInitialView };
           ? 'Modo de segurança'
           : result.state.browserProfileInstalled === false ? 'Proteção parcial' : 'Proteção ativa';
       }
+      const bot = result.state.bot;
+      const botStatus = document.getElementById('botStatus');
+      if (botStatus) botStatus.textContent = bot?.configured ? `Bot conectado: @${bot.username}` : 'Nenhum bot conectado.';
+      const botRow = document.getElementById('botTokenRow');
+      if (botRow) botRow.hidden = Boolean(bot?.configured);
       isPaired = result.state.paired === true;
       renderOnboardingGate();
       const emptyHint = document.getElementById('emptyRulesHint');
@@ -497,6 +502,20 @@ globalThis.monblockRenderer = { pickInitialView };
     renderActiveRulesTable(rulesTableSearchInput.value);
   });
 
+  // Bot do Telegram: o token vai direto ao serviço do sistema; o campo é limpo e nunca fica na interface.
+  const botConnectBtn = document.getElementById('botConnectBtn');
+  botConnectBtn?.addEventListener('click', async () => {
+    const input = document.getElementById('botTokenInput');
+    const token = input?.value.trim();
+    if (!token) {
+      notify('Cole o token que o @BotFather enviou.', true);
+      return;
+    }
+    const ok = await execute(botConnectBtn, () => bridge.setBotToken({ token }), 'Bot conectado.');
+    if (input) input.value = '';
+    if (ok) await loadState();
+  });
+
   // Pareamento no Onboarding via Telegram (Sem senha local)
   const onboardingPairBtn = document.getElementById('onboardingPairBtn');
   const onboardingPairingCard = document.getElementById('onboardingPairingCard');
@@ -510,6 +529,67 @@ globalThis.monblockRenderer = { pickInitialView };
     if (onboardingPairingCard) onboardingPairingCard.style.display = 'grid';
     if (onboardingPairBtn) onboardingPairBtn.disabled = false;
     notify('Convite de pareamento cancelado.');
+  });
+
+  function startPairingPoll() {
+    stopPairingPoll();
+    pairingPollInterval = setInterval(async () => {
+      try {
+        const statusRes = await bridge.checkPairingStatus();
+        if (statusRes?.status === 200 && statusRes.paired) {
+          stopPairingPoll();
+          await loadState();
+          notify('Ajudante configurou a Senha Mestra no Telegram! Proteção ativa.');
+          switchOnboardingStep(4);
+        } else if (statusRes?.error) {
+          stopPairingPoll();
+          notify(statusRes.error, true);
+          if (onboardingPairingWaitingCard) onboardingPairingWaitingCard.style.display = 'none';
+          if (onboardingPairingCard) onboardingPairingCard.style.display = 'grid';
+          if (onboardingPairBtn) onboardingPairBtn.disabled = false;
+        }
+      } catch {
+        // Continua tentando
+      }
+    }, 2000);
+  }
+
+  // Pareamento por link: o Ajudante abre t.me/<bot>?start=<código> e é vinculado sozinho.
+  document.getElementById('onboardingLinkBtn')?.addEventListener('click', async (event) => {
+    const partnerName = document.getElementById('onboardingPartnerNameInput')?.value.trim();
+    if (!partnerName) {
+      notify('Preencha o Nome do Ajudante.', true);
+      return;
+    }
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const res = await bridge.initiatePairingLink({ partnerName });
+      if (!res || res.status !== 200) {
+        notify(res?.detail || 'Não foi possível gerar o link de convite.', true);
+        return;
+      }
+      if (onboardingPairingCard) onboardingPairingCard.style.display = 'none';
+      if (onboardingPairingWaitingCard) onboardingPairingWaitingCard.style.display = 'grid';
+      const linkText = document.getElementById('pairingLinkText');
+      if (linkText) linkText.textContent = res.pairingLink;
+      document.getElementById('pairingLinkRow')?.removeAttribute('hidden');
+      notify('Link gerado. Envie ao seu Ajudante; ele vale por 15 minutos e só funciona uma vez.');
+      startPairingPoll();
+    } catch (err) {
+      notify(err?.message || 'Falha ao gerar o link.', true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  document.getElementById('copyPairingLinkBtn')?.addEventListener('click', async () => {
+    const text = document.getElementById('pairingLinkText')?.textContent ?? '';
+    try {
+      await navigator.clipboard.writeText(text);
+      notify('Link copiado.');
+    } catch {
+      notify('Não foi possível copiar. Selecione o link e copie manualmente.', true);
+    }
   });
 
   onboardingPairBtn?.addEventListener('click', async () => {
@@ -536,26 +616,7 @@ globalThis.monblockRenderer = { pickInitialView };
       if (onboardingPairingWaitingCard) onboardingPairingWaitingCard.style.display = 'grid';
       notify(`Convite enviado ao Telegram de ${partnerName}! Aguardando definição da senha...`);
 
-      stopPairingPoll();
-      pairingPollInterval = setInterval(async () => {
-        try {
-          const statusRes = await bridge.checkPairingStatus();
-          if (statusRes?.status === 200 && statusRes.paired) {
-            stopPairingPoll();
-            await loadState();
-            notify('Ajudante configurou a Senha Mestra no Telegram! Proteção ativa.');
-            switchOnboardingStep(4);
-          } else if (statusRes?.error) {
-            stopPairingPoll();
-            notify(statusRes.error, true);
-            if (onboardingPairingWaitingCard) onboardingPairingWaitingCard.style.display = 'none';
-            if (onboardingPairingCard) onboardingPairingCard.style.display = 'grid';
-            if (onboardingPairBtn) onboardingPairBtn.disabled = false;
-          }
-        } catch {
-          // Continua tentando
-        }
-      }, 2000);
+      startPairingPoll();
     } catch (err) {
       notify(err?.message || 'Falha ao iniciar pareamento.', true);
       if (onboardingPairBtn) onboardingPairBtn.disabled = false;

@@ -102,3 +102,4 @@ A arquitetura interna do domínio segue separação estrita entre **Núcleo de D
 - UI: `monblock:get-categories` (resumo + amostra) e `monblock:check-url` (mesmo motor do vigia).
 - Medição manual do hosts (exige root, não automatizada): `sudo sh -c 'time dscacheutil -flushcache'` e `time dscacheutil -q host -a name exemplo.com` com o bloco aplicado.
 - Atribuição das fontes: `NOTICE`.
+*   **Pedido de liberação (0.7.0):** `POST /api/unblock-requests` cria o pedido no daemon (`CREATE_UNBLOCK_REQUEST`) e a página consulta `GET /api/unblock-requests/:id` até a decisão. Rotas `/api/*` (exceto `/api/health`) exigem o token de página (`X-MonBlock-Token`) e `Host` de loopback. O pedido tem TTL de 15 min; a aprovação (15 min ou 1 hora) vira `temporaryGrants` e `applyWebRules` no mesmo `save` que grava a decisão e o offset do Telegram. Sem Ajudante pareado: `503` "Nada foi enviado".

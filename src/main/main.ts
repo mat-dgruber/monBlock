@@ -386,6 +386,22 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     }
   });
 
+  ipcMain.handle('monblock:set-bot-token', async (_event, payload: { token?: string; currentPartnerPassword?: string }) => {
+    return call({
+      type: 'SET_BOT_TOKEN',
+      token: payload?.token ?? '',
+      currentPartnerPassword: payload?.currentPartnerPassword,
+    });
+  });
+
+  ipcMain.handle('monblock:initiate-pairing-link', async (_event, payload: { partnerName?: string; currentPartnerPassword?: string }) => {
+    return call({
+      type: 'INITIATE_PAIRING_LINK',
+      partnerName: payload?.partnerName ?? '',
+      currentPartnerPassword: payload?.currentPartnerPassword,
+    });
+  });
+
   ipcMain.handle('monblock:initiate-pairing', async (_event, payload: {
     partnerName?: string;
     telegramChatId?: string;
