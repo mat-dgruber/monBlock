@@ -1,20 +1,82 @@
-/** Página de bloqueio (spec 2026-11-06-refino-pagina-de-bloqueio-design.md): honestidade, dados reais e motion calmo. */
+/** Página de bloqueio (spec 2026-11-06-refino-pagina-de-bloqueio-design.md): honestidade, dados reais, pedido e motion calmo. */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const html = fs.readFileSync(path.resolve(__dirname, '../../docs/design/blocked-page.html'), 'utf8');
 
-describe('blocked-page.html', () => {
-  it('não afirma envio, verificação nem liberação que o sistema não faz (catraca unidirecional)', () => {
-    for (const lie of ['Acesso liberado', 'Pedido enviado', 'Código verificado', 'Comprovante', 'Validar e Liberar', 'Permanente']) {
+type Listener = (e?: unknown) => unknown;
+interface Stub {
+  textContent: string; hidden: boolean; value: string; disabled: boolean; dataset: Record<string, string>;
+  listeners: Record<string, Listener[]>; style: { setProperty: (k: string, v: string) => void; props: Record<string, string> };
+  addEventListener: (t: string, f: Listener) => void; appendChild: (c: unknown) => void; cloneNode: () => Stub; removeAttribute: () => void;
+  alt?: string; children: unknown[];
+}
+interface PageOpts { dark?: boolean; contrast?: boolean; reduced?: boolean; fetch?: (url: string, init: { body: string; headers: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }> }
+
+// Executa o script da página num contexto simulado (sem DOM real) para pegar regressões de comportamento.
+function runPage(search: string, opts: PageOpts = {}) {
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
+  const els = new Map<string, Stub>();
+  const make = (id: string): Stub => {
+    const listeners: Record<string, Listener[]> = {};
+    const props: Record<string, string> = {};
+    const stub: Stub = {
+      textContent: '', hidden: id.startsWith('fact'), value: '', disabled: false, dataset: {}, listeners, children: [],
+      style: { props, setProperty: (k, v) => { props[k] = v; } },
+      addEventListener: (t, f) => { (listeners[t] ??= []).push(f); },
+      appendChild: (c) => { stub.children.push(c); },
+      cloneNode: () => make(id + '-clone'),
+      removeAttribute: () => undefined,
+    };
+    return stub;
+  };
+  const el = (id: string) => { if (!els.has(id)) els.set(id, make(id)); return els.get(id)!; };
+  const docListeners: Record<string, Listener[]> = {};
+  const winListeners: Record<string, Listener[]> = {};
+  const attrs: Record<string, string> = {};
+  let closed = 0, raf = 0;
+  const mq = (q: string) => ({
+    matches: q.includes('contrast') ? !!opts.contrast : q.includes('dark') ? !!opts.dark : q.includes('reduced-motion') ? !!opts.reduced : false,
+    addEventListener: () => undefined,
+  });
+  const win = { location: { search }, close: () => { closed += 1; }, addEventListener: (t: string, f: Listener) => { (winListeners[t] ??= []).push(f); }, matchMedia: mq };
+  const ctx = {
+    window: win,
+    document: {
+      documentElement: { setAttribute: (k: string, v: string) => { attrs[k] = v; } },
+      getElementById: el, hidden: false,
+      addEventListener: (t: string, f: Listener) => { (docListeners[t] ??= []).push(f); },
+    },
+    matchMedia: mq,
+    requestAnimationFrame: () => { raf += 1; return raf; },
+    cancelAnimationFrame: () => undefined,
+    performance: { now: () => 0 },
+    URL, URLSearchParams, AbortController, setTimeout, clearTimeout,
+    FormData: class { get() { return '15'; } },
+    crypto: { randomUUID: () => 'uuid-fixo' },
+    fetch: opts.fetch ?? (async () => ({ status: 503, json: async () => ({}) })),
+  };
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  for (const code of scripts) new Function(...Object.keys(ctx), code)(...Object.values(ctx));
+  return { el, attrs, winListeners, closedCount: () => closed, rafCount: () => raf };
+}
+
+async function submit(r: ReturnType<typeof runPage>, reason: string) {
+  r.el('reason').value = reason;
+  await r.el('requestForm').listeners.submit![0]!({ preventDefault: () => undefined });
+  return r.el('sendStatus').textContent;
+}
+
+describe('blocked-page.html: conteúdo', () => {
+  it('não afirma verificação nem liberação que o sistema não faz (catraca unidirecional)', () => {
+    for (const lie of ['Acesso liberado', 'Código verificado', 'Comprovante', 'Validar e Liberar', 'Permanente', 'unlockTokenInput']) {
       expect(html).not.toContain(lie);
     }
-    expect(html).not.toMatch(/<form|<input|<textarea|<select/);
     expect(html).toContain('Esta página não libera acessos');
   });
 
-  it('usa os parâmetros reais do watcher (domain, reason, rule) e não mostra exemplos fixos', () => {
+  it('usa os parâmetros reais do watcher (domain, rule) e não mostra exemplos fixos', () => {
     expect(html).toContain("params.get('domain')");
     expect(html).toContain("params.get('rule')");
     expect(html).not.toContain('bet-exemplo.com');
@@ -22,71 +84,19 @@ describe('blocked-page.html', () => {
     expect(html).toMatch(/id="factDomain"[^>]*hidden/);
   });
 
-  it('renderiza a query só com textContent (nunca innerHTML)', () => {
+  it('tem o logo da CCAT, renderiza a query só com textContent e não usa estilos inline', () => {
+    expect(html).toMatch(/<img id="logo" src="data:image\/png;base64,/);
     expect(html).not.toContain('innerHTML');
-    expect(html).toContain('textContent');
-  });
-
-  it('saída segura em destaque, sem estilos inline e sem tema fixo (segue o sistema)', () => {
-    expect(html).toContain('id="closeBtn"');
     expect(html).not.toMatch(/\sstyle="/);
     expect(html).not.toMatch(/<html[^>]*data-theme/);
   });
 
-  it('motion: só transform/opacity, respiração por tempo decorrido e reduced-motion', () => {
-    expect(html).toContain('@media (prefers-reduced-motion: reduce)');
-    expect(html).toContain('performance.now()');
-    expect(html).toContain('(now - startedAt)');
-    expect(html).toContain("matchMedia('(prefers-reduced-motion: reduce)')");
-    // o botão de saída nunca recebe a animação de entrada
+  it('saída segura em destaque e fora da animação de entrada', () => {
+    expect(html).toContain('id="closeBtn"');
     expect(html).not.toMatch(/<button[^>]*closeBtn[^>]*class="[^"]*rise/);
     expect(html).not.toMatch(/class="actions[^"]*rise/);
   });
 });
-
-// Executa o script da página num contexto simulado (sem DOM real) para pegar regressões de comportamento.
-function runPage(search: string, opts: { dark?: boolean; contrast?: boolean } = {}) {
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!);
-  const els = new Map<string, { textContent: string; hidden: boolean; listeners: Record<string, Array<(e?: unknown) => void>>; style: Record<string, string>; addEventListener: (t: string, f: (e?: unknown) => void) => void }>();
-  const el = (id: string) => {
-    if (!els.has(id)) {
-      const listeners: Record<string, Array<(e?: unknown) => void>> = {};
-      els.set(id, { textContent: '', hidden: id.startsWith('fact'), listeners, style: {}, addEventListener: (t, f) => ((listeners[t] ??= []).push(f), undefined) });
-    }
-    return els.get(id)!;
-  };
-  const docListeners: Record<string, Array<(e: unknown) => void>> = {};
-  const winListeners: Record<string, Array<(e: unknown) => void>> = {};
-  const attrs: Record<string, string> = {};
-  let closed = 0;
-  const mq = (q: string) => ({
-    matches: q.includes('contrast') ? !!opts.contrast : q.includes('dark') ? !!opts.dark : false,
-    addEventListener: () => undefined,
-  });
-  const win = {
-    location: { search },
-    close: () => { closed += 1; },
-    addEventListener: (t: string, f: (e: unknown) => void) => ((winListeners[t] ??= []).push(f), undefined),
-  };
-  const ctx = {
-    window: win,
-    document: {
-      documentElement: { setAttribute: (k: string, v: string) => { attrs[k] = v; } },
-      getElementById: el,
-      hidden: false,
-      addEventListener: (t: string, f: (e: unknown) => void) => ((docListeners[t] ??= []).push(f), undefined),
-    },
-    matchMedia: mq,
-    requestAnimationFrame: () => 1,
-    cancelAnimationFrame: () => undefined,
-    performance: { now: () => 0 },
-    URL, URLSearchParams,
-  };
-  Object.assign(win, { matchMedia: mq });
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  for (const code of scripts) new Function(...Object.keys(ctx), code)(...Object.values(ctx));
-  return { el, attrs, winListeners, closedCount: () => closed };
-}
 
 describe('blocked-page.html: comportamento (script executado)', () => {
   it('mostra domínio em punycode e o motivo reais; esconde o que não veio; ignora o marcador do Firefox', () => {
@@ -116,11 +126,42 @@ describe('blocked-page.html: comportamento (script executado)', () => {
     expect(runPage('').attrs['data-theme']).toBe('capycro');
   });
 
-  it('a respiração não começa sozinha (só por escolha)', () => {
-    const r = runPage('');
-    expect(r.el('breathToggle').textContent).toBe('');
-    expect(html).toContain('running = false');
-    expect(html).toContain('Respirar comigo');
+  it('a respiração começa sozinha, mas fica parada com prefers-reduced-motion', () => {
+    expect(runPage('').rafCount()).toBeGreaterThan(0);
+    const calm = runPage('', { reduced: true });
+    expect(calm.rafCount()).toBe(0);
+    expect(calm.el('breathToggle').hidden).toBe(true);
+  });
+});
+
+describe('blocked-page.html: pedido ao Ajudante (só "enviado" com confirmação do servidor)', () => {
+  it('sem motivo não chama o servidor e diz que nada foi enviado', async () => {
+    let calls = 0;
+    const r = runPage('?domain=x.com', { fetch: async () => { calls += 1; return { status: 202, json: async () => ({}) }; } });
+    expect(await submit(r, '  ')).toContain('Nada foi enviado');
+    expect(calls).toBe(0);
+  });
+
+  it('202 do servidor: confirma o envio, com Idempotency-Key, domínio e duração', async () => {
+    let sent: { body: string; headers: Record<string, string> } | undefined;
+    const r = runPage('?domain=x.com', { fetch: async (_u, init) => { sent = init; return { status: 202, json: async () => ({}) }; } });
+    expect(await submit(r, 'estudo')).toContain('Pedido enviado');
+    expect(sent!.headers['Idempotency-Key']).toBe('uuid-fixo');
+    expect(JSON.parse(sent!.body)).toEqual({ domain: 'x.com', reason: 'estudo', durationMinutes: 15 });
+  });
+
+  it('503 (sem Ajudante) mostra o detalhe do servidor e nunca "enviado"', async () => {
+    const r = runPage('?domain=x.com', { fetch: async () => ({ status: 503, json: async () => ({ detail: 'Ainda não há um Ajudante pareado para receber o pedido. Nada foi enviado.' }) }) });
+    const text = await submit(r, 'estudo');
+    expect(text).toContain('Ajudante pareado');
+    expect(text).not.toContain('Pedido enviado');
+    expect(r.el('sendStatus').dataset.kind).toBe('error');
+  });
+
+  it('falha de rede diz que nada foi enviado e libera o botão', async () => {
+    const r = runPage('?domain=x.com', { fetch: async () => { throw new Error('rede'); } });
+    expect(await submit(r, 'estudo')).toContain('Nada foi enviado');
+    expect(r.el('sendBtn').disabled).toBe(false);
   });
 });
 

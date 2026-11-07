@@ -6,6 +6,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 ### Adicionado
+- Página de bloqueio: logo da CCAT (Capycro Avectech), respiração etérea e automática (halo atrás do logo, com pausa e `prefers-reduced-motion`) e pedido de liberação ao Ajudante (15 min ou 1 hora + motivo) que só diz "enviado" com a confirmação do servidor. `POST /api/unblock-requests` sem Ajudante ligado passou a responder `503` Problem Details ("Nada foi enviado") em vez de `202`.
 - Tema **Capycro escuro** (marca à noite: verde-azulado mineral + terracota sobre carvão quente, com detalhes marrons nas bordas e rótulos; contraste AA/AAA) em `tokens.css`, no painel (opção "Capycro escuro") e como tema automático da página de bloqueio no modo escuro do sistema.
 - Página de bloqueio refeita: mostra só dados reais (`domain`, `reason`, `rule`), não afirma envio nem liberação (removidos o campo de código, "Permanente" e os avisos falsos), segue o tema do sistema, tem saída segura em destaque e respiração guiada opcional com `prefers-reduced-motion`. Spec `docs/ai/specs/2026-11-06-refino-pagina-de-bloqueio-design.md`.
 - Spec do watcher fora do app Electron (futuro): `docs/ai/specs/2026-11-06-watcher-separado-design.md`.

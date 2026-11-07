@@ -28,6 +28,7 @@ export interface MonBlockHttpServerOptions {
     domain?: string;
     challengeCode?: string;
     reason?: string;
+    durationMinutes?: number;
   }) => Promise<{ status: string; requestId: string; domain: string | null }>;
 }
 
@@ -236,22 +237,24 @@ export function createMonBlockHttpServer(options?: MonBlockHttpServerOptions): h
             }
           }
 
-          let record: Record<string, unknown>;
-          if (options?.onUnblockRequest) {
-            record = await options.onUnblockRequest({
-              domain: typeof payload.domain === 'string' ? payload.domain : undefined,
-              challengeCode:
-                typeof payload.challengeCode === 'string' ? payload.challengeCode : undefined,
-              reason: typeof payload.reason === 'string' ? payload.reason : undefined,
-            });
-          } else {
-            record = {
-              status: 'accepted',
-              requestId: `req_${crypto.randomBytes(6).toString('hex')}`,
-              domain: typeof payload.domain === 'string' ? payload.domain : null,
-              deduplicated: false,
-            };
+          // Sem entrega real ao Ajudante (nenhum handler ligado), a resposta é honesta: nada foi enviado.
+          if (!options?.onUnblockRequest) {
+            return sendProblemDetails(
+              res,
+              503,
+              'Pedido não enviado',
+              'Ainda não há um Ajudante pareado para receber o pedido. Nada foi enviado.',
+              url.pathname
+            );
           }
+          const record: Record<string, unknown> = await options.onUnblockRequest({
+            domain: typeof payload.domain === 'string' ? payload.domain : undefined,
+            challengeCode:
+              typeof payload.challengeCode === 'string' ? payload.challengeCode : undefined,
+            reason: typeof payload.reason === 'string' ? payload.reason : undefined,
+            durationMinutes:
+              typeof payload.durationMinutes === 'number' ? payload.durationMinutes : undefined,
+          });
 
           if (idempotencyKey) {
             if (idempotencyStore.size >= MAX_IDEMPOTENCY_ENTRIES) {

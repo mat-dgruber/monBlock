@@ -102,3 +102,9 @@ O endpoint `POST /api/unblock-requests` existe, mas hoje devolve `202 accepted` 
 ## 9. Limitações conhecidas do watcher (fora do escopo desta spec)
 - Corrida de abas: se a pessoa trocar de aba entre a leitura (`getActiveTab`) e o redirecionamento, a aba ativa no momento é redirecionada, não a lida. Mitigação futura: reler e comparar o snapshot antes de redirecionar, ou redirecionar por identificador de aba (o Dia e o Chromium expõem `id`).
 - Firefox não expõe a URL: a página omite o endereço nesse caso.
+
+## 10. Revisão do usuário (2026-11-06, noite)
+- Logo da CCAT (Capycro Avectech, de `CCAT/public/Images/logo-ccat.png`, reduzido a 128 px e embutido em base64) no cabeçalho e no centro da respiração.
+- Respiração **automática e etérea** (halo suave atrás do logo, 4 s/6 s, `opacity`/`transform`), com "Pausar animação" (WCAG 2.2.2) e parada sob `prefers-reduced-motion`. Substitui a respiração por opt-in da seção 4.
+- **Pedido ao Ajudante restaurado** (15 min / 1 hora + motivo; sem "Permanente" nem campo de código): `POST /api/unblock-requests` com `Idempotency-Key` e timeout de 8 s. A página só diz "enviado" com `202`; qualquer outra resposta diz "Nada foi enviado". O servidor sem Ajudante ligado responde `503` (antes devolvia `202` sem entregar nada).
+- Pendente (spec do Ajudante/Telegram): ligar um `onUnblockRequest` real, idempotência persistente e entrega ao Ajudante (seção 8).
