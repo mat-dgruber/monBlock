@@ -103,7 +103,7 @@ describe('fluxo do pedido de liberação', () => {
     expect(method('sendMessage')).toHaveLength(0);
   });
 
-  it('envia o pedido ao chat do Ajudante, sem o botão Permanente', async () => {
+  it('envia o pedido ao chat do Ajudante, com os botões de tempo e Permanente', async () => {
     await setup();
     const sent = method('sendMessage')[0]!;
     expect(sent.payload).toMatchObject({ chat_id: CHAT });
@@ -111,7 +111,7 @@ describe('fluxo do pedido de liberação', () => {
     expect(buttons).toContain('approve_15m:');
     expect(buttons).toContain('approve_60m:');
     expect(buttons).toContain('deny:');
-    expect(buttons).not.toContain('approve_permanent');
+    expect(buttons).toContain('approve_permanent:');
   });
 
   it('o botão do Ajudante libera o endereço por 15 min, edita a mensagem e responde o clique', async () => {
@@ -155,13 +155,73 @@ describe('fluxo do pedido de liberação', () => {
     expect(method('answerCallbackQuery').some((c) => JSON.stringify(c.payload).includes('já foi respondido'))).toBe(true);
   });
 
-  it('"Permanente" não faz nada na T1 e "Negar" fecha o pedido sem liberar', async () => {
+  it('"Negar" fecha o pedido sem liberar', async () => {
     const { d, requestId } = await setup();
-    await d.handleTelegramUpdate(cb(16, `approve_permanent:${requestId}`));
-    expect(await status(d, requestId)).toBe('PENDING');
     await d.handleTelegramUpdate(cb(17, `deny:${requestId}`));
     expect(await status(d, requestId)).toBe('DENIED');
     expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
+  });
+
+  const allowlist = () => (store.loadAndReconcile().state.rules.allowlistDomains);
+
+  it('Permanente: o 1º toque só pergunta; o 2º libera para sempre e reaplica as regras', async () => {
+    const { d, requestId } = await setup();
+    await d.handleTelegramUpdate(cb(16, `approve_permanent:${requestId}`));
+    expect(await status(d, requestId)).toBe('PENDING');
+    expect(allowlist()).toEqual([]);
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
+    expect(JSON.stringify(method('editMessageText')[0]!.payload)).toContain(`confirm_permanent:${requestId}`);
+    await d.handleTelegramUpdate(cb(17, `confirm_permanent:${requestId}`));
+    expect(await status(d, requestId)).toBe('APPROVED');
+    expect(allowlist()).toEqual(['exemplo-bloqueado.com']);
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(false);
+    // continua liberado depois de muito tempo (não é concessão temporária)
+    advance(48 * 60 * MIN);
+    await d.tick();
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(false);
+  });
+
+  it('Permanente: confirmar sem o 1º toque, ou cancelar, não libera nada', async () => {
+    const { d, requestId } = await setup();
+    await d.handleTelegramUpdate(cb(16, `confirm_permanent:${requestId}`));
+    expect(await status(d, requestId)).toBe('PENDING');
+    expect(allowlist()).toEqual([]);
+    await d.handleTelegramUpdate(cb(17, `approve_permanent:${requestId}`));
+    await d.handleTelegramUpdate(cb(18, `cancel:${requestId}`));
+    expect(await status(d, requestId)).toBe('DENIED');
+    expect(allowlist()).toEqual([]);
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
+  });
+
+  it('Permanente: outro chat não confirma e o 2º toque repetido não duplica a entrada', async () => {
+    const { d, requestId } = await setup();
+    await d.handleTelegramUpdate(cb(16, `approve_permanent:${requestId}`));
+    await d.handleTelegramUpdate(cb(17, `confirm_permanent:${requestId}`, { chat: '999', from: '999' }));
+    expect(allowlist()).toEqual([]);
+    await d.handleTelegramUpdate(cb(18, `confirm_permanent:${requestId}`));
+    await d.handleTelegramUpdate(cb(19, `confirm_permanent:${requestId}`));
+    expect(allowlist()).toEqual(['exemplo-bloqueado.com']);
+  });
+
+  it('Permanente: recusa endereço IP e respeita o limite de 3 por dia', async () => {
+    const { d, requestId } = await setup();
+    // limite: já há 3 liberações nas últimas 24 h
+    const st = store.loadAndReconcile().state;
+    store.save({ ...st, permanentReleases: [1, 2, 3].map((n) => ({ domain: `x${n}.com`, requestId: `r${n}`, atMs: t.wall - n * MIN })) });
+    await d.handleTelegramUpdate(cb(16, `approve_permanent:${requestId}`));
+    await d.handleTelegramUpdate(cb(17, `confirm_permanent:${requestId}`));
+    expect(await status(d, requestId)).toBe('DENIED');
+    expect(allowlist()).toEqual([]);
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
+  });
+
+  it('pedir Permanente exige motivo de verdade e já nasce como pedido permanente', async () => {
+    const { d } = await setup();
+    advance(3 * MIN);
+    const curto = await d.handleCommand({ type: 'CREATE_UNBLOCK_REQUEST', domain: 'outro-site.com', reason: 'curto', durationMinutes: 0, ruleLabel: 'x' });
+    expect(curto.status).toBe(400);
+    const ok = await d.handleCommand({ type: 'CREATE_UNBLOCK_REQUEST', domain: 'outro-site.com', reason: 'é o site da minha faculdade', durationMinutes: 0, ruleLabel: 'x' });
+    expect(ok.status).toBe(200);
   });
 
   it('limites: um pedido pendente por endereço e intervalo mínimo entre pedidos', async () => {

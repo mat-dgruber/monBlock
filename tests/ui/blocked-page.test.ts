@@ -167,8 +167,15 @@ describe('blocked-page.html: pedido ao Ajudante (só "enviado" com confirmação
     expect(html).toContain('Pedir aprovação no Telegram');
     let sent = '';
     const r = runPage('?domain=x.com', { duration: 'permanent', fetch: async (_u, init) => { sent = init.body; return { status: 202, json: async () => ({}) }; } });
+    await submit(r, 'site da minha faculdade');
+    expect(JSON.parse(sent)).toEqual({ domain: 'x.com', reason: 'site da minha faculdade', permanent: true });
+  });
+
+  it('Permanente com motivo curto não envia nada', async () => {
+    let called = false;
+    const r = runPage('?domain=x.com', { duration: 'permanent', fetch: async () => { called = true; return { status: 202, json: async () => ({}) }; } });
     await submit(r, 'estudo');
-    expect(JSON.parse(sent)).toEqual({ domain: 'x.com', reason: 'estudo', permanent: true });
+    expect(called).toBe(false);
   });
 
   it('manda o token de página em toda chamada à API', async () => {

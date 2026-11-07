@@ -1,7 +1,7 @@
 # Liberação permanente (falso positivo) — spec de design
 
 - Data: 2026-11-07 · Base: `main` @ 0.7.0
-- Status: **rascunho — aguardando `/plan-criticize` e aprovação do usuário. Nada implementado.**
+- Status: **aprovada em 2026-11-07 (P1, P2, P3 como recomendados). P-1, P-2 (página) e P-3 implementadas em 0.8.0; falta a lista/remoção na interface do app.**
 - Relacionadas: `2026-11-06-telegram-gestao-envio-respostas-design.md` (D3, "Permanente" desligado na T1), ADR-0009.
 
 ## 1. Problema

@@ -17,7 +17,7 @@ export function maskBotToken(text: string): string {
 
 export type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
-export type PartnerCallbackDecision = '15M' | '60M' | 'PERMANENT' | 'DENY';
+export type PartnerCallbackDecision = '15M' | '60M' | 'PERMANENT' | 'CONFIRM_PERMANENT' | 'CANCEL' | 'DENY';
 
 export interface InlineKeyboardButton {
   text: string;
@@ -360,6 +360,8 @@ export class TelegramPartnerClient {
       approve_15m: '15M',
       approve_60m: '60M',
       approve_permanent: 'PERMANENT',
+      confirm_permanent: 'CONFIRM_PERMANENT',
+      cancel: 'CANCEL',
       deny: 'DENY',
     };
 
@@ -515,14 +517,14 @@ export class TelegramPartnerClient {
     }
   }
 
-  /** Troca o texto da mensagem e remove os botões (evita decidir duas vezes). */
-  async editMessageText(chatId: string, messageId: number, text: string): Promise<{ ok: boolean }> {
+  /** Troca o texto da mensagem; sem `keyboard` remove os botões (evita decidir duas vezes). */
+  async editMessageText(chatId: string, messageId: number, text: string, keyboard: InlineKeyboardButton[][] = []): Promise<{ ok: boolean }> {
     if (!this.botToken) return { ok: false };
     try {
       const res = await this.transport.send({
         endpointUrl: `https://api.telegram.org/bot${this.botToken}/editMessageText`,
         timeoutMs: this.timeoutMs,
-        payload: { chat_id: chatId, message_id: messageId, text, reply_markup: { inline_keyboard: [] } },
+        payload: { chat_id: chatId, message_id: messageId, text, reply_markup: { inline_keyboard: keyboard } },
       });
       return { ok: res.ok };
     } catch {

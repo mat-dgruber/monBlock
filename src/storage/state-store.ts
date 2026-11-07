@@ -71,6 +71,8 @@ export interface MonBlockPersistentState {
   telegramBot?: { token: string; username: string; setAtMs: number };
   /** Pedidos de liberação ao Ajudante (T1); transições gravadas junto do estado. */
   unblockRequests?: UnblockRequestRecord[];
+  /** Domínios liberados para sempre pelo Ajudante (já estão em `rules.allowlistDomains`; aqui fica a auditoria). */
+  permanentReleases?: { domain: string; requestId: string; atMs: number }[];
   /** Offset do `getUpdates` por bot: trocar de bot zera (o id do bot é a parte numérica do token). */
   telegramOffset?: { botId: string; offset: number };
   /** Migração única de userland já aplicada (RN-DAEMON-10); `id` garante idempotência. */

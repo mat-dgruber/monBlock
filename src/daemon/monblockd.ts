@@ -9,7 +9,7 @@
 
 import crypto from 'node:crypto';
 import { TelegramPartnerClient, type TelegramTransportAdapter, type TelegramUpdate } from './telegram-client.js';
-import { createRequest, decideRequest, expireStale, type DecisionKind } from './unblock-requests.js';
+import { createRequest, decideRequest, expireStale, isSafePermanentDomain, MAX_ALLOWLIST_ENTRIES, MAX_PERMANENT_PER_DAY, type DecisionKind } from './unblock-requests.js';
 import { TrustedClock } from './trusted-clock.js';
 import {
   canMutateProtectionRule,
@@ -74,6 +74,7 @@ export interface PublicUnblockRequest {
   delivery: 'sent' | 'failed';
   expiresAtMs: number;
   grantMinutes?: number;
+  permanent?: boolean;
   /** Só quando a entrega ao Telegram falhou: o código que a pessoa pode usar offline. */
   fallbackChallengeCode?: string;
 }
@@ -575,6 +576,7 @@ export class MonBlockDaemon {
       delivery: r.delivery,
       expiresAtMs: r.expiresAtMs,
       ...(r.grantMinutes ? { grantMinutes: r.grantMinutes } : {}),
+      ...(r.permanent ? { permanent: true } : {}),
       ...(r.delivery === 'failed' && r.challengeCode && r.status === 'PENDING' ? { fallbackChallengeCode: r.challengeCode } : {}),
     };
   }
@@ -632,14 +634,44 @@ export class MonBlockDaemon {
       return;
     }
 
-    const kind: DecisionKind | null =
-      verified.decision === '15M' ? 'APPROVE_15M' : verified.decision === '60M' ? 'APPROVE_60M' : verified.decision === 'DENY' ? 'DENY' : null;
-    // "Permanente" fica desligado na T1 (sem segunda confirmação): um botão antigo não o ativa.
+    const kindOf: Record<string, DecisionKind> = {
+      '15M': 'APPROVE_15M',
+      '60M': 'APPROVE_60M',
+      PERMANENT: 'ASK_PERMANENT',
+      CONFIRM_PERMANENT: 'APPROVE_PERMANENT',
+      CANCEL: 'DENY',
+      DENY: 'DENY',
+    };
+    const kind = verified.decision ? kindOf[verified.decision] : undefined;
     const outcome = kind ? decideRequest(state.unblockRequests ?? [], verified.requestId, kind, now) : ({ kind: 'unknown' } as const);
+    const chatStr = String(cb.message.chat.id);
+    const msgId = cb.message.message_id;
+
+    // 1º toque em "Permanente": só pergunta de novo. Nada é liberado.
+    if (outcome.kind === 'applied' && kind === 'ASK_PERMANENT') {
+      this.save({ ...state, unblockRequests: outcome.requests, telegramOffset: offsetState });
+      await client.answerCallbackQuery(cb.id, 'Confirme para liberar para sempre.');
+      await client.editMessageText(
+        chatStr,
+        msgId,
+        `Tem certeza? Isto libera ${outcome.request.domain} (e os subdomínios) para sempre. Para desfazer, será preciso a senha do Ajudante.`,
+        [[
+          { text: 'Sim, liberar para sempre', callback_data: `confirm_permanent:${outcome.request.id}` },
+          { text: 'Cancelar', callback_data: `cancel:${outcome.request.id}` },
+        ]]
+      );
+      return;
+    }
 
     if (outcome.kind !== 'applied') {
       const text =
-        outcome.kind === 'expired' ? 'Este pedido expirou.' : outcome.kind === 'already-decided' ? 'Este pedido já foi respondido.' : 'Não encontrei este pedido.';
+        outcome.kind === 'expired'
+          ? 'Este pedido expirou.'
+          : outcome.kind === 'already-decided'
+            ? 'Este pedido já foi respondido.'
+            : outcome.kind === 'not-confirmed'
+              ? 'Toque em "Liberar permanente" primeiro.'
+              : 'Não encontrei este pedido.';
       await client.answerCallbackQuery(cb.id, text);
       await client.editMessageText(String(cb.message.chat.id), cb.message.message_id, `${text}`);
       this.save({ ...state, telegramOffset: offsetState });
@@ -650,8 +682,32 @@ export class MonBlockDaemon {
     if (outcome.request.status === 'APPROVED' && outcome.request.grantMinutes) {
       grants.push({ target: outcome.request.domain, expiresAtMs: now + outcome.request.grantMinutes * 60_000 });
     }
+    let rules = state.rules;
+    let releases = state.permanentReleases ?? [];
+    if (outcome.request.permanent) {
+      const recent = releases.filter((x) => now - x.atMs < 24 * 3600_000).length;
+      const domain = outcome.request.domain;
+      const refuse = !isSafePermanentDomain(domain)
+        ? 'Este endereço não pode ser liberado para sempre.'
+        : recent >= MAX_PERMANENT_PER_DAY
+          ? 'Limite de liberações permanentes por dia atingido.'
+          : state.rules.allowlistDomains.length >= MAX_ALLOWLIST_ENTRIES
+            ? 'A lista de endereços liberados está cheia.'
+            : null;
+      if (refuse) {
+        const denied = { ...outcome.request, status: 'DENIED' as const, permanent: false };
+        this.save({ ...state, unblockRequests: outcome.requests.map((r) => (r.id === denied.id ? denied : r)), telegramOffset: offsetState });
+        await client.answerCallbackQuery(cb.id, refuse);
+        await client.editMessageText(chatStr, msgId, `${refuse} (${domain})`);
+        return;
+      }
+      if (!rules.allowlistDomains.includes(domain)) rules = { ...rules, allowlistDomains: [...rules.allowlistDomains, domain] };
+      releases = [...releases, { domain, requestId: outcome.request.id, atMs: now }];
+    }
     const next: MonBlockPersistentState = {
       ...state,
+      rules,
+      permanentReleases: releases,
       unblockRequests: outcome.requests,
       temporaryGrants: grants,
       telegramOffset: offsetState,
@@ -661,7 +717,9 @@ export class MonBlockDaemon {
     await this.enforcer.applyWebRules(next.rules, next.temporaryGrants);
 
     const done =
-      outcome.request.status === 'APPROVED'
+      outcome.request.permanent
+        ? `Liberado para sempre: ${outcome.request.domain}`
+        : outcome.request.status === 'APPROVED'
         ? `Liberado por ${outcome.request.grantMinutes === 60 ? '1 hora' : '15 minutos'}: ${outcome.request.domain}`
         : `Pedido negado: ${outcome.request.domain}`;
     await client.answerCallbackQuery(cb.id, done);
@@ -897,7 +955,6 @@ export class MonBlockDaemon {
           userReason: created.request.reason,
           challengeCode,
           requestedMinutes: created.request.requestedMinutes,
-          allowPermanent: false,
         });
         const finalRequest = { ...created.request, delivery: delivery.delivered ? ('sent' as const) : ('failed' as const) };
         const { state: fresh } = this.loadState();
