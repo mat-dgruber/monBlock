@@ -18,6 +18,7 @@ import { TrustedClock } from './trusted-clock.js';
 import { CHROMIUM_BUNDLE_IDS, MacOSPlatformEnforcer, checkBrowserProfileInstalled } from '../enforcers/platform-enforcer.js';
 import { createMonBlockHttpServer, UnblockRequestError } from '../server/block-server.js';
 import { TripleStateStore } from '../storage/state-store.js';
+import { maskBotToken } from './telegram-client.js';
 
 export interface DaemonLayout {
   appSupportDir: string;
@@ -200,7 +201,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
         const outcome = await daemon.pollTelegramOnce(25);
         wait = outcome === 'ok' ? 0 : outcome === 'idle' ? 5_000 : 15_000;
       } catch (err) {
-        console.error('[monblockd] falha no ciclo do Telegram:', (err as Error).message);
+        console.error('[monblockd] falha no ciclo do Telegram:', maskBotToken((err as Error).message));
         wait = 15_000;
       }
       if (wait > 0 && polling) await new Promise((resolve) => setTimeout(resolve, wait));

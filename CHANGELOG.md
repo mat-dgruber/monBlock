@@ -6,6 +6,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 ### Adicionado
+- Telegram T2/T3 (parcial): mensagem do pedido em português claro, sem jargão; token do bot mascarado em erros e logs (`maskBotToken`); ADR-0009 (broker único e cofre do token).
 - Telegram T1: pedido de liberação de ponta a ponta. A página de bloqueio cria o pedido (`CREATE_UNBLOCK_REQUEST`), o Ajudante recebe a mensagem com 15 min / 1 hora / Negar (sem "Permanente" até a T2), o broker do daemon (único leitor de `getUpdates`, offset por bot) lê o botão e, no mesmo `save` atômico, grava a decisão, a liberação temporária e o offset; o botão é respondido (`answerCallbackQuery`) e a mensagem editada. Só vale o chat e o usuário do Ajudante pareado; botão antigo não aprova pedido vencido; duplo toque não duplica a liberação. Limites: 1 pedido pendente por endereço, no máximo 3 pendentes e 2 min entre pedidos. A página consulta `GET /api/unblock-requests/:id` e mostra o código offline quando o Telegram falha.
 - API local da página de bloqueio protegida: toda rota `/api/*` (exceto `/api/health`) exige o token de página da sessão (cabeçalho `X-MonBlock-Token`) e `Host` de loopback; sem isso responde `403`.
 - Telegram T0b: pareamento do Ajudante por link (`INITIATE_PAIRING_LINK`): o app gera `t.me/<bot>?start=<código>` (uso único, 15 min); quem abrir o link em chat privado e apresentar o código vira o Ajudante e recebe o convite para definir a senha. Chat ID digitado continua como alternativa. Código errado, grupo e segunda tentativa são ignorados.

@@ -10,6 +10,11 @@
 import crypto from 'node:crypto';
 import { sanitizeAndNormalizeUrl } from '../domain/rule-engine.js';
 
+/** Remove qualquer token de bot (`123456:ABC...`) de textos que podem ir a log ou resposta. */
+export function maskBotToken(text: string): string {
+  return text.replace(/\d{6,12}:[A-Za-z0-9_-]{30,50}/g, '[TOKEN_OCULTO]');
+}
+
 export type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
 export type PartnerCallbackDecision = '15M' | '60M' | 'PERMANENT' | 'DENY';
@@ -229,14 +234,14 @@ export class TelegramPartnerClient {
         .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL_REDACTED]')
         .slice(0, 120) || '(sem título)';
     const xraySummary = [
-      '🛡️ [monBlock — Pedido de liberação]',
-      `• Domínio: ${normalized.domain}`,
-      `• URL Limpa: ${normalized.cleanUrl}`,
-      `• Título da Aba: ${sanitizedTitle}`,
-      `• Regra Acionada: ${input.ruleLabel}`,
-      `• Justificativa: ${sanitizedReason}`,
-      ...(input.requestedMinutes ? [`• Tempo pedido: ${input.requestedMinutes === 60 ? '1 hora' : `${input.requestedMinutes} minutos`}`] : []),
-      `• Código de desafio (uso offline): ${challengeCode}`,
+      '🛡️ monBlock — pedido de liberação',
+      `Endereço: ${normalized.domain}`,
+      `Página: ${normalized.cleanUrl}`,
+      `Título: ${sanitizedTitle}`,
+      `Bloqueado por: ${input.ruleLabel}`,
+      `Motivo informado: ${sanitizedReason}`,
+      ...(input.requestedMinutes ? [`Tempo pedido: ${input.requestedMinutes === 60 ? '1 hora' : `${input.requestedMinutes} minutos`}`] : []),
+      `Código para ditar por telefone, se o Telegram falhar: ${challengeCode}`,
     ].join('\n');
 
     const payload: TelegramMessagePayload = {
@@ -412,7 +417,7 @@ export class TelegramPartnerClient {
       });
       return { ok: res.ok, status: res.status };
     } catch (err: unknown) {
-      return { ok: false, status: 500, error: (err as Error)?.message ?? 'Falha de rede.' };
+      return { ok: false, status: 500, error: maskBotToken((err as Error)?.message ?? 'Falha de rede.') };
     }
   }
 
@@ -459,7 +464,7 @@ export class TelegramPartnerClient {
       });
       return { ok: res.ok, status: res.status };
     } catch (err: unknown) {
-      return { ok: false, status: 500, error: (err as Error)?.message ?? 'Falha de rede.' };
+      return { ok: false, status: 500, error: maskBotToken((err as Error)?.message ?? 'Falha de rede.') };
     }
   }
 
@@ -567,7 +572,7 @@ export class TelegramPartnerClient {
       }
       return { ok: false, updates: [], error: `Resposta inválida da API (${res.status})` };
     } catch (err: unknown) {
-      return { ok: false, updates: [], error: (err as Error)?.message ?? 'Falha de rede na consulta de atualizações.' };
+      return { ok: false, updates: [], error: maskBotToken((err as Error)?.message ?? 'Falha de rede na consulta de atualizações.') };
     }
   }
 
