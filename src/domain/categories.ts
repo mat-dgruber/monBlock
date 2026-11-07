@@ -5,6 +5,16 @@
  * por padrão (Catraca Unidirecional Append-Only — ADR-0003).
  */
 
+import { domainToASCII } from 'node:url';
+import { LISTS } from './lists.generated.js';
+
+// MARK: - Limites por camada (RN-WEB-09)
+
+/** Teto de domínios no perfil dos navegadores: URLBlocklist do Chromium/Edge documenta 1000 entradas. */
+export const POLICY_DOMAIN_LIMIT = 900;
+/** Teto de domínios no /etc/hosts (2 linhas por domínio). Acima disso o corte é pela ordem de prioridade. */
+export const HOSTS_MAX_DOMAINS = 25_000;
+
 // MARK: - Tipos e Interfaces de Categoria
 
 /**
@@ -23,82 +33,94 @@ export interface CategoryDefinition {
 /**
  * Lista imutável das 11 categorias pré-cadastradas do monBlock.
  */
-export const PREDEFINED_CATEGORIES: ReadonlyArray<CategoryDefinition> = [
+const META: ReadonlyArray<{ id: string; namePt: string; enabledByDefault: boolean }> = [
   {
     id: 'adult',
     namePt: 'Conteúdo Adulto & Pornografia',
     enabledByDefault: true,
-    domains: ['pornhub.com', 'xvideos.com', 'xnxx.com', 'onlyfans.com', 'redtube.com'],
-    keywords: ['porn', 'xxx', 'nsfw', 'hentai'],
   },
   {
     id: 'gambling',
     namePt: 'Apostas & Cassinos (Bets)',
     enabledByDefault: false,
-    domains: ['bet365.com', 'blaze.com', 'stake.com', 'betano.com', 'sportingbet.com'],
-    keywords: ['cassino,online', 'roleta,aposta', 'slot,bonus'],
   },
   {
     id: 'games',
     namePt: 'Jogos Online',
     enabledByDefault: false,
-    domains: ['roblox.com', 'poki.com', 'twitch.tv'],
-    keywords: ['jogos,online,gratis'],
   },
   {
     id: 'proxy',
     namePt: 'Proxies, VPNs & Bypass',
     enabledByDefault: false,
-    domains: ['hidemyass.com', 'croxyproxy.com', 'kproxy.com'],
-    keywords: ['web,proxy,unblock'],
   },
   {
     id: 'dating',
     namePt: 'Sites de Relacionamento',
     enabledByDefault: false,
-    domains: ['tinder.com', 'badoo.com', 'bumble.com'],
-    keywords: ['encontros,casuais'],
   },
   {
     id: 'social',
     namePt: 'Redes Sociais',
     enabledByDefault: false,
-    domains: ['instagram.com', 'tiktok.com', 'x.com', 'facebook.com'],
-    keywords: [],
   },
   {
     id: 'video',
     namePt: 'Streaming & Vídeos',
     enabledByDefault: false,
-    domains: ['netflix.com', 'primevideo.com'],
-    keywords: [],
   },
   {
     id: 'forums',
     namePt: 'Fóruns & Comunidades Mistas',
     enabledByDefault: false,
-    domains: ['reddit.com', '4chan.org', '9gag.com'],
-    keywords: [],
   },
   {
     id: 'shopping',
     namePt: 'Compras por Impulso',
     enabledByDefault: false,
-    domains: ['shopee.com.br', 'aliexpress.com', 'shein.com'],
-    keywords: [],
   },
   {
     id: 'news',
     namePt: 'Notícias & Portais',
     enabledByDefault: false,
-    domains: ['tmz.com', 'buzzfeed.com'],
-    keywords: [],
   },
   {
     id: 'search_unsafe',
     namePt: 'Buscadores sem SafeSearch',
     enabledByDefault: false,
-    domains: ['yandex.com', 'duckduckgo.com'],
-    keywords: [],
   },
 ];
+
+const lines = (text: string): string[] => (text ? text.split('\n') : []);
+
+/** Catálogo completo: metadados acima + listas geradas de `lists/*.txt` (ordem = prioridade). */
+export const PREDEFINED_CATEGORIES: ReadonlyArray<CategoryDefinition> = META.map((m) => ({
+  ...m,
+  domains: lines(LISTS[m.id]?.domains ?? ''),
+  keywords: lines(LISTS[m.id]?.keywords ?? ''),
+}));
+
+/** Domínios que vão para o perfil dos navegadores (os `POLICY_DOMAIN_LIMIT` de maior prioridade). */
+export function policyDomains(category: CategoryDefinition): string[] {
+  return category.domains.slice(0, POLICY_DOMAIN_LIMIT);
+}
+
+// MARK: - Índice por sufixo (vigia a cada 1,5 s)
+
+const INDEX = new Map<string, Set<string>>(PREDEFINED_CATEGORIES.map((c) => [c.id, new Set(c.domains)]));
+
+/**
+ * A primeira categoria entre `enabledIds` que bloqueia o host (domínio exato ou subdomínio).
+ * Busca por sufixo em `Set`: custo proporcional ao número de rótulos, não ao tamanho da lista.
+ */
+export function findCategoryForHost(host: string, enabledIds: readonly string[]): CategoryDefinition | undefined {
+  let h = domainToASCII(host.trim().toLowerCase().replace(/^www\./, ''));
+  while (h) {
+    for (const id of enabledIds) {
+      if (INDEX.get(id)?.has(h)) return PREDEFINED_CATEGORIES.find((c) => c.id === id);
+    }
+    const dot = h.indexOf('.');
+    h = dot < 0 ? '' : h.slice(dot + 1);
+  }
+  return undefined;
+}

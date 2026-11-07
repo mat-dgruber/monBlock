@@ -93,3 +93,12 @@ A arquitetura interna do domínio segue separação estrita entre **Núcleo de D
 *   **Cobertura por camada (0.4.0):** DNS (`/etc/hosts`) vale para qualquer app que use o resolvedor do sistema; a política de navegador, para os identificadores de `CHROMIUM_BUNDLE_IDS` e o Firefox; o vigia de abas (`SUPPORTED_MACOS_BROWSERS`), para os navegadores com AppleScript, incluindo Dia, Vivaldi, Opera, Chromium e Chrome Beta/Canary. Quem tinha o perfil antigo precisa aprovar o perfil atualizado (a checagem exige todos os identificadores).
 
 *   **Contrato HTTP da página de bloqueio (0.5.0):** `POST /api/unblock-requests` exige um handler de entrega real (`onUnblockRequest`); sem Ajudante ligado responde `503` Problem Details ("Nada foi enviado") em vez de `202`. Aceita `domain`, `reason`, `durationMinutes` ou `permanent: true`. `POST /api/unlock-code` nunca libera acessos (por HTTP local qualquer página poderia tentar derrubar bloqueios): responde `501` orientando a validar o código no app (IPC do daemon).
+
+## Listas de categorias (ADR-0009)
+
+- Fonte: `src/domain/lists/<id>.domains.txt` e `<id>.keywords.txt` → `scripts/gen-lists.mjs` → `src/domain/lists.generated.ts` → `PREDEFINED_CATEGORIES`.
+- `findCategoryForHost(host, ids)`: busca por sufixo em `Set` (IDN em punycode), usada por `evaluateUrlAndTitle`.
+- `policyDomains(cat)` alimenta o perfil (`scripts/build-pkg.sh`); `HOSTS_MAX_DOMAINS` corta em `resolveEffectiveBlockedDomains`.
+- UI: `monblock:get-categories` (resumo + amostra) e `monblock:check-url` (mesmo motor do vigia).
+- Medição manual do hosts (exige root, não automatizada): `sudo sh -c 'time dscacheutil -flushcache'` e `time dscacheutil -q host -a name exemplo.com` com o bloco aplicado.
+- Atribuição das fontes: `NOTICE`.

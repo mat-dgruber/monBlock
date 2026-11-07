@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { domainToASCII } from 'node:url';
 
 // MARK: - Constantes e Allowlist de Infraestrutura Crítica
 
@@ -92,7 +93,7 @@ export function buildManagedHostsContent(
     new Set(
       blockedDomains
         .filter((raw) => typeof raw === 'string' && !/[\r\n]/.test(raw))
-        .map((d) => d.trim().toLowerCase().replace(/^www\./, ''))
+        .map((d) => domainToASCII(d.trim().toLowerCase().replace(/^www\./, '')))
         .filter((d) => d.length > 0 && HOSTNAME_RE.test(d) && !CRITICAL_INFRA_ALLOWLIST.has(d))
     )
   );

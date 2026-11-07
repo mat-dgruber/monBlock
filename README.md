@@ -7,7 +7,7 @@
 [![CI Pipeline](https://github.com/mat-dgruber/monBlock/actions/workflows/ci.yml/badge.svg)](https://github.com/mat-dgruber/monBlock/actions/workflows/ci.yml)
 [![Plataforma: macOS](<https://img.shields.io/badge/Plataforma-macOS%2013%2B%20(Ventura%2C%20Sonoma%2C%20Sequoia)-000000.svg?logo=apple&logoColor=white>)](#requisitos-do-sistema)
 [![Arquitetura: Universal](<https://img.shields.io/badge/Arquitetura-Apple%20Silicon%20%7C%20Intel%20(Universal)-blue.svg>)](#requisitos-do-sistema)
-[![Versão](https://img.shields.io/badge/Versão-0.5.0-blue.svg)](package.json)
+[![Versão](https://img.shields.io/badge/Versão-0.6.0-blue.svg)](package.json)
 [![Daemon: Node SEA](https://img.shields.io/badge/Daemon-Node%2022%20SEA%20Root-green.svg)](scripts/build-daemon-sea.sh)
 [![UI: Electron](https://img.shields.io/badge/UI-Electron%20Desktop-47848F.svg?logo=electron&logoColor=white)](src/main/main.ts)
 [![Acessibilidade](https://img.shields.io/badge/A11y-WCAG%202.2%20AAA-brightgreen.svg)](docs/design/tokens.css)
@@ -225,22 +225,21 @@ O pilar de prestação de contas do monBlock transforma a autodisciplina individ
 
 ## 📂 Catálogo de 11 Categorias
 
-O monBlock inclui um catálogo estruturado em 11 categorias de navegação:
+O monBlock inclui um catálogo estruturado em 11 categorias de navegação. As listas ficam em `src/domain/lists/*.txt` (a ordem é a prioridade; atribuição das fontes em [`NOTICE`](NOTICE)). Perfil dos navegadores: 900 primeiros do `adult`; `/etc/hosts`: até 25 mil domínios; vigia: lista completa.
 
-|       ID        | Categoria                               |       Padrão        | Descrição & Alvo                                                                       |
-| :-------------: | :-------------------------------------- | :-----------------: | :------------------------------------------------------------------------------------- |
-|     `adult`     | **Conteúdo Adulto & Pornografia**       | 🔒 **Sempre Ativa** | Trancada pela catraca na primeira inicialização. Impossível desmarcar sem autorização. |
-|   `gambling`    | **Apostas & Cassinos (Bets)**           |      Opcional       | Plataformas de apostas esportivas, roletas, slots e cassinos online.                   |
-|     `games`     | **Jogos Online**                        |      Opcional       | Portais de jogos casuais e streams recreativas contínuas.                              |
-|     `proxy`     | **Proxies, VPNs & Bypass**              |      Opcional       | Serviços de web proxy e túneis projetados para contornar bloqueadores.                 |
-|    `dating`     | **Sites de Relacionamento**             |      Opcional       | Aplicativos e páginas de encontros casuais.                                            |
-|    `social`     | **Redes Sociais**                       |      Opcional       | Feeds infinitos e algoritmos de retenção compulsiva (Instagram, TikTok, X, etc.).      |
-|     `video`     | **Streaming & Vídeos**                  |      Opcional       | Plataformas de streaming de consumo passivo prolongado.                                |
-|    `forums`     | **Fóruns & Comunidades Mistas**         |      Opcional       | Fóruns anônimos e plataformas de agregação de conteúdo não moderado.                   |
-|   `shopping`    | **Compras por Impulso**                 |      Opcional       | Marketplaces com gatilhos de compra por dopamina.                                      |
-|     `news`      | **Notícias & Portais Sensacionalistas** |      Opcional       | Tabloides e sites focados em clickbait / doomscrolling.                                |
-| `search_unsafe` | **Buscadores sem SafeSearch**           |      Opcional       | Motores de busca que desativam filtragem familiar por padrão.                          |
-
+|       ID        | Categoria                               |       Padrão        | Descrição & Alvo | Domínios | Palavras-chave |
+| :-------------: | :-------------------------------------- | :-----------------: | :--- | ---: | ---: |
+|     `adult`     | **Conteúdo Adulto & Pornografia**       | 🔒 **Sempre Ativa** | Trancada pela catraca na primeira inicialização. Impossível desmarcar sem autorização. | 6.397 | 258 |
+|   `gambling`    | **Apostas & Cassinos (Bets)**           |      Opcional       | Plataformas de apostas esportivas, roletas, slots e cassinos online.                   | 408 | 113 |
+|     `games`     | **Jogos Online**                        |      Opcional       | Portais de jogos casuais e streams recreativas contínuas.                              | 184 | 27 |
+|     `proxy`     | **Proxies, VPNs & Bypass**              |      Opcional       | Serviços de web proxy e túneis projetados para contornar bloqueadores.                 | 116 | 26 |
+|    `dating`     | **Sites de Relacionamento**             |      Opcional       | Aplicativos e páginas de encontros casuais.                                            | 82 | 27 |
+|    `social`     | **Redes Sociais**                       |      Opcional       | Feeds infinitos e algoritmos de retenção compulsiva (Instagram, TikTok, X, etc.).      | 105 | 0 |
+|     `video`     | **Streaming & Vídeos**                  |      Opcional       | Plataformas de streaming de consumo passivo prolongado.                                | 103 | 0 |
+|    `forums`     | **Fóruns & Comunidades Mistas**         |      Opcional       | Fóruns anônimos e plataformas de agregação de conteúdo não moderado.                   | 60 | 0 |
+|   `shopping`    | **Compras por Impulso**                 |      Opcional       | Marketplaces com gatilhos de compra por dopamina.                                      | 238 | 6 |
+|     `news`      | **Notícias & Portais Sensacionalistas** |      Opcional       | Tabloides e sites focados em clickbait / doomscrolling.                                | 224 | 4 |
+| `search_unsafe` | **Buscadores sem SafeSearch**           |      Opcional       | Motores de busca que desativam filtragem familiar por padrão.                          | 25 | 0 |
 ---
 
 ## 🎨 Design System & Interface

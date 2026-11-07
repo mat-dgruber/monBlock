@@ -5,7 +5,22 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+## [0.6.0] - 2026-11-06
 ### Adicionado
+- Listas de categorias ampliadas: `adult` 6.397 domínios e 258 palavras-chave; `gambling` 408/113 (bets brasileiras incluídas); `games` 184/27; `proxy` 116/26; `dating` 82/27; `social` 105; `video` 103; `forums` 60; `shopping` 238/6; `news` 224/4; `search_unsafe` 25. Dados em `src/domain/lists/*.txt` (a ordem é a prioridade), gerados para TypeScript por `scripts/gen-lists.mjs`, que falha o build em domínio inválido, duplicado ou excluído. Spec `docs/ai/specs/2026-11-06-listas-de-categorias-ampliadas-design.md`, ADR-0009, RN-WEB-08 a 10 e `NOTICE` com as fontes e licenças.
+- Camadas por prioridade: perfil dos navegadores com os 900 primeiros domínios do `adult` (limite documentado de 1000 do `URLBlocklist`), `/etc/hosts` com teto de 25 mil domínios (domínios do usuário primeiro) e vigia com a lista completa por índice de sufixo.
+- IPC `monblock:get-categories` e `monblock:check-url`: a UI usa o catálogo do app como fonte única e o teste de endereço usa o mesmo motor do vigia.
+- Testes: normalização/unicidade, exclusões de infra crítica, 82 frases pt-BR legítimas sem falso positivo, 41 frases-alvo, orçamentos de desempenho e limite do perfil.
+
+### Alterado
+- **Quem já tem o perfil dos navegadores instalado verá "Falta 1 passo" e precisa aprovar o perfil atualizado** (a lista do `adult` no perfil passou de 5 para 900 domínios).
+- O motor de domínios usa busca por sufixo em `Set` (antes percorria a lista inteira por aba).
+- `VERSION` e `package.json` alinhados em 0.6.0.
+
+### Pendente
+- Latência do mDNSResponder com ~8 mil domínios (16 mil linhas) não medida: exige root. Domínios curados pelos agentes não foram checados por DNS.
+
+### Adicionado (anteriores)
 - Página de bloqueio: logo da CCAT (Capycro Avectech), respiração etérea e automática (halo suave, com pausa e `prefers-reduced-motion`) e pedido de liberação ao Ajudante (15 min, 1 hora ou permanente + motivo, via Telegram, e campo de código que nunca libera por conta própria: `POST /api/unlock-code` responde `501`) que só diz "enviado" com a confirmação do servidor. `POST /api/unblock-requests` sem Ajudante ligado passou a responder `503` Problem Details ("Nada foi enviado") em vez de `202`.
 - Tema **Capycro escuro** (marca à noite: verde-azulado mineral + terracota sobre carvão quente, com detalhes marrons nas bordas e rótulos; contraste AA/AAA) em `tokens.css`, no painel (opção "Capycro escuro") e como tema automático da página de bloqueio no modo escuro do sistema.
 - Página de bloqueio refeita: dados reais da query (`domain`, `rule`, domínio em punycode), sem afirmações falsas, tema pelo sistema, saída segura em destaque. Spec `docs/ai/specs/2026-11-06-refino-pagina-de-bloqueio-design.md`.
