@@ -70,3 +70,8 @@ Escolha: **A**; B continua como contingência (já é o fallback quando o Telegr
 - **Contrato de erros:** as rotas novas (`GET /api/unblock-requests/:id`, estados `EXPIRED`/`DENIED`) respondem em `application/problem+json` (RFC 9457), como as atuais.
 - **Motion:** a página só atualiza texto de estado (sem animação nova); o halo de respiração já respeita `prefers-reduced-motion`.
 - **Artefatos:** esta spec vive em `docs/ai/specs/`; a T1 (broker + store no daemon, token no cofre) pede um **ADR** em `docs/adrs/` ("Telegram broker único com long polling e cofre do token"), a escrever antes de implementar a T1.
+
+## 8. Andamento
+- **T0 (PR #14):** `SET_BOT_TOKEN` e interface do token. Feito.
+- **T0b (PR #14):** pareamento por link. Feito, **com um desvio da seção 7**: o broker em segundo plano ficou para a T1; o `/start` é consumido pelo poller já existente do `CHECK_PAIRING_STATUS` (um único leitor, protegido por trava, chamado pelo app a cada 2 s enquanto o convite está pendente), então não há dois leitores de `getUpdates`. O laço do broker entra na T1, junto dos pedidos, e passa a ser o único consumidor.
+- **T1–T3:** pendentes.

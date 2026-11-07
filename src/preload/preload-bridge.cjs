@@ -13,6 +13,9 @@ const api = Object.freeze({
   setBotToken(payload) {
     return ipcRenderer.invoke('monblock:set-bot-token', payload);
   },
+  initiatePairingLink(payload) {
+    return ipcRenderer.invoke('monblock:initiate-pairing-link', payload);
+  },
   initiatePairing(payload) {
     return ipcRenderer.invoke('monblock:initiate-pairing', payload);
   },

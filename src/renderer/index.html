@@ -296,12 +296,17 @@
                     <label for="onboardingPartnerNameInput" class="ccat-field-label">Nome do Ajudante</label>
                     <input id="onboardingPartnerNameInput" type="text" class="ccat-input" placeholder="Ex: Ana Clara" />
                   </div>
+                </div>
+                <button type="button" id="onboardingLinkBtn" class="ccat-btn ccat-btn-primary">Gerar link de convite</button>
+                <p class="hint-text">Envie o link ao seu Ajudante. Ao abri-lo no Telegram, ele é vinculado sozinho, sem precisar descobrir o Chat ID.</p>
+                <details>
+                  <summary>Prefiro informar o Chat ID</summary>
                   <div>
                     <label for="onboardingTelegramChatIdInput" class="ccat-field-label">Chat ID do Telegram</label>
                     <input id="onboardingTelegramChatIdInput" type="text" class="ccat-input tabular-nums" placeholder="Ex: 987654321" />
                   </div>
-                </div>
-                <button type="button" id="onboardingPairBtn" class="ccat-btn ccat-btn-primary">Enviar Convite ao Ajudante no Telegram</button>
+                  <button type="button" id="onboardingPairBtn" class="ccat-btn">Enviar convite pelo Chat ID</button>
+                </details>
               </div>
 
               <!-- Card de Espera do Ajudante -->
@@ -310,6 +315,7 @@
                   <span class="icon-md" aria-hidden="true">⏳</span>
                   <div>
                     <strong class="text-brand" id="waitingPartnerText">Convite enviado com sucesso!</strong>
+                    <p class="hint-text" id="pairingLinkRow" hidden>Link para o Ajudante: <code id="pairingLinkText"></code> <button type="button" id="copyPairingLinkBtn" class="ccat-btn">Copiar link</button></p>
                     <p class="hint-text">
                       Aguardando seu Ajudante responder no Telegram com o comando <code>/senha &lt;senha&gt;</code> para ativar a proteção...
                     </p>

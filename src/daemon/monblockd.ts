@@ -69,6 +69,7 @@ export interface PublicSanitizedState {
 export type DaemonCommand =
   | { type: 'GET_STATE' }
   | { type: 'SET_BOT_TOKEN'; token: string; currentPartnerPassword?: string }
+  | { type: 'INITIATE_PAIRING_LINK'; partnerName: string; currentPartnerPassword?: string }
   | {
       type: 'INITIATE_PAIRING';
       partnerName: string;
@@ -175,6 +176,7 @@ export type DaemonSuccessResponse =
       uninstalled: true;
     }
   | { status: 200; botConfigured: true; botUsername: string }
+  | { status: 200; pairingLink: string; pairingCode: string; partnerName: string; expiresAtMs: number }
   | { status: 200; migrated: true; format: 'MBV1' | 'LEGACY_JSON'; paired: boolean };
 
 export type DaemonResponse = DaemonSuccessResponse | ProblemDetailsResponse;
@@ -183,6 +185,7 @@ export type DaemonResponse = DaemonSuccessResponse | ProblemDetailsResponse;
 export const DAEMON_COMMAND_TYPES = [
   'GET_STATE',
   'SET_BOT_TOKEN',
+  'INITIATE_PAIRING_LINK',
   'INITIATE_PAIRING',
   'CHECK_PAIRING_STATUS',
   'CANCEL_PAIRING',
@@ -295,7 +298,10 @@ function maskTelegramChatId(chatId?: string): string | undefined {
 
 export interface PendingPairingState {
   partnerName: string;
+  /** Vazio enquanto o Ajudante não abriu o link de convite (`/start <código>`). */
   telegramChatId: string;
+  /** Código de uso único do convite por link; só existe no pareamento por link. */
+  pairingCode?: string;
   initiatedAtMs: number;
   expiresAtMs: number;
   lastUpdateOffset?: number;
@@ -734,6 +740,48 @@ export class MonBlockDaemon {
         };
       }
 
+      case 'INITIATE_PAIRING_LINK': {
+        const partnerName = cmd.partnerName?.trim();
+        if (!partnerName) {
+          return buildProblem(400, 'Nome do Ajudante ausente', 'Informe o nome do Ajudante.', '/ipc/monblockd/initiate-pairing-link');
+        }
+        if (!state.telegramBot) {
+          return buildProblem(
+            400,
+            'Bot do Telegram não conectado',
+            'Conecte o seu bot do Telegram antes de convidar o Ajudante.',
+            '/ipc/monblockd/initiate-pairing-link'
+          );
+        }
+        if (state.paired && state.partnerCredentials) {
+          const authorized =
+            Boolean(cmd.currentPartnerPassword) &&
+            verifyPartnerPassword(cmd.currentPartnerPassword!, state.partnerCredentials.passwordHash);
+          if (!authorized) {
+            return buildProblem(
+              403,
+              'Pareamento Já Ativo (INV-RATCHET-01)',
+              'O sistema já possui um Ajudante vinculado. Substituir o pareamento exige a senha atual do Ajudante.',
+              '/ipc/monblockd/initiate-pairing-link'
+            );
+          }
+        }
+        const linkGate = this.repairingGate(state, trustedNow, undefined, '/ipc/monblockd/initiate-pairing-link');
+        if (linkGate) return linkGate;
+
+        // Código de uso único e vida curta: quem abrir o link primeiro e apresentar o código vira o Ajudante.
+        const pairingCode = crypto.randomBytes(8).toString('base64url');
+        const expiresAtMs = now + 15 * 60 * 1000;
+        this.pendingPairing = { partnerName, telegramChatId: '', pairingCode, initiatedAtMs: now, expiresAtMs };
+        return {
+          status: 200,
+          pairingLink: `https://t.me/${state.telegramBot.username}?start=${pairingCode}`,
+          pairingCode,
+          partnerName,
+          expiresAtMs,
+        };
+      }
+
       case 'CHECK_PAIRING_STATUS': {
         if (!this.pendingPairing) {
           return {
@@ -781,6 +829,25 @@ export class MonBlockDaemon {
                 this.pendingPairing.lastUpdateOffset ?? 0,
                 update.update_id + 1
               );
+
+              // Pareamento por link: o primeiro `/start <código>` válido, em chat privado, vira o Ajudante.
+              if (this.pendingPairing.pairingCode && !this.pendingPairing.telegramChatId) {
+                const start = /^\/start\s+(\S+)$/.exec(update.message?.text?.trim() ?? '');
+                const msg = update.message;
+                if (start && msg && msg.chat.type === 'private') {
+                  const given = Buffer.from(start[1]!, 'utf8');
+                  const wanted = Buffer.from(this.pendingPairing.pairingCode, 'utf8');
+                  if (given.length === wanted.length && crypto.timingSafeEqual(given, wanted)) {
+                    this.pendingPairing.telegramChatId = String(msg.chat.id);
+                    this.pendingPairing.pairingCode = undefined; // uso único
+                    await client.sendPairingInvitation({
+                      partnerName: this.pendingPairing.partnerName,
+                      chatId: this.pendingPairing.telegramChatId,
+                    });
+                  }
+                }
+                continue;
+              }
 
               const pwdCheck = client.extractPasswordFromUpdate(
                 update,
