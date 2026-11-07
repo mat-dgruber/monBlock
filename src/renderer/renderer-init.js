@@ -226,7 +226,7 @@ globalThis.monblockRenderer = { pickInitialView };
       .join('');
   }
 
-  tbody.addEventListener('click', (event) => {
+  document.getElementById('activeRulesTableBody')?.addEventListener('click', (event) => {
     const button = event.target.closest?.('[data-remove-allow]');
     if (!button) return;
     void execute(button, () => bridge.removeAllowlistDomain(button.dataset.removeAllow), 'Endereço bloqueado de novo.').then((ok) => {

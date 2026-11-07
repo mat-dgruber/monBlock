@@ -5,6 +5,10 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+## [0.8.1] - 2026-11-07
+### Corrigido
+- App preso em "Conferindo proteção...": o botão "Bloquear de novo" (0.8.0) usava uma variável fora de escopo e o script da interface falhava ao iniciar. Novo teste executa o script do renderer e falha se ele lançar erro na inicialização.
+
 ## [0.8.0] - 2026-11-07
 ### Adicionado
 - Liberação permanente para falsos positivos: o pedido "Permanente" da página de bloqueio chega ao Ajudante com o botão **Liberar permanente**; o primeiro toque só pergunta ("Tem certeza?") e só o segundo libera. O daemon acrescenta apenas o domínio pedido (com subdomínios) à lista de liberados, no mesmo `save` atômico da decisão, e reaplica as regras nos três cofres de bloqueio. Motivo obrigatório (mín. 10 caracteres), recusa endereço IP, limite de 3 liberações por 24 h e 200 entradas, e cada liberação fica registrada em `permanentReleases`.
