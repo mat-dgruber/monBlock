@@ -97,6 +97,10 @@ export interface UnblockRequestInput {
   userReason: string;
   challengeCode?: string;
   blurredSnapshotRef?: string;
+  /** Duração pedida em minutos (15 ou 60), mostrada ao Ajudante. */
+  requestedMinutes?: number;
+  /** `false` desliga o botão "Permanente" (T1: só volta com segunda confirmação). Padrão: `true`. */
+  allowPermanent?: boolean;
 }
 
 export interface UnblockRequestDeliveryResult {
@@ -225,13 +229,14 @@ export class TelegramPartnerClient {
         .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL_REDACTED]')
         .slice(0, 120) || '(sem título)';
     const xraySummary = [
-      '🛡️ [monBlock — Pedido de Desbloqueio Raio-X]',
+      '🛡️ [monBlock — Pedido de liberação]',
       `• Domínio: ${normalized.domain}`,
       `• URL Limpa: ${normalized.cleanUrl}`,
       `• Título da Aba: ${sanitizedTitle}`,
       `• Regra Acionada: ${input.ruleLabel}`,
       `• Justificativa: ${sanitizedReason}`,
-      `• Código de Desafio Offline: ${challengeCode}`,
+      ...(input.requestedMinutes ? [`• Tempo pedido: ${input.requestedMinutes === 60 ? '1 hora' : `${input.requestedMinutes} minutos`}`] : []),
+      `• Código de desafio (uso offline): ${challengeCode}`,
     ].join('\n');
 
     const payload: TelegramMessagePayload = {
@@ -246,10 +251,12 @@ export class TelegramPartnerClient {
             { text: 'Liberar 15 min', callback_data: `approve_15m:${input.requestId}` },
             { text: 'Liberar 1 hora', callback_data: `approve_60m:${input.requestId}` },
           ],
-          [
-            { text: 'Liberar Permanente', callback_data: `approve_permanent:${input.requestId}` },
-            { text: 'Negar Pedido', callback_data: `deny:${input.requestId}` },
-          ],
+          input.allowPermanent === false
+            ? [{ text: 'Negar Pedido', callback_data: `deny:${input.requestId}` }]
+            : [
+                { text: 'Liberar Permanente', callback_data: `approve_permanent:${input.requestId}` },
+                { text: 'Negar Pedido', callback_data: `deny:${input.requestId}` },
+              ],
         ],
       },
     };
@@ -483,6 +490,36 @@ export class TelegramPartnerClient {
       });
       const username = (res.body as { result?: { username?: unknown } } | null)?.result?.username;
       return res.ok && typeof username === 'string' && username ? { ok: true, username } : { ok: false };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  /** Para o carregamento do botão no Telegram e mostra um aviso curto ao Ajudante. */
+  async answerCallbackQuery(callbackQueryId: string, text: string): Promise<{ ok: boolean }> {
+    if (!this.botToken) return { ok: false };
+    try {
+      const res = await this.transport.send({
+        endpointUrl: `https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`,
+        timeoutMs: this.timeoutMs,
+        payload: { callback_query_id: callbackQueryId, text: text.slice(0, 190) },
+      });
+      return { ok: res.ok };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  /** Troca o texto da mensagem e remove os botões (evita decidir duas vezes). */
+  async editMessageText(chatId: string, messageId: number, text: string): Promise<{ ok: boolean }> {
+    if (!this.botToken) return { ok: false };
+    try {
+      const res = await this.transport.send({
+        endpointUrl: `https://api.telegram.org/bot${this.botToken}/editMessageText`,
+        timeoutMs: this.timeoutMs,
+        payload: { chat_id: chatId, message_id: messageId, text, reply_markup: { inline_keyboard: [] } },
+      });
+      return { ok: res.ok };
     } catch {
       return { ok: false };
     }

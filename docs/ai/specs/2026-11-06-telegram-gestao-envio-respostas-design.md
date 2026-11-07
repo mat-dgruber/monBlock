@@ -74,4 +74,5 @@ Escolha: **A**; B continua como contingência (já é o fallback quando o Telegr
 ## 8. Andamento
 - **T0 (PR #14):** `SET_BOT_TOKEN` e interface do token. Feito.
 - **T0b (PR #14):** pareamento por link. Feito, **com um desvio da seção 7**: o broker em segundo plano ficou para a T1; o `/start` é consumido pelo poller já existente do `CHECK_PAIRING_STATUS` (um único leitor, protegido por trava, chamado pelo app a cada 2 s enquanto o convite está pendente), então não há dois leitores de `getUpdates`. O laço do broker entra na T1, junto dos pedidos, e passa a ser o único consumidor.
-- **T1–T3:** pendentes.
+- **T1 (PR #14):** pedido → Telegram → botão → liberação, com broker em segundo plano (`pollTelegramOnce` no `entry.ts`), `UnblockRequest` em `unblock-requests.ts`, token de página, rota de status e `answerCallbackQuery`. Feito. "Permanente" desligado.
+- **T2–T3:** pendentes (mensagens revistas, "Permanente" com segunda confirmação, endurecimento e testes de caos).

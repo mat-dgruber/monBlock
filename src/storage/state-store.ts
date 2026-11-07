@@ -37,6 +37,8 @@ export interface CooldownState {
   startedAtMs: number | null;
 }
 
+export type UnblockRequestRecord = import('../daemon/unblock-requests.js').UnblockRequest;
+
 /** Concessão temporária de desbloqueio concedida pelo Ajudante. */
 export interface TemporaryGrant {
   target: string;
@@ -67,6 +69,10 @@ export interface MonBlockPersistentState {
   lastDriftAlertMs?: number;
   /** Bot do Telegram do usuário (T0): o token fica só no cofre do daemon e nunca sai por IPC. */
   telegramBot?: { token: string; username: string; setAtMs: number };
+  /** Pedidos de liberação ao Ajudante (T1); transições gravadas junto do estado. */
+  unblockRequests?: UnblockRequestRecord[];
+  /** Offset do `getUpdates` por bot: trocar de bot zera (o id do bot é a parte numérica do token). */
+  telegramOffset?: { botId: string; offset: number };
   /** Migração única de userland já aplicada (RN-DAEMON-10); `id` garante idempotência. */
   migration?: { id: string; format: 'MBV1' | 'LEGACY_JSON'; paired: boolean };
 }

@@ -16,7 +16,7 @@ import { createIpcServer, type IpcServer } from './ipc-server.js';
 import { MonBlockDaemon } from './monblockd.js';
 import { TrustedClock } from './trusted-clock.js';
 import { CHROMIUM_BUNDLE_IDS, MacOSPlatformEnforcer, checkBrowserProfileInstalled } from '../enforcers/platform-enforcer.js';
-import { createMonBlockHttpServer } from '../server/block-server.js';
+import { createMonBlockHttpServer, UnblockRequestError } from '../server/block-server.js';
 import { TripleStateStore } from '../storage/state-store.js';
 
 export interface DaemonLayout {
@@ -161,7 +161,29 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   if (isRoot) fs.chownSync(layout.socketPath, 0, gid ?? 0);
 
   const blockServer =
-    options.blockServerPort === null ? null : createMonBlockHttpServer({ designDir: options.designDir });
+    options.blockServerPort === null
+      ? null
+      : createMonBlockHttpServer({
+          designDir: options.designDir,
+          // A página fala com o daemon no mesmo processo: pedido e consulta passam pela fila serializada de comandos.
+          onUnblockRequest: async (p) => {
+            const res = await daemon.handleCommand({
+              type: 'CREATE_UNBLOCK_REQUEST',
+              domain: p.domain ?? '',
+              reason: p.reason ?? '',
+              durationMinutes: p.permanent ? 0 : p.durationMinutes,
+              ruleLabel: p.ruleLabel,
+              title: p.title,
+            });
+            if (res.status === 200 && 'request' in res) return { ...res.request };
+            const status = [400, 403, 429, 503].includes(res.status) ? (res.status as 400 | 403 | 429 | 503) : 502;
+            throw new UnblockRequestError(status, 'title' in res ? res.title : 'Pedido não enviado', 'detail' in res ? res.detail : 'Nada foi enviado.');
+          },
+          getUnblockRequest: async (requestId) => {
+            const res = await daemon.handleCommand({ type: 'GET_UNBLOCK_REQUEST', requestId });
+            return res.status === 200 && 'request' in res ? { ...res.request } : null;
+          },
+        });
   blockServer?.on('error', (err) => {
     console.error('[monblockd] página de bloqueio indisponível:', (err as NodeJS.ErrnoException).code ?? err);
   });
@@ -169,11 +191,28 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
 
   const timer = setInterval(() => void tick(), options.tickMs ?? 60_000);
 
+  // Broker do Telegram (único leitor de getUpdates): só trabalha com bot e Ajudante pareado; sem isso fica ocioso.
+  let polling = true;
+  void (async () => {
+    while (polling) {
+      let wait = 0;
+      try {
+        const outcome = await daemon.pollTelegramOnce(25);
+        wait = outcome === 'ok' ? 0 : outcome === 'idle' ? 5_000 : 15_000;
+      } catch (err) {
+        console.error('[monblockd] falha no ciclo do Telegram:', (err as Error).message);
+        wait = 15_000;
+      }
+      if (wait > 0 && polling) await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  })();
+
   return {
     daemon,
     layout,
     close: async () => {
       clearInterval(timer);
+      polling = false;
       await daemon.shutdown();
       await ipc.close();
       await new Promise<void>((resolve) => (blockServer ? blockServer.close(() => resolve()) : resolve()));

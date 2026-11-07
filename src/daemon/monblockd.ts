@@ -8,7 +8,8 @@
  */
 
 import crypto from 'node:crypto';
-import { TelegramPartnerClient, type TelegramTransportAdapter } from './telegram-client.js';
+import { TelegramPartnerClient, type TelegramTransportAdapter, type TelegramUpdate } from './telegram-client.js';
+import { createRequest, decideRequest, expireStale, type DecisionKind } from './unblock-requests.js';
 import { TrustedClock } from './trusted-clock.js';
 import {
   canMutateProtectionRule,
@@ -40,7 +41,7 @@ import type {
 export interface ProblemDetailsResponse {
   type: string;
   title: string;
-  status: 400 | 403 | 409 | 423 | 429 | 500 | 503;
+  status: 400 | 403 | 404 | 409 | 423 | 429 | 500 | 503;
   detail: string;
   instance: string;
 }
@@ -66,10 +67,23 @@ export interface PublicSanitizedState {
 }
 
 /** Comandos IPC suportados pelo `MonBlockDaemon`. */
+/** Visão do pedido para a página de bloqueio: sem motivo livre, sem credenciais. */
+export interface PublicUnblockRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'DENIED' | 'EXPIRED';
+  delivery: 'sent' | 'failed';
+  expiresAtMs: number;
+  grantMinutes?: number;
+  /** Só quando a entrega ao Telegram falhou: o código que a pessoa pode usar offline. */
+  fallbackChallengeCode?: string;
+}
+
 export type DaemonCommand =
   | { type: 'GET_STATE' }
   | { type: 'SET_BOT_TOKEN'; token: string; currentPartnerPassword?: string }
   | { type: 'INITIATE_PAIRING_LINK'; partnerName: string; currentPartnerPassword?: string }
+  | { type: 'CREATE_UNBLOCK_REQUEST'; domain: string; reason: string; durationMinutes?: number; ruleLabel?: string; title?: string }
+  | { type: 'GET_UNBLOCK_REQUEST'; requestId: string }
   | {
       type: 'INITIATE_PAIRING';
       partnerName: string;
@@ -176,6 +190,7 @@ export type DaemonSuccessResponse =
       uninstalled: true;
     }
   | { status: 200; botConfigured: true; botUsername: string }
+  | { status: 200; request: PublicUnblockRequest }
   | { status: 200; pairingLink: string; pairingCode: string; partnerName: string; expiresAtMs: number }
   | { status: 200; migrated: true; format: 'MBV1' | 'LEGACY_JSON'; paired: boolean };
 
@@ -186,6 +201,8 @@ export const DAEMON_COMMAND_TYPES = [
   'GET_STATE',
   'SET_BOT_TOKEN',
   'INITIATE_PAIRING_LINK',
+  'CREATE_UNBLOCK_REQUEST',
+  'GET_UNBLOCK_REQUEST',
   'INITIATE_PAIRING',
   'CHECK_PAIRING_STATUS',
   'CANCEL_PAIRING',
@@ -551,6 +568,106 @@ export class MonBlockDaemon {
     return response;
   }
 
+  private toPublicRequest(r: import('./unblock-requests.js').UnblockRequest): PublicUnblockRequest {
+    return {
+      id: r.id,
+      status: r.status,
+      delivery: r.delivery,
+      expiresAtMs: r.expiresAtMs,
+      ...(r.grantMinutes ? { grantMinutes: r.grantMinutes } : {}),
+      ...(r.delivery === 'failed' && r.challengeCode && r.status === 'PENDING' ? { fallbackChallengeCode: r.challengeCode } : {}),
+    };
+  }
+
+  /** Executa `fn` na mesma fila serializada dos comandos IPC e do watchdog (sem corrida com `runTick`). */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.commandQueue.then(fn, fn);
+    this.commandQueue = next.catch(() => undefined);
+    return next;
+  }
+
+  /**
+   * Um ciclo do broker do Telegram: lê os updates FORA da fila (o long poll pode durar 25 s) e processa
+   * cada um DENTRO dela. Só roda com bot e Ajudante pareado e sem convite pendente (um único leitor).
+   */
+  public async pollTelegramOnce(timeoutSec = 25): Promise<'idle' | 'ok' | 'error'> {
+    const { state } = this.loadState();
+    const chatId = state.partnerCredentials?.telegramChatId;
+    if (!state.paired || !chatId || !state.telegramBot || this.pendingPairing) return 'idle';
+    const botId = state.telegramBot.token.split(':')[0] ?? '';
+    const offset = state.telegramOffset?.botId === botId ? state.telegramOffset.offset : undefined;
+    const res = await this.telegramFor(chatId, state.telegramBot.token).pollUpdates({ offset, timeoutSec });
+    if (!res.ok) return 'error';
+    for (const update of res.updates) {
+      await this.runExclusive(() => this.handleTelegramUpdate(update));
+    }
+    return 'ok';
+  }
+
+  /**
+   * Trata um update (dentro da fila). A decisão do pedido, a concessão e o novo offset vão no MESMO `save`:
+   * se o daemon cair antes, o Telegram reenvia o update; se cair depois, nada se perde.
+   */
+  public async handleTelegramUpdate(update: TelegramUpdate): Promise<void> {
+    const { state } = this.loadState();
+    const chatId = state.partnerCredentials?.telegramChatId;
+    const bot = state.telegramBot;
+    if (!chatId || !bot) return;
+    const now = this.clock.nowForExpiry();
+    const client = this.telegramFor(chatId, bot.token);
+    const botId = bot.token.split(':')[0] ?? '';
+    const offsetState = { botId, offset: update.update_id + 1 };
+
+    const cb = update.callback_query;
+    if (!cb?.data || !cb.message) {
+      this.save({ ...state, telegramOffset: offsetState });
+      return;
+    }
+
+    // Só vale o Ajudante pareado: o chat E quem tocou o botão precisam coincidir (em grupo, `from.id` ≠ chat).
+    const verified = client.parseAndVerifyCallback({ chatId: String(cb.message.chat.id), callbackData: cb.data });
+    if (!verified.authorized || String(cb.from.id) !== chatId || !verified.requestId) {
+      await client.answerCallbackQuery(cb.id, 'Você não pode responder a este pedido.');
+      this.save({ ...state, telegramOffset: offsetState });
+      return;
+    }
+
+    const kind: DecisionKind | null =
+      verified.decision === '15M' ? 'APPROVE_15M' : verified.decision === '60M' ? 'APPROVE_60M' : verified.decision === 'DENY' ? 'DENY' : null;
+    // "Permanente" fica desligado na T1 (sem segunda confirmação): um botão antigo não o ativa.
+    const outcome = kind ? decideRequest(state.unblockRequests ?? [], verified.requestId, kind, now) : ({ kind: 'unknown' } as const);
+
+    if (outcome.kind !== 'applied') {
+      const text =
+        outcome.kind === 'expired' ? 'Este pedido expirou.' : outcome.kind === 'already-decided' ? 'Este pedido já foi respondido.' : 'Não encontrei este pedido.';
+      await client.answerCallbackQuery(cb.id, text);
+      await client.editMessageText(String(cb.message.chat.id), cb.message.message_id, `${text}`);
+      this.save({ ...state, telegramOffset: offsetState });
+      return;
+    }
+
+    const grants = [...state.temporaryGrants];
+    if (outcome.request.status === 'APPROVED' && outcome.request.grantMinutes) {
+      grants.push({ target: outcome.request.domain, expiresAtMs: now + outcome.request.grantMinutes * 60_000 });
+    }
+    const next: MonBlockPersistentState = {
+      ...state,
+      unblockRequests: outcome.requests,
+      temporaryGrants: grants,
+      telegramOffset: offsetState,
+      updatedAtMs: now,
+    };
+    this.save(next);
+    await this.enforcer.applyWebRules(next.rules, next.temporaryGrants);
+
+    const done =
+      outcome.request.status === 'APPROVED'
+        ? `Liberado por ${outcome.request.grantMinutes === 60 ? '1 hora' : '15 minutos'}: ${outcome.request.domain}`
+        : `Pedido negado: ${outcome.request.domain}`;
+    await client.answerCallbackQuery(cb.id, done);
+    await client.editMessageText(String(cb.message.chat.id), cb.message.message_id, done);
+  }
+
   /** Carrega e reconcilia os cofres; na primeira leitura, retoma o relógio persistido. */
   private loadState(): ReturnType<TripleStateStore['loadAndReconcile']> {
     const reconciled = this.store.loadAndReconcile();
@@ -738,6 +855,66 @@ export class MonBlockDaemon {
           telegramChatId,
           expiresAtMs,
         };
+      }
+
+      case 'CREATE_UNBLOCK_REQUEST': {
+        const instance = '/ipc/monblockd/create-unblock-request';
+        const chatId = state.partnerCredentials?.telegramChatId;
+        if (!state.paired || !chatId || !state.telegramBot) {
+          return buildProblem(
+            503,
+            'Pedido não enviado',
+            'Ainda não há um Ajudante pareado para receber o pedido. Nada foi enviado.',
+            instance
+          );
+        }
+        const normalized = sanitizeAndNormalizeUrl(cmd.domain ?? '');
+        if (!normalized) {
+          return buildProblem(400, 'Endereço inválido', 'Não foi possível entender o endereço do pedido.', instance);
+        }
+        const challengeCode = `MB-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+        const created = createRequest(
+          state.unblockRequests ?? [],
+          {
+            domain: normalized.domain,
+            reason: cmd.reason ?? '',
+            ruleLabel: cmd.ruleLabel?.trim() || 'Regra do monBlock',
+            requestedMinutes: cmd.durationMinutes ?? 15,
+            challengeCode,
+          },
+          now
+        );
+        if (!created.ok) {
+          return buildProblem(created.status, created.status === 429 ? 'Pedido recusado por ora' : 'Pedido inválido', created.detail, instance);
+        }
+        // O pedido é gravado ANTES do envio: se o daemon cair no meio, o Ajudante não responde a um id desconhecido.
+        this.save({ ...state, unblockRequests: created.requests, updatedAtMs: now });
+        const delivery = await this.telegramFor(chatId, state.telegramBot.token).sendUnblockRequest({
+          requestId: created.request.id,
+          url: normalized.cleanUrl,
+          title: cmd.title ?? '',
+          ruleLabel: created.request.ruleLabel,
+          userReason: created.request.reason,
+          challengeCode,
+          requestedMinutes: created.request.requestedMinutes,
+          allowPermanent: false,
+        });
+        const finalRequest = { ...created.request, delivery: delivery.delivered ? ('sent' as const) : ('failed' as const) };
+        const { state: fresh } = this.loadState();
+        this.save({
+          ...fresh,
+          unblockRequests: (fresh.unblockRequests ?? created.requests).map((r) => (r.id === finalRequest.id ? finalRequest : r)),
+          updatedAtMs: now,
+        });
+        return { status: 200, request: this.toPublicRequest(finalRequest) };
+      }
+
+      case 'GET_UNBLOCK_REQUEST': {
+        const request = expireStale(state.unblockRequests ?? [], now).find((r) => r.id === cmd.requestId);
+        if (!request) {
+          return buildProblem(404, 'Pedido não encontrado', 'Esse pedido não existe ou já foi limpo.', '/ipc/monblockd/get-unblock-request');
+        }
+        return { status: 200, request: this.toPublicRequest(request) };
       }
 
       case 'INITIATE_PAIRING_LINK': {

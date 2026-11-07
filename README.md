@@ -7,7 +7,7 @@
 [![CI Pipeline](https://github.com/mat-dgruber/monBlock/actions/workflows/ci.yml/badge.svg)](https://github.com/mat-dgruber/monBlock/actions/workflows/ci.yml)
 [![Plataforma: macOS](<https://img.shields.io/badge/Plataforma-macOS%2013%2B%20(Ventura%2C%20Sonoma%2C%20Sequoia)-000000.svg?logo=apple&logoColor=white>)](#requisitos-do-sistema)
 [![Arquitetura: Universal](<https://img.shields.io/badge/Arquitetura-Apple%20Silicon%20%7C%20Intel%20(Universal)-blue.svg>)](#requisitos-do-sistema)
-[![Versão](https://img.shields.io/badge/Versão-0.6.0-blue.svg)](package.json)
+[![Versão](https://img.shields.io/badge/Versão-0.7.0-blue.svg)](package.json)
 [![Daemon: Node SEA](https://img.shields.io/badge/Daemon-Node%2022%20SEA%20Root-green.svg)](scripts/build-daemon-sea.sh)
 [![UI: Electron](https://img.shields.io/badge/UI-Electron%20Desktop-47848F.svg?logo=electron&logoColor=white)](src/main/main.ts)
 [![Acessibilidade](https://img.shields.io/badge/A11y-WCAG%202.2%20AAA-brightgreen.svg)](docs/design/tokens.css)

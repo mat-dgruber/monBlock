@@ -188,6 +188,22 @@
     const sendStatus = document.getElementById('sendStatus');
     const sendBtn = document.getElementById('sendBtn');
     let idemKey = null;
+    const pageToken = document.querySelector('meta[name="monblock-token"]')?.content || '';
+    const apiHeaders = { 'Content-Type': 'application/json', 'X-MonBlock-Token': pageToken };
+    let pollTimer = 0;
+
+    // Depois de enviado, consulta o estado até o Ajudante responder (ou o prazo de 15 min acabar).
+    async function pollRequest(id, startedAt) {
+      if (Date.now() - startedAt > 15 * 60 * 1000) { setSend('info', 'O pedido expirou sem resposta do Ajudante.'); return; }
+      try {
+        const res = await fetch('/api/unblock-requests/' + encodeURIComponent(id), { headers: { 'X-MonBlock-Token': pageToken } });
+        const data = res.ok ? await res.json() : null;
+        if (data?.status === 'APPROVED') { setSend('info', 'O Ajudante liberou por ' + (data.grantMinutes === 60 ? '1 hora' : '15 minutos') + '. Abra o endereço de novo.'); return; }
+        if (data?.status === 'DENIED') { setSend('info', 'O Ajudante negou o pedido.'); return; }
+        if (data?.status === 'EXPIRED') { setSend('info', 'O pedido expirou sem resposta do Ajudante.'); return; }
+      } catch { /* sem rede por um instante: tenta de novo */ }
+      pollTimer = setTimeout(() => pollRequest(id, startedAt), 3000);
+    }
     function setSend(kind, text) { sendStatus.dataset.kind = kind; sendStatus.textContent = text; }
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -203,12 +219,19 @@
       try {
         const res = await fetch('/api/unblock-requests', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idemKey },
+          headers: { ...apiHeaders, 'Idempotency-Key': idemKey },
           body: JSON.stringify({ domain: blockedDomain || undefined, reason, ...duration }),
           signal: controller.signal,
         });
-        if (res.status === 202) {
-          setSend('info', 'Pedido enviado. Agora é com o seu Ajudante: aguarde a resposta dele.');
+        if (res.status === 200 || res.status === 202) {
+          let data = {};
+          try { data = await res.json(); } catch { /* corpo sem JSON */ }
+          if (data.delivery === 'failed') {
+            setSend('error', 'O Telegram não respondeu e o pedido não chegou ao Ajudante. Código para usar offline: ' + (data.fallbackChallengeCode || '—'));
+          } else {
+            setSend('info', 'Pedido enviado. Agora é com o seu Ajudante: aguarde a resposta dele.');
+            if (data.id) pollRequest(data.id, Date.now());
+          }
         } else if (res.status === 409) {
           setSend('info', 'Seu pedido ainda está sendo enviado. Aguarde alguns segundos.');
         } else {
@@ -234,7 +257,7 @@
       const code = document.getElementById('unlockCode').value.trim();
       if (!code) { codeStatus.dataset.kind = 'error'; codeStatus.textContent = 'Cole o código que o seu Ajudante enviou. Nada foi liberado.'; return; }
       try {
-        const res = await fetch('/api/unlock-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+        const res = await fetch('/api/unlock-code', { method: 'POST', headers: apiHeaders, body: JSON.stringify({ code }) });
         let detail = '';
         try { detail = (await res.json()).detail || ''; } catch { /* corpo sem JSON */ }
         codeStatus.dataset.kind = 'error';

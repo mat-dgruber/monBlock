@@ -12,7 +12,7 @@ interface Stub {
   addEventListener: (t: string, f: Listener) => void; appendChild: (c: unknown) => void; cloneNode: () => Stub; removeAttribute: () => void;
   alt?: string; children: unknown[];
 }
-interface PageOpts { duration?: string; dark?: boolean; contrast?: boolean; reduced?: boolean; fetch?: (url: string, init: { body: string; headers: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }> }
+interface PageOpts { timers?: Array<{ fn: () => void; ms: number }>; duration?: string; dark?: boolean; contrast?: boolean; reduced?: boolean; fetch?: (url: string, init: { body: string; headers: Record<string, string> }) => Promise<{ status: number; json: () => Promise<unknown> }> }
 
 // Executa o script da página num contexto simulado (sem DOM real) para pegar regressões de comportamento.
 function runPage(search: string, opts: PageOpts = {}) {
@@ -46,13 +46,17 @@ function runPage(search: string, opts: PageOpts = {}) {
     document: {
       documentElement: { setAttribute: (k: string, v: string) => { attrs[k] = v; } },
       getElementById: el, hidden: false,
+      querySelector: () => ({ content: 'tok-de-pagina' }),
       addEventListener: (t: string, f: Listener) => { (docListeners[t] ??= []).push(f); },
     },
     matchMedia: mq,
     requestAnimationFrame: () => { raf += 1; return raf; },
     cancelAnimationFrame: () => undefined,
     performance: { now: () => 0 },
-    URL, URLSearchParams, AbortController, setTimeout, clearTimeout,
+    URL, URLSearchParams, AbortController,
+    // timers capturados: os testes disparam o ciclo de consulta na mão
+    setTimeout: (fn: () => void, ms: number) => { (opts.timers ??= []).push({ fn, ms }); return 1; },
+    clearTimeout: () => undefined,
     FormData: class { get() { return opts.duration ?? '15'; } },
     crypto: { randomUUID: () => 'uuid-fixo' },
     fetch: opts.fetch ?? (async () => ({ status: 503, json: async () => ({}) })),
@@ -165,6 +169,40 @@ describe('blocked-page.html: pedido ao Ajudante (só "enviado" com confirmação
     const r = runPage('?domain=x.com', { duration: 'permanent', fetch: async (_u, init) => { sent = init.body; return { status: 202, json: async () => ({}) }; } });
     await submit(r, 'estudo');
     expect(JSON.parse(sent)).toEqual({ domain: 'x.com', reason: 'estudo', permanent: true });
+  });
+
+  it('manda o token de página em toda chamada à API', async () => {
+    const seen: Array<Record<string, string>> = [];
+    const r = runPage('?domain=x.com', { fetch: async (_u, init) => { seen.push(init.headers); return { status: 202, json: async () => ({}) }; } });
+    await submit(r, 'estudo');
+    expect(seen[0]!['X-MonBlock-Token']).toBe('tok-de-pagina');
+  });
+
+  it('depois de enviado, consulta o estado até o Ajudante decidir e só então diz liberado ou negado', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const answers: unknown[] = [{ status: 'PENDING' }, { status: 'APPROVED', grantMinutes: 15 }];
+    const r = runPage('?domain=x.com', {
+      timers,
+      fetch: async (url) =>
+        url.startsWith('/api/unblock-requests/')
+          ? { status: 200, ok: true, json: async () => answers.shift() }
+          : { status: 202, json: async () => ({ id: 'req_abc', status: 'PENDING', delivery: 'sent' }) },
+    } as PageOpts);
+    await submit(r, 'estudo');
+    expect(r.el('sendStatus').textContent).toContain('Pedido enviado');
+    await new Promise((resolve) => setTimeout(resolve, 0)); // 1ª consulta (PENDING): agenda a próxima
+    expect(r.el('sendStatus').textContent).not.toContain('liberou');
+    expect(timers.some((t) => t.ms === 3000)).toBe(true);
+    timers.find((t) => t.ms === 3000)!.fn();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.el('sendStatus').textContent).toContain('liberou por 15 minutos');
+  });
+
+  it('entrega que falhou mostra o código offline e nunca "enviado"', async () => {
+    const r = runPage('?domain=x.com', { fetch: async () => ({ status: 200, json: async () => ({ id: 'req_abc', delivery: 'failed', fallbackChallengeCode: 'MB-ABC123' }) }) });
+    const text = await submit(r, 'estudo');
+    expect(text).toContain('MB-ABC123');
+    expect(text).not.toContain('Pedido enviado');
   });
 
   it('falha de rede diz que nada foi enviado e libera o botão', async () => {
