@@ -184,6 +184,7 @@
   /* ------------------------------------------------------------------------
      Tema 3b: Capycro Escuro (marca à noite: verde-azulado mineral + terracota sobre carvão quente)
      Derivado do Capycro Ivory (#005A64 / #C84B31 / ivory), sem azul-ardósia; zero roxo.
+     Detalhes em marrom (capivara): bordas #5a4636 e rótulos #c9a27e (6,8:1 sobre o cartão).
      Contraste (WCAG): texto 15,4:1, secundário 8,3:1, primário 7,4:1, terracota 6,3:1 sobre o fundo.
      ------------------------------------------------------------------------ */
   [data-theme="capycro-dark"],
@@ -191,7 +192,8 @@
     --surface-ground: #121a1a;
     --surface-card: #1a2423;
     --surface-elevated: #24312f;
-    --surface-border: #3a4a47;
+    --surface-border: #5a4636;
+    --detail-color: #c9a27e;
     --text-color: #f3efe6;
     --text-color-secondary: #b7b2a5;
     --primary-color: #6fb3b5;

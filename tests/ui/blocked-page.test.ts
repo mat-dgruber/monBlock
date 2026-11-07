@@ -126,7 +126,7 @@ describe('blocked-page.html: comportamento (script executado)', () => {
 
 describe('tema Capycro escuro (tokens.css)', () => {
   const css = fs.readFileSync(path.resolve(__dirname, '../../docs/design/tokens.css'), 'utf8');
-  const block = css.match(/\[data-theme="capycro-dark"\][^{]*\{([^}]*)\}/)![1]!;
+  const block = css.match(/\[data-theme="capycro-dark"\],\s*\.theme-capycro-dark\s*\{([^}]*)\}/)![1]!;
   const v = (name: string) => block.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`))![1]!;
   const lum = (hex: string) => {
     const [r, g, b] = [1, 3, 5].map((i) => {
@@ -144,6 +144,11 @@ describe('tema Capycro escuro (tokens.css)', () => {
     expect(ratio(v('primary-foreground'), v('primary-color'))).toBeGreaterThanOrEqual(4.5);
     expect(ratio(v('accent-foreground'), v('accent-color'))).toBeGreaterThanOrEqual(4.5);
     expect(block.toLowerCase()).not.toMatch(/#8b5cf6|#7c3aed|#a855f7|#6366f1/);
+  });
+
+  it('detalhes marrons (variante B): borda e rótulo em marrom legível sobre o cartão', () => {
+    expect(v('surface-border')).toBe('#5a4636');
+    expect(ratio(v('detail-color'), v('surface-card'))).toBeGreaterThanOrEqual(4.5);
   });
 
   it('o seletor automático de escuro não sobrescreve o tema explícito', () => {
