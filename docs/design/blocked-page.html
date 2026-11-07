@@ -48,11 +48,12 @@
 
     /* Respiração etérea e automática: um halo suave atrás do logo; só opacity/transform. */
     .calm { display: grid; justify-items: center; gap: 0.25rem; }
-    .halo { position: relative; display: grid; place-items: center; width: 100%; height: 10rem; }
+    .halo { position: relative; display: grid; place-items: center; width: 100%; height: 12rem; }
     .halo::before, .halo::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; will-change: transform, opacity; }
-    .halo::before { width: 10rem; height: 10rem; background: radial-gradient(circle, color-mix(in srgb, var(--primary-color) 40%, transparent), transparent 68%); transform: scale(var(--breath-scale, 1)); opacity: var(--breath-opacity, 0.7); }
-    .halo::after { width: 7rem; height: 7rem; background: radial-gradient(circle, color-mix(in srgb, var(--detail-color, var(--accent-color)) 32%, transparent), transparent 70%); transform: scale(calc(2.1 - var(--breath-scale, 1))); opacity: calc(1.3 - var(--breath-opacity, 0.7)); }
-    .breath-label { font-size: var(--text-sm); color: var(--text-color-secondary); min-height: 1.5em; transition: opacity 600ms ease; }
+    .halo::before { width: 12rem; height: 12rem; background: radial-gradient(circle, color-mix(in srgb, var(--primary-color) 55%, transparent), transparent 66%); transform: scale(var(--breath-scale, 1)); opacity: calc(0.55 + 0.45 * var(--breath-level, 0.5)); }
+    .halo::after { width: 8.5rem; height: 8.5rem; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--primary-color) 75%, transparent); transform: scale(calc(2.1 - var(--breath-scale, 1))); opacity: calc(1 - 0.45 * var(--breath-level, 0.5)); }
+    .orb { position: relative; width: 5.25rem; height: 5.25rem; border-radius: 50%; border: 2px solid var(--primary-color); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--primary-color) 90%, #ffffff), var(--primary-color) 55%, color-mix(in srgb, var(--primary-color) 55%, var(--surface-ground))); box-shadow: 0 0 2.25rem color-mix(in srgb, var(--primary-color) 55%, transparent); transform: scale(var(--breath-scale, 1)); will-change: transform; }
+    .breath-label { font-size: var(--text-base); font-weight: 600; color: var(--text-color); min-height: 1.6em; letter-spacing: 0.01em; }
     .link-btn { background: none; border: 0; color: var(--text-color-secondary); text-decoration: underline; font: inherit; font-size: var(--text-xs); cursor: pointer; padding: 0.5rem; min-height: 2.75rem; }
 
     .facts, .request { display: grid; gap: 1rem; background: var(--surface-card); border: 1px solid var(--surface-border); border-radius: var(--radius-lg); padding: 1.25rem; }
@@ -80,7 +81,7 @@
     .rise { animation: rise 420ms var(--ease-fluid, ease-out) both; }
     .rise-2 { animation-delay: 120ms; }
     .rise-3 { animation-delay: 200ms; }
-    @media (prefers-reduced-motion: reduce) { .rise { animation: none; } .halo::before, .halo::after { transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .rise { animation: none; } .halo::before, .halo::after, .orb { transform: none; } }
   </style>
 </head>
 <body>
@@ -102,7 +103,7 @@
     <p id="status" role="status" aria-live="polite"></p>
 
     <section class="calm rise rise-2" aria-label="Respiração guiada">
-      <div class="halo" id="halo" aria-hidden="true"></div>
+      <div class="halo" id="halo" aria-hidden="true"><div class="orb"></div></div>
       <p class="breath-label" id="breathLabel" aria-hidden="true">Inspire…</p>
       <button type="button" id="breathToggle" class="link-btn">Pausar animação</button>
     </section>
@@ -253,22 +254,22 @@
     const IN_MS = 4000, OUT_MS = 6000;
     let rafId = 0, startedAt = 0, playing = true;
 
-    function setBreath(scale, opacity) {
+    function setBreath(scale, level) {
       halo.style.setProperty('--breath-scale', String(scale));
-      halo.style.setProperty('--breath-opacity', String(opacity));
+      halo.style.setProperty('--breath-level', String(level));
     }
     function frame(now) {
       const phase = (now - startedAt) % (IN_MS + OUT_MS);
       const inhaling = phase < IN_MS;
       const k = inhaling ? phase / IN_MS : 1 - (phase - IN_MS) / OUT_MS;
       const eased = 0.5 - 0.5 * Math.cos(Math.PI * k);
-      setBreath(0.88 + 0.26 * eased, 0.45 + 0.4 * eased);
+      setBreath(0.82 + 0.4 * eased, eased);
       label.textContent = inhaling ? 'Inspire…' : 'Solte devagar…';
       rafId = requestAnimationFrame(frame);
     }
     function applyBreath() {
       cancelAnimationFrame(rafId);
-      if (reduced.matches || !playing || document.hidden) { setBreath(1, 0.7); label.textContent = 'Respire com calma.'; toggle.hidden = reduced.matches; return; }
+      if (reduced.matches || !playing || document.hidden) { setBreath(1, 0.5); label.textContent = 'Respire com calma.'; toggle.hidden = reduced.matches; return; }
       toggle.hidden = false;
       startedAt = performance.now();
       rafId = requestAnimationFrame(frame);
