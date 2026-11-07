@@ -81,3 +81,5 @@ No contexto de `desktop_ui_ccat`, a camada backend imediata compreende o **Proce
     *   Ao acionar o botão de pedido ao Ajudante na tela `/blocked`, o botão entra em estado `disabled` com indicador textual imediato e envia um cabeçalho `Idempotency-Key` único por sessão de bloqueio, garantindo que cliques duplos ou reconexões recebam `202 Accepted` com `"deduplicated": true`.
 *   **Degradação Graciosa quando o Daemon ou Rede Estão Indisponíveis:**
     *   Se a chamada assíncrona ao Telegram falhar ou a máquina estiver offline, a interface transiciona sem travamentos para o **Modo de Desafio-Resposta Offline**, destacando o `challengeCode` local para validação via `HMAC-SHA256`.
+
+*   **Temas (0.5.0):** `capycro-ivory` (padrão), `capycro-dark` (marca à noite com detalhes marrons, `tokens.css` + `renderer.css`), `dark-tech`, `light-fintech` e `high-contrast-aaa`. A página de bloqueio escolhe pelo sistema: alto contraste > `capycro-dark` > `capycro`.

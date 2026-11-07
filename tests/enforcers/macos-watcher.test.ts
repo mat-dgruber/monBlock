@@ -46,7 +46,7 @@ function createMockAdapter(initialTab: ActiveTabSnapshot | null = null): Browser
 }
 
 describe('MOD-01: MacOSBrowserWatcher (Camada 3 - Watcher Universal macOS)', () => {
-  it('deve listar todos os navegadores macOS suportados (Safari, Chrome, Brave, Arc, Edge, Dia, Firefox)', () => {
+  it('deve listar todos os navegadores macOS suportados (Safari, Chrome, Brave, Arc, Edge, Dia, Vivaldi, Opera, Chromium, Chrome Beta/Canary, Firefox)', () => {
     // Arrange & Act & Assert
     expect(SUPPORTED_MACOS_BROWSERS).toEqual([
       'Safari',
@@ -55,6 +55,11 @@ describe('MOD-01: MacOSBrowserWatcher (Camada 3 - Watcher Universal macOS)', () 
       'Arc',
       'Microsoft Edge',
       'Dia',
+      'Vivaldi',
+      'Opera',
+      'Chromium',
+      'Google Chrome Beta',
+      'Google Chrome Canary',
       'Firefox',
     ]);
   });
@@ -280,5 +285,23 @@ describe('MOD-01: MacOSBrowserWatcher (Camada 3 - Watcher Universal macOS)', () 
     });
     const debouncedCleanUrl = await watcher.inspectOnce(10_050);
     expect(debouncedCleanUrl.debounced).toBe(true);
+  });
+});
+
+describe('MOD-01: scripts AppleScript cobrem os navegadores Chromium adicionados', () => {
+  it('a leitura e o redirecionamento da aba incluem Vivaldi, Opera, Chromium e Chrome Beta/Canary', async () => {
+    const { OsascriptBrowserTabAdapter } = await import('../../src/enforcers/macos-watcher.js');
+    const scripts: string[] = [];
+    const adapter = new OsascriptBrowserTabAdapter(async (_cmd: string, args: readonly string[]) => {
+      scripts.push(String(args[1] ?? args[0]));
+      return { stdout: '', stderr: '' };
+    });
+    await adapter.getActiveTab();
+    await adapter.redirectActiveTab('Vivaldi', 'http://127.0.0.1:49152/blocked?domain=x.com');
+    const all = scripts.join('\n');
+    for (const name of ['Vivaldi', 'Opera', 'Chromium', 'Google Chrome Beta', 'Google Chrome Canary']) {
+      const occurrences = all.split(`"${name}"`).length - 1;
+      expect(occurrences).toBeGreaterThanOrEqual(2); // leitura e redirecionamento
+    }
   });
 });

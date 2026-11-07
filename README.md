@@ -7,7 +7,7 @@
 [![CI Pipeline](https://github.com/mat-dgruber/monBlock/actions/workflows/ci.yml/badge.svg)](https://github.com/mat-dgruber/monBlock/actions/workflows/ci.yml)
 [![Plataforma: macOS](<https://img.shields.io/badge/Plataforma-macOS%2013%2B%20(Ventura%2C%20Sonoma%2C%20Sequoia)-000000.svg?logo=apple&logoColor=white>)](#requisitos-do-sistema)
 [![Arquitetura: Universal](<https://img.shields.io/badge/Arquitetura-Apple%20Silicon%20%7C%20Intel%20(Universal)-blue.svg>)](#requisitos-do-sistema)
-[![Versão](https://img.shields.io/badge/Versão-0.3.0-blue.svg)](package.json)
+[![Versão](https://img.shields.io/badge/Versão-0.5.0-blue.svg)](package.json)
 [![Daemon: Node SEA](https://img.shields.io/badge/Daemon-Node%2022%20SEA%20Root-green.svg)](scripts/build-daemon-sea.sh)
 [![UI: Electron](https://img.shields.io/badge/UI-Electron%20Desktop-47848F.svg?logo=electron&logoColor=white)](src/main/main.ts)
 [![Acessibilidade](https://img.shields.io/badge/A11y-WCAG%202.2%20AAA-brightgreen.svg)](docs/design/tokens.css)
@@ -66,7 +66,7 @@ Os pacotes oficiais de distribuição são compilados e assinados automaticament
 
 - **Sistema Operacional:** macOS 13.0 (Ventura), macOS 14.0 (Sonoma) ou macOS 15.0 (Sequoia).
 - **Processador:** Binário Universal nativo para **Apple Silicon** (`arm64` - M1/M2/M3/M4) e **Intel** (`x86_64`).
-- **Navegadores Suportados:** Safari, Google Chrome, Brave, Arc Browser, Microsoft Edge, Opera e Mozilla Firefox.
+- **Navegadores Suportados:** Safari, Google Chrome (incluindo Beta e Canary), Brave, Arc, Dia, Microsoft Edge, Vivaldi, Opera, Chromium e Mozilla Firefox. O perfil de políticas cobre os navegadores Chromium (Chrome, Brave, Edge, Vivaldi, Opera, Chromium, Chrome Beta/Canary) e o Firefox; o vigia de abas (palavras-chave e redirecionamento) cobre os que têm AppleScript (Safari, Chromium e derivados, Arc, Dia), com leitura limitada no Firefox.
 
 ---
 
@@ -248,11 +248,13 @@ O monBlock inclui um catálogo estruturado em 11 categorias de navegação:
 O monBlock implementa o **Design System Oficial CCAT**, com interface desktop e tela de bloqueio com rigor visual anti-distração:
 
 - **Tokens e Cores:** Paleta sem ruído visual, contraste validado pelas diretrizes **WCAG 2.2 AAA** e escala APCA.
-- **4 Temas Nativos:**
-  1. `Claro (Light)` — Visual limpo e diurno.
-  2. `Escuro (Dark)` — Modo de alta ergonomia e conforto noturno.
-  3. `Alto Contraste` — Focado em máxima legibilidade e acessibilidade.
-  4. `Zero Roxo` — Design sóbrio evitando paletas e gradientes artificiais.
+- **5 Temas:**
+  1. `Capycro (Marfim)` — padrão, verde-azulado e terracota sobre marfim.
+  2. `Capycro escuro` — a marca à noite: carvão quente, verde-azulado mineral, terracota e detalhes marrons (contraste AA/AAA).
+  3. `Escuro` — slate de alta ergonomia noturna.
+  4. `Claro` — visual limpo e diurno.
+  5. `Alto Contraste` — máxima legibilidade (AAA). Zero roxo em todos.
+- **Página de bloqueio:** logo da CCAT, respiração guiada automática (com pausa e `prefers-reduced-motion`), dados reais do bloqueio e pedido de liberação ao Ajudante (15 min, 1 hora ou permanente, via Telegram) que só confirma o que o servidor confirma. Segue o tema do sistema.
 - **Micro-UX Calma:** Animações discretas, indicador de status na barra de menus (tray) e respeito estrito a `prefers-reduced-motion` e `prefers-reduced-transparency`.
 
 ---
