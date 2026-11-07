@@ -27,6 +27,7 @@ export interface MonBlockPreloadApi {
   enableCategory: (categoryId: string) => Promise<unknown>;
   addBatchDomains: (domains: string[]) => Promise<unknown>;
   addKeywords: (keywords: string[]) => Promise<unknown>;
+  removeAllowlistDomain: (domain: string) => Promise<unknown>;
   requestUnblock: (payload: {
     target: string;
     duration: '15m' | '60m' | 'permanent';
@@ -111,6 +112,10 @@ export function createMonBlockPreloadApi(ipcInvoker: IpcInvokeFn): MonBlockPrelo
         return Promise.reject(new Error('keywords deve ser uma lista.'));
       }
       return ipcInvoker('monblock:add-keywords', { keywords });
+    },
+    removeAllowlistDomain(domain: string) {
+      if (typeof domain !== 'string' || !domain.trim()) return Promise.reject(new Error('domain inválido.'));
+      return ipcInvoker('monblock:remove-allowlist-domain', { domain: domain.trim() });
     },
     requestUnblock(payload) {
       return ipcInvoker('monblock:request-unblock', payload);

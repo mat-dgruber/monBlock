@@ -188,6 +188,13 @@ globalThis.monblockRenderer = { pickInitialView };
       }
     }
 
+    // Liberados para sempre pelo Ajudante (falsos positivos): dá para voltar a bloquear
+    for (const d of currentRules.allowlistDomains || []) {
+      if (!query || d.toLowerCase().includes(query)) {
+        rows.push({ item: d, type: 'Domínio', origin: 'Liberado para sempre pelo Ajudante', status: '', allow: d });
+      }
+    }
+
     // Adiciona palavras customizadas
     for (const kw of currentRules.keywords || []) {
       if (!query || kw.toLowerCase().includes(query)) {
@@ -213,11 +220,19 @@ globalThis.monblockRenderer = { pickInitialView };
           <td><span class="category-tag-chip ${r.type === 'Domínio' ? 'category-tag-chip--domain' : 'category-tag-chip--keyword'}">${r.type === 'Domínio' ? '🌐' : '🔤'} ${escapeHtml(r.item)}</span></td>
           <td>${escapeHtml(r.type)}</td>
           <td>${escapeHtml(r.origin)}</td>
-          <td><span class="category-badge-status">${escapeHtml(r.status)}</span></td>
+          <td>${r.allow ? `<button type="button" class="btn-secondary" data-remove-allow="${escapeHtml(r.allow)}">Bloquear de novo</button>` : `<span class="category-badge-status">${escapeHtml(r.status)}</span>`}</td>
         </tr>`
       )
       .join('');
   }
+
+  tbody.addEventListener('click', (event) => {
+    const button = event.target.closest?.('[data-remove-allow]');
+    if (!button) return;
+    void execute(button, () => bridge.removeAllowlistDomain(button.dataset.removeAllow), 'Endereço bloqueado de novo.').then((ok) => {
+      if (ok) void loadState();
+    });
+  });
 
   async function checkUrlBlockStatus(rawInput) {
     const input = rawInput.trim();

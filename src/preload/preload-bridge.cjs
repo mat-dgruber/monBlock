@@ -34,6 +34,9 @@ const api = Object.freeze({
   checkUrl(input, rules) {
     return ipcRenderer.invoke('monblock:check-url', { input, rules });
   },
+  removeAllowlistDomain(domain) {
+    return ipcRenderer.invoke('monblock:remove-allowlist-domain', { domain });
+  },
   enableCategory(categoryId) {
     return ipcRenderer.invoke('monblock:enable-category', { categoryId });
   },

@@ -12,8 +12,12 @@ export interface UnblockRequest {
   domain: string;
   reason: string;
   ruleLabel: string;
-  /** 15 ou 60 (a aprovação "Permanente" só volta na T2, com segunda confirmação). */
+  /** 15, 60 ou 0 (permanente: só vale depois da segunda confirmação do Ajudante). */
   requestedMinutes: number;
+  /** O Ajudante tocou "Permanente" e falta a confirmação ("Tem certeza?"). */
+  confirmingPermanent?: boolean;
+  /** Aprovado para sempre (entrou na allowlist). */
+  permanent?: boolean;
   status: UnblockRequestStatus;
   createdAtMs: number;
   expiresAtMs: number;
@@ -28,6 +32,9 @@ export interface UnblockRequest {
 export const REQUEST_TTL_MS = 15 * 60_000;
 export const MAX_PENDING_REQUESTS = 3;
 export const MIN_INTERVAL_BETWEEN_REQUESTS_MS = 2 * 60_000;
+export const MIN_PERMANENT_REASON = 10;
+export const MAX_PERMANENT_PER_DAY = 3;
+export const MAX_ALLOWLIST_ENTRIES = 200;
 const KEEP_FINISHED_MS = 24 * 3600_000;
 
 export interface NewRequestInput {
@@ -51,11 +58,11 @@ export function expireStale(requests: UnblockRequest[], nowMs: number): UnblockR
 
 export function createRequest(existing: UnblockRequest[], input: NewRequestInput, nowMs: number): CreateResult {
   const requests = expireStale(existing, nowMs);
-  if (input.requestedMinutes === 0) {
-    return { ok: false, status: 400, detail: 'A liberação permanente ainda não está disponível por aqui. Escolha 15 minutos ou 1 hora.' };
+  if (![0, 15, 60].includes(input.requestedMinutes)) {
+    return { ok: false, status: 400, detail: 'Escolha 15 minutos, 1 hora ou permanente.' };
   }
-  if (![15, 60].includes(input.requestedMinutes)) {
-    return { ok: false, status: 400, detail: 'Escolha 15 minutos ou 1 hora.' };
+  if (input.requestedMinutes === 0 && input.reason.trim().length < MIN_PERMANENT_REASON) {
+    return { ok: false, status: 400, detail: `Para pedir liberação permanente, explique o motivo (pelo menos ${MIN_PERMANENT_REASON} caracteres).` };
   }
   if (!input.domain || !input.reason.trim()) {
     return { ok: false, status: 400, detail: 'Informe o endereço e o motivo do pedido.' };
@@ -86,11 +93,11 @@ export function createRequest(existing: UnblockRequest[], input: NewRequestInput
   return { ok: true, request, requests: [...requests, request] };
 }
 
-export type DecisionKind = 'APPROVE_15M' | 'APPROVE_60M' | 'DENY';
+export type DecisionKind = 'APPROVE_15M' | 'APPROVE_60M' | 'ASK_PERMANENT' | 'APPROVE_PERMANENT' | 'DENY';
 
 export type DecisionResult =
   | { kind: 'applied'; request: UnblockRequest; requests: UnblockRequest[] }
-  | { kind: 'expired' | 'already-decided' | 'unknown' };
+  | { kind: 'expired' | 'already-decided' | 'unknown' | 'not-confirmed' };
 
 /**
  * Única transição de estado de um pedido. O prazo é conferido aqui dentro, com o relógio confiável de quem
@@ -103,9 +110,21 @@ export function decideRequest(existing: UnblockRequest[], requestId: string, dec
   if (found.status !== 'PENDING') return { kind: 'already-decided' };
   if (nowMs >= found.expiresAtMs) return { kind: 'expired' };
 
+  // "Permanente" só vale depois do segundo toque: o primeiro apenas pede a confirmação.
+  if (decision === 'APPROVE_PERMANENT' && !found.confirmingPermanent) return { kind: 'not-confirmed' };
+
   const next: UnblockRequest =
     decision === 'DENY'
       ? { ...found, status: 'DENIED', decidedAtMs: nowMs }
-      : { ...found, status: 'APPROVED', decidedAtMs: nowMs, grantMinutes: decision === 'APPROVE_15M' ? 15 : 60 };
+      : decision === 'ASK_PERMANENT'
+        ? { ...found, confirmingPermanent: true }
+        : decision === 'APPROVE_PERMANENT'
+          ? { ...found, status: 'APPROVED', decidedAtMs: nowMs, permanent: true }
+          : { ...found, status: 'APPROVED', decidedAtMs: nowMs, grantMinutes: decision === 'APPROVE_15M' ? 15 : 60 };
   return { kind: 'applied', request: next, requests: existing.map((r) => (r.id === requestId ? next : r)) };
+}
+
+/** Só libera para sempre um domínio "de verdade": com ponto, sem ser endereço IP. */
+export function isSafePermanentDomain(domain: string): boolean {
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain) && !/^\d+(\.\d+){3}$/.test(domain);
 }
