@@ -10,8 +10,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Liberação permanente para falsos positivos: o pedido "Permanente" da página de bloqueio chega ao Ajudante com o botão **Liberar permanente**; o primeiro toque só pergunta ("Tem certeza?") e só o segundo libera. O daemon acrescenta apenas o domínio pedido (com subdomínios) à lista de liberados, no mesmo `save` atômico da decisão, e reaplica as regras nos três cofres de bloqueio. Motivo obrigatório (mín. 10 caracteres), recusa endereço IP, limite de 3 liberações por 24 h e 200 entradas, e cada liberação fica registrada em `permanentReleases`.
 - Testes: dois toques obrigatórios, cancelar, outro chat, toque repetido sem duplicar, limite diário, motivo curto.
 
-### Pendente
-- Lista e remoção das liberações permanentes pela interface do app (hoje a remoção usa `MUTATE_RULES` com a senha do Ajudante).
+- Interface: os endereços liberados para sempre aparecem na tabela de regras ("Liberado para sempre pelo Ajudante") com o botão **Bloquear de novo**. Voltar a bloquear é endurecer a regra, então não pede a senha do Ajudante.
 
 ## [0.7.0] - 2026-11-07
 ### Adicionado

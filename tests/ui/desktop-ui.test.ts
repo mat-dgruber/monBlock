@@ -184,6 +184,7 @@ describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
       [
         'addBatchDomains',
         'addKeywords',
+        'removeAllowlistDomain',
         'cancelPairing',
         'checkPairingStatus',
         'checkUrl',

@@ -215,6 +215,18 @@ describe('fluxo do pedido de liberação', () => {
     expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
   });
 
+  it('voltar a bloquear um endereço liberado para sempre não exige senha', async () => {
+    const { d, requestId } = await setup();
+    await d.handleTelegramUpdate(cb(16, `approve_permanent:${requestId}`));
+    await d.handleTelegramUpdate(cb(17, `confirm_permanent:${requestId}`));
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(false);
+    const rules = store.loadAndReconcile().state.rules;
+    const res = await d.handleCommand({ type: 'MUTATE_RULES', rules: { ...rules, allowlistDomains: [] } });
+    expect(res.status).toBe(200);
+    expect(allowlist()).toEqual([]);
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
+  });
+
   it('pedir Permanente exige motivo de verdade e já nasce como pedido permanente', async () => {
     const { d } = await setup();
     advance(3 * MIN);

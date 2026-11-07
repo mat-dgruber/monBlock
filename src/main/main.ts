@@ -474,6 +474,17 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     });
   });
 
+  // Voltar a bloquear um endereço liberado é endurecer a regra: não exige senha do Ajudante.
+  ipcMain.handle('monblock:remove-allowlist-domain', async (_event, payload: { domain: string }) => {
+    const current = await call({ type: 'GET_STATE' });
+    if (!('state' in current)) return current;
+    const prevRules = current.state.rules;
+    return call({
+      type: 'MUTATE_RULES',
+      rules: { ...prevRules, allowlistDomains: prevRules.allowlistDomains.filter((d) => d !== payload.domain) },
+    });
+  });
+
   ipcMain.handle('monblock:request-unblock', () => ({
     status: 503,
     requested: false,
