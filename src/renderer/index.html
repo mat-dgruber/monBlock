@@ -273,6 +273,22 @@
                 </div>
               </div>
 
+              <!-- Bot do Telegram (token fica só no serviço do sistema) -->
+              <div class="rule-form pairing-form-card" id="botSetupCard">
+                <h3>Conecte o seu bot do Telegram</h3>
+                <ol class="hint-text">
+                  <li>No Telegram, converse com <strong>@BotFather</strong> e envie <code>/newbot</code>.</li>
+                  <li>Escolha um nome e um usuário para o bot.</li>
+                  <li>Copie o <strong>token</strong> que ele enviar e cole abaixo.</li>
+                </ol>
+                <div id="botTokenRow">
+                  <label for="botTokenInput" class="ccat-field-label">Token do bot</label>
+                  <input id="botTokenInput" type="password" class="ccat-input" autocomplete="off" spellcheck="false" placeholder="123456789:ABC…" />
+                  <button type="button" id="botConnectBtn" class="ccat-btn ccat-btn-primary">Conectar bot</button>
+                </div>
+                <p id="botStatus" class="hint-text" role="status" aria-live="polite">Nenhum bot conectado.</p>
+              </div>
+
               <!-- Formulário Ágil de Pareamento -->
               <div class="rule-form pairing-form-card" id="onboardingPairingCard">
                 <div class="pairing-form-grid">

@@ -6,6 +6,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 ### Adicionado
+- Telegram T0: o app conecta o bot do Telegram (passo a passo do @BotFather + campo do token). O comando `SET_BOT_TOKEN` valida o formato, confere no `getMe` e guarda o token só no cofre do daemon; o estado público mostra apenas `bot: { configured, username }`. Com Ajudante pareado, trocar o bot exige a senha dele. Spec `docs/ai/specs/2026-11-06-telegram-gestao-envio-respostas-design.md`.
 - Página de bloqueio: logo da CCAT (Capycro Avectech), respiração etérea e automática (halo suave, com pausa e `prefers-reduced-motion`) e pedido de liberação ao Ajudante (15 min, 1 hora ou permanente + motivo, via Telegram, e campo de código que nunca libera por conta própria: `POST /api/unlock-code` responde `501`) que só diz "enviado" com a confirmação do servidor. `POST /api/unblock-requests` sem Ajudante ligado passou a responder `503` Problem Details ("Nada foi enviado") em vez de `202`.
 - Tema **Capycro escuro** (marca à noite: verde-azulado mineral + terracota sobre carvão quente, com detalhes marrons nas bordas e rótulos; contraste AA/AAA) em `tokens.css`, no painel (opção "Capycro escuro") e como tema automático da página de bloqueio no modo escuro do sistema.
 - Página de bloqueio refeita: dados reais da query (`domain`, `rule`, domínio em punycode), sem afirmações falsas, tema pelo sistema, saída segura em destaque. Spec `docs/ai/specs/2026-11-06-refino-pagina-de-bloqueio-design.md`.

@@ -472,6 +472,22 @@ export class TelegramPartnerClient {
     }
   }
 
+  /** Confere o token e descobre o @username do bot (para o link de convite). */
+  async getMe(): Promise<{ ok: boolean; username?: string }> {
+    if (!this.botToken) return { ok: false };
+    try {
+      const res = await this.transport.send({
+        endpointUrl: `https://api.telegram.org/bot${this.botToken}/getMe`,
+        timeoutMs: this.timeoutMs,
+        payload: {},
+      });
+      const username = (res.body as { result?: { username?: unknown } } | null)?.result?.username;
+      return res.ok && typeof username === 'string' && username ? { ok: true, username } : { ok: false };
+    } catch {
+      return { ok: false };
+    }
+  }
+
   /** `getMe` barato: serve para ancorar o `TrustedClock` no cabeçalho `Date`. */
   async ping(): Promise<{ ok: boolean }> {
     if (!this.botToken) return { ok: false };

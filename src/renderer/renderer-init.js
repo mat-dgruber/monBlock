@@ -362,6 +362,11 @@ globalThis.monblockRenderer = { pickInitialView };
           ? 'Modo de segurança'
           : result.state.browserProfileInstalled === false ? 'Proteção parcial' : 'Proteção ativa';
       }
+      const bot = result.state.bot;
+      const botStatus = document.getElementById('botStatus');
+      if (botStatus) botStatus.textContent = bot?.configured ? `Bot conectado: @${bot.username}` : 'Nenhum bot conectado.';
+      const botRow = document.getElementById('botTokenRow');
+      if (botRow) botRow.hidden = Boolean(bot?.configured);
       isPaired = result.state.paired === true;
       renderOnboardingGate();
       const emptyHint = document.getElementById('emptyRulesHint');
@@ -576,6 +581,20 @@ globalThis.monblockRenderer = { pickInitialView };
   const rulesTableSearchInput = document.getElementById('rulesTableSearchInput');
   rulesTableSearchInput?.addEventListener('input', () => {
     renderActiveRulesTable(rulesTableSearchInput.value);
+  });
+
+  // Bot do Telegram: o token vai direto ao serviço do sistema; o campo é limpo e nunca fica na interface.
+  const botConnectBtn = document.getElementById('botConnectBtn');
+  botConnectBtn?.addEventListener('click', async () => {
+    const input = document.getElementById('botTokenInput');
+    const token = input?.value.trim();
+    if (!token) {
+      notify('Cole o token que o @BotFather enviou.', true);
+      return;
+    }
+    const ok = await execute(botConnectBtn, () => bridge.setBotToken({ token }), 'Bot conectado.');
+    if (input) input.value = '';
+    if (ok) await loadState();
   });
 
   // Pareamento no Onboarding via Telegram (Sem senha local)

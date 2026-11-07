@@ -10,6 +10,9 @@ const api = Object.freeze({
   getState() {
     return ipcRenderer.invoke('monblock:get-state');
   },
+  setBotToken(payload) {
+    return ipcRenderer.invoke('monblock:set-bot-token', payload);
+  },
   initiatePairing(payload) {
     return ipcRenderer.invoke('monblock:initiate-pairing', payload);
   },

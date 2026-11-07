@@ -65,6 +65,8 @@ export interface MonBlockPersistentState {
   cleanShutdown?: boolean;
   /** Debounce do aviso de adulteração (1 por hora). */
   lastDriftAlertMs?: number;
+  /** Bot do Telegram do usuário (T0): o token fica só no cofre do daemon e nunca sai por IPC. */
+  telegramBot?: { token: string; username: string; setAtMs: number };
   /** Migração única de userland já aplicada (RN-DAEMON-10); `id` garante idempotência. */
   migration?: { id: string; format: 'MBV1' | 'LEGACY_JSON'; paired: boolean };
 }
