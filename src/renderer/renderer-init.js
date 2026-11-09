@@ -220,7 +220,7 @@ globalThis.monblockRenderer = { pickInitialView };
           <td><span class="category-tag-chip ${r.type === 'Domínio' ? 'category-tag-chip--domain' : 'category-tag-chip--keyword'}">${r.type === 'Domínio' ? '🌐' : '🔤'} ${escapeHtml(r.item)}</span></td>
           <td>${escapeHtml(r.type)}</td>
           <td>${escapeHtml(r.origin)}</td>
-          <td>${r.allow ? `<button type="button" class="btn-secondary" data-remove-allow="${escapeHtml(r.allow)}">Bloquear de novo</button>` : `<span class="category-badge-status">${escapeHtml(r.status)}</span>`}</td>
+          <td>${r.allow ? `<button type="button" class="ccat-btn ccat-btn-secondary" data-remove-allow="${escapeHtml(r.allow)}">Bloquear de novo</button>` : `<span class="category-badge-status">${escapeHtml(r.status)}</span>`}</td>
         </tr>`
       )
       .join('');
@@ -295,6 +295,9 @@ globalThis.monblockRenderer = { pickInitialView };
         quickStats.textContent = result.state.tamperLockdown
           ? 'Modo de segurança'
           : result.state.browserProfileInstalled === false ? 'Proteção parcial' : 'Proteção ativa';
+        quickStats.dataset.status = result.state.tamperLockdown
+          ? 'warning'
+          : result.state.browserProfileInstalled === false ? 'partial' : 'active';
       }
       const bot = result.state.bot;
       const botStatus = document.getElementById('botStatus');
@@ -318,7 +321,10 @@ globalThis.monblockRenderer = { pickInitialView };
       const daemonOffline = result?.status === 503;
       status.textContent = daemonOffline ? 'Proteção não verificada' : 'Não foi possível conferir a proteção';
       status.dataset.status = 'error';
-      if (quickStats) quickStats.textContent = 'Proteção não verificada';
+      if (quickStats) {
+        quickStats.textContent = 'Proteção não verificada';
+        quickStats.dataset.status = 'error';
+      }
       if (reinstallServiceBtn) reinstallServiceBtn.hidden = !daemonOffline;
       renderProfileBanner(null);
       document.getElementById('problemDetailsTitle').textContent = daemonOffline ? 'Proteção não verificada' : 'Estado indisponível';
@@ -345,19 +351,98 @@ globalThis.monblockRenderer = { pickInitialView };
     }
   }
 
-  // Seletor de Tema
+  // Seletor Canônico de Tema CCAT (Custom Dropdown + Native Select Sync)
   const themeSelect = document.getElementById('themeSelect');
-  if (themeSelect) {
+  const themeDropdownTrigger = document.getElementById('themeTriggerBtn');
+  const themeDropdownMenu = document.getElementById('themeOptionsMenu');
+  const themeTriggerLabel = document.getElementById('themeTriggerLabel');
+  const themeActiveSwatch = document.getElementById('themeActiveSwatch');
+  const themeOptionBtns = Array.from(document.querySelectorAll('.ccat-custom-select-item'));
+
+  const THEME_NAMES = {
+    'capycro-ivory': 'Padrão',
+    'capycro-dark': 'Capycro escuro',
+    'dark-tech': 'Escuro',
+    'light-fintech': 'Claro',
+    'high-contrast-aaa': 'Alto contraste',
+  };
+
+  function applyTheme(themeId) {
+    if (!THEME_NAMES[themeId]) return;
+    htmlEl.dataset.theme = themeId;
+    if (themeSelect && themeSelect.value !== themeId) {
+      themeSelect.value = themeId;
+    }
+    if (themeTriggerLabel) {
+      themeTriggerLabel.textContent = THEME_NAMES[themeId] || themeId;
+    }
+    if (themeActiveSwatch) {
+      themeActiveSwatch.className = `theme-indicator-swatch swatch-${themeId === 'high-contrast-aaa' ? 'high-contrast' : themeId}`;
+    }
+    for (const btn of themeOptionBtns) {
+      const isSelected = btn.getAttribute('data-theme-select') === themeId;
+      btn.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+      btn.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+    }
     try {
-      const saved = localStorage.getItem('monblock.theme');
-      if (saved && Array.from(themeSelect.options).some((o) => o.value === saved)) {
-        htmlEl.dataset.theme = saved;
-        themeSelect.value = saved;
-      }
-    } catch { /* localStorage indisponível */ }
+      localStorage.setItem('monblock.theme', themeId);
+    } catch { /* sem persistência */ }
+  }
+
+  // Inicialização do tema persistido ou padrão
+  let initialTheme = 'capycro-ivory';
+  try {
+    const saved = localStorage.getItem('monblock.theme');
+    if (saved && THEME_NAMES[saved]) initialTheme = saved;
+  } catch { /* localStorage indisponível */ }
+  applyTheme(initialTheme);
+
+  // Escuta no native select para sincronização bidirecional (ex.: testes ou automação)
+  if (themeSelect) {
     themeSelect.addEventListener('change', () => {
-      htmlEl.dataset.theme = themeSelect.value;
-      try { localStorage.setItem('monblock.theme', themeSelect.value); } catch { /* sem persistência: volta ao padrão */ }
+      applyTheme(themeSelect.value);
+    });
+  }
+
+  // Interatividade do Dropdown Canônico CCAT
+  if (themeDropdownTrigger && themeDropdownMenu) {
+    function toggleThemeMenu(open) {
+      const isExpanded = open ?? themeDropdownTrigger.getAttribute('aria-expanded') !== 'true';
+      themeDropdownTrigger.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+      themeDropdownMenu.hidden = !isExpanded;
+      if (isExpanded) {
+        const currentActive = themeOptionBtns.find((b) => b.getAttribute('aria-selected') === 'true') || themeOptionBtns[0];
+        currentActive?.focus();
+      }
+    }
+
+    themeDropdownTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleThemeMenu();
+    });
+
+    for (const btn of themeOptionBtns) {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const themeId = btn.getAttribute('data-theme-select');
+        if (themeId) applyTheme(themeId);
+        toggleThemeMenu(false);
+        themeDropdownTrigger.focus();
+      });
+    }
+
+    // Fechar ao clicar fora ou pressionar Escape
+    document.addEventListener('click', (e) => {
+      if (!themeDropdownTrigger.contains(e.target) && !themeDropdownMenu.contains(e.target)) {
+        if (!themeDropdownMenu.hidden) toggleThemeMenu(false);
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !themeDropdownMenu.hidden) {
+        toggleThemeMenu(false);
+        themeDropdownTrigger.focus();
+      }
     });
   }
 
@@ -456,6 +541,10 @@ globalThis.monblockRenderer = { pickInitialView };
     }, 1000);
   }
 
+  let activeCategoryForUnlock = null;
+  const sendUnblockBtn = document.getElementById('sendUnblockTelegramBtn');
+  const partnerDialogFeedback = document.getElementById('partnerDialogFeedback');
+
   document.getElementById('closePartnerDialogBtn')?.addEventListener('click', () => {
     clearInterval(breathingInterval);
     dialog?.close();
@@ -464,12 +553,68 @@ globalThis.monblockRenderer = { pickInitialView };
     clearInterval(breathingInterval);
   });
 
+  sendUnblockBtn?.addEventListener('click', async () => {
+    const reasonInput = document.getElementById('unblockReasonInput');
+    const reason = reasonInput?.value.trim() || 'Solicitação de desbloqueio pelo aplicativo';
+    const durationInput = document.querySelector('input[name="unblockDuration"]:checked');
+    const durationMinutes = Number(durationInput?.value || 15);
+    const cat = categoryCatalog.find((c) => c.id === activeCategoryForUnlock);
+    const sampleDomain = cat?.sampleDomains?.[0] || (activeCategoryForUnlock ? `${activeCategoryForUnlock}.local` : 'exemplo.com');
+
+    sendUnblockBtn.disabled = true;
+    if (partnerDialogFeedback) {
+      partnerDialogFeedback.hidden = false;
+      partnerDialogFeedback.textContent = 'Enviando solicitação ao Telegram...';
+    }
+
+    try {
+      const res = await bridge.requestUnblock({
+        domain: sampleDomain,
+        reason,
+        durationMinutes,
+        ruleLabel: cat ? `Categoria: ${cat.namePt}` : 'Regra do monBlock',
+        title: `Alteração de categoria: ${cat ? cat.namePt : activeCategoryForUnlock}`,
+      });
+
+      if (res && (res.status === 200 || res.status === 202 || res.requested)) {
+        if (partnerDialogFeedback) {
+          partnerDialogFeedback.textContent = '✓ Pedido enviado ao Telegram do seu Ajudante! Aguardando resposta...';
+        }
+        notify(`Pedido enviado ao Telegram do Ajudante para ${cat ? cat.namePt : 'a categoria'}.`);
+        setTimeout(() => {
+          dialog?.close();
+        }, 1500);
+      } else {
+        const detail = res?.detail || 'Não foi possível enviar o pedido ao Ajudante.';
+        if (partnerDialogFeedback) {
+          partnerDialogFeedback.textContent = detail;
+        }
+        notify(detail, true);
+      }
+    } catch (err) {
+      const msg = err?.message || 'Falha ao comunicar com o serviço do Ajudante.';
+      if (partnerDialogFeedback) partnerDialogFeedback.textContent = msg;
+      notify(msg, true);
+    } finally {
+      sendUnblockBtn.disabled = false;
+    }
+  });
+
   // Categorias
   for (const card of document.querySelectorAll('[data-category-id]')) {
     const button = card.querySelector('[data-action]');
     if (button) {
       button.addEventListener('click', async () => {
         if (button.dataset.action === 'request-partner-unlock') {
+          activeCategoryForUnlock = card.dataset.categoryId;
+          const cat = categoryCatalog.find((c) => c.id === activeCategoryForUnlock);
+          const titleEl = document.getElementById('dialog-title');
+          if (titleEl && cat) {
+            titleEl.textContent = `Pedir ajuda: ${cat.namePt}`;
+          }
+          if (partnerDialogFeedback) partnerDialogFeedback.hidden = true;
+          const reasonInput = document.getElementById('unblockReasonInput');
+          if (reasonInput) reasonInput.value = '';
           if (dialog && typeof dialog.showModal === 'function') {
             startBreathingTimer();
             dialog.showModal();
