@@ -622,6 +622,21 @@ export class MonBlockDaemon {
 
     const cb = update.callback_query;
     if (!cb?.data || !cb.message) {
+      const msg = update.message;
+      if (msg?.text) {
+        const candidateChatId = String(msg.chat?.id ?? '').trim();
+        const candidateBuf = Buffer.from(candidateChatId, 'utf8');
+        const targetBuf = Buffer.from(chatId.trim(), 'utf8');
+        const isAuthorized =
+          candidateChatId.length > 0 &&
+          candidateBuf.length === targetBuf.length &&
+          crypto.timingSafeEqual(candidateBuf, targetBuf);
+
+        if (isAuthorized) {
+          await this.handleTelegramCommand(msg.text.trim(), client, chatId, now, offsetState, state);
+          return;
+        }
+      }
       this.save({ ...state, telegramOffset: offsetState });
       return;
     }
@@ -724,6 +739,134 @@ export class MonBlockDaemon {
         : `Pedido negado: ${outcome.request.domain}`;
     await client.answerCallbackQuery(cb.id, done);
     await client.editMessageText(String(cb.message.chat.id), cb.message.message_id, done);
+  }
+
+  /**
+   * Processa comandos de texto enviados pelo Ajudante pareado no Telegram.
+   */
+  private async handleTelegramCommand(
+    rawText: string,
+    client: TelegramPartnerClient,
+    chatId: string,
+    now: number,
+    offsetState: { botId: string; offset: number },
+    state: MonBlockPersistentState
+  ): Promise<void> {
+    const parts = rawText.split(/\s+/);
+    const cmd = parts[0]?.toLowerCase().replace(/@.+$/, '');
+    const arg1 = parts[1]?.trim() ?? '';
+    const arg2 = parts[2]?.trim() ?? '';
+
+    if (cmd === '/ajuda' || cmd === '/help' || cmd === '/start') {
+      const text =
+        '🛡️ Comandos do Guardião monBlock:\n\n' +
+        '• /status — Consulta o estado da proteção, categorias e concessões\n' +
+        '• /bloquear <site ou termo> — Adiciona um bloqueio imediatamente\n' +
+        '• /liberar <site> [15m|60m] — Concede liberação temporária (padrão 15 min)\n' +
+        '• /revogar <site> — Cancela imediatamente uma concessão temporária ativa\n' +
+        '• /ajuda — Exibe esta lista de comandos';
+      this.save({ ...state, telegramOffset: offsetState });
+      await client.sendMessage(text, { chatId });
+      return;
+    }
+
+    if (cmd === '/status') {
+      const activeGrants = state.temporaryGrants.filter((g) => g.expiresAtMs > now);
+      const grantsSummary =
+        activeGrants.length === 0
+          ? 'nenhuma'
+          : activeGrants
+              .map((g) => {
+                const mins = Math.max(1, Math.ceil((g.expiresAtMs - now) / 60_000));
+                return `${g.target} (${mins}m restantes)`;
+              })
+              .join(', ');
+
+      const statusText =
+        '🛡️ Estado da Proteção monBlock:\n\n' +
+        `• Estado: ${state.tamperLockdown ? 'Modo de segurança (adulteração detectada)' : 'Proteção ativa'}\n` +
+        `• Categorias ativas (${state.rules.enabledCategories.length}): ${state.rules.enabledCategories.join(', ') || 'nenhuma'}\n` +
+        `• Domínios customizados: ${state.rules.blockedDomains.length}\n` +
+        `• Palavras-chave: ${state.rules.keywords.length}\n` +
+        `• Pausas temporárias: ${grantsSummary}`;
+
+      this.save({ ...state, telegramOffset: offsetState });
+      await client.sendMessage(statusText, { chatId });
+      return;
+    }
+
+    if (cmd === '/bloquear') {
+      if (!arg1) {
+        this.save({ ...state, telegramOffset: offsetState });
+        await client.sendMessage('Uso: /bloquear <site ou palavra>\nExemplo: /bloquear cassino.com ou /bloquear tigrinho', { chatId });
+        return;
+      }
+
+      let rules = { ...state.rules };
+      const isDomain = arg1.includes('.') || /^[a-z0-9-]+$/i.test(arg1);
+      const normDomain = sanitizeAndNormalizeUrl(arg1)?.domain ?? (arg1.includes('.') ? arg1.toLowerCase() : null);
+
+      if (normDomain) {
+        if (!rules.blockedDomains.includes(normDomain)) {
+          rules = { ...rules, blockedDomains: [...rules.blockedDomains, normDomain] };
+        }
+      } else {
+        const term = arg1.toLowerCase();
+        if (!rules.keywords.includes(term)) {
+          rules = { ...rules, keywords: [...rules.keywords, term] };
+        }
+      }
+
+      const nextState = { ...state, rules, updatedAtMs: now, telegramOffset: offsetState };
+      this.save(nextState);
+      await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
+      await client.sendMessage(`🔒 Bloqueio aplicado com sucesso: ${normDomain || arg1.toLowerCase()}`, { chatId });
+      return;
+    }
+
+    if (cmd === '/liberar') {
+      if (!arg1) {
+        this.save({ ...state, telegramOffset: offsetState });
+        await client.sendMessage('Uso: /liberar <site> [15m|60m]\nExemplo: /liberar site.com 15m', { chatId });
+        return;
+      }
+
+      const normDomain = sanitizeAndNormalizeUrl(arg1)?.domain ?? arg1.toLowerCase();
+      const durationMins = arg2 === '60m' || arg2 === '60' ? 60 : 15;
+      const grant: TemporaryGrant = {
+        target: normDomain,
+        expiresAtMs: now + durationMins * 60_000,
+      };
+
+      const grants = [...state.temporaryGrants.filter((g) => g.expiresAtMs > now && g.target !== normDomain), grant];
+      const nextState = { ...state, temporaryGrants: grants, updatedAtMs: now, telegramOffset: offsetState };
+      this.save(nextState);
+      await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
+      await client.sendMessage(`🔓 Domínio liberado por ${durationMins} minutos: ${normDomain}`, { chatId });
+      return;
+    }
+
+    if (cmd === '/revogar') {
+      if (!arg1) {
+        this.save({ ...state, telegramOffset: offsetState });
+        await client.sendMessage('Uso: /revogar <site>\nExemplo: /revogar site.com', { chatId });
+        return;
+      }
+
+      const target = arg1.toLowerCase();
+      const grants = state.temporaryGrants.filter((g) => g.target.toLowerCase() !== target && !g.target.toLowerCase().includes(target));
+      const nextState = { ...state, temporaryGrants: grants, updatedAtMs: now, telegramOffset: offsetState };
+      this.save(nextState);
+      await this.enforcer.applyWebRules(nextState.rules, nextState.temporaryGrants);
+      await client.sendMessage(`🔒 Concessão revogada para: ${arg1}`, { chatId });
+      return;
+    }
+
+    // Comando não reconhecido ou mensagem de texto avulsa
+    this.save({ ...state, telegramOffset: offsetState });
+    if (cmd.startsWith('/')) {
+      await client.sendMessage('Comando não reconhecido. Digite /ajuda para ver os comandos disponíveis.', { chatId });
+    }
   }
 
   /** Carrega e reconcilia os cofres; na primeira leitura, retoma o relógio persistido. */

@@ -470,20 +470,33 @@ export class TelegramPartnerClient {
     }
   }
 
-  /** Aviso em texto puro ao Ajudante (inatividade do daemon, adulteração detectada). */
-  async sendAlert(text: string, chatId?: string): Promise<{ ok: boolean }> {
-    const targetChatId = (chatId ?? this.pairedChatId).trim();
+  /** Envia mensagem de texto genérica ao Ajudante (com suporte opcional a HTML ou teclado). */
+  async sendMessage(
+    text: string,
+    options?: { chatId?: string; parseMode?: 'HTML' | 'MarkdownV2'; replyMarkup?: unknown }
+  ): Promise<{ ok: boolean }> {
+    const targetChatId = (options?.chatId ?? this.pairedChatId).trim();
     if (!targetChatId || !this.botToken) return { ok: false };
     try {
       const res = await this.transport.send({
         endpointUrl: `https://api.telegram.org/bot${this.botToken}/sendMessage`,
         timeoutMs: this.timeoutMs,
-        payload: { chat_id: targetChatId, text },
+        payload: {
+          chat_id: targetChatId,
+          text,
+          ...(options?.parseMode ? { parse_mode: options.parseMode } : {}),
+          ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+        },
       });
       return { ok: res.ok };
     } catch {
       return { ok: false };
     }
+  }
+
+  /** Aviso em texto puro ao Ajudante (inatividade do daemon, adulteração detectada). */
+  async sendAlert(text: string, chatId?: string): Promise<{ ok: boolean }> {
+    return this.sendMessage(text, { chatId });
   }
 
   /** Confere o token e descobre o @username do bot (para o link de convite). */

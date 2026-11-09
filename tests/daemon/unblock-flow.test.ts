@@ -52,6 +52,18 @@ describe('fluxo do pedido de liberação', () => {
     };
   }
 
+  function msg(updateId: number, text: string, opts: { chat?: string; from?: string } = {}): TelegramUpdate {
+    return {
+      update_id: updateId,
+      message: {
+        message_id: 1000 + updateId,
+        chat: { id: opts.chat ?? CHAT },
+        from: { id: opts.from ?? CHAT },
+        text,
+      },
+    };
+  }
+
   async function setup(): Promise<{ d: MonBlockDaemon; requestId: string }> {
     const d = new MonBlockDaemon({
       store,
@@ -284,5 +296,54 @@ describe('fluxo do pedido de liberação', () => {
     updates = [cb(30, `approve_15m:${requestId}`)];
     await d.pollTelegramOnce(0);
     expect(JSON.stringify((store.loadAndReconcile().state as { temporaryGrants?: unknown }).temporaryGrants)).toBe(grantsBefore);
+  });
+
+  it('Ajudante interativo: comando /ajuda responde com o menu de ajuda', async () => {
+    const { d } = await setup();
+    calls.length = 0;
+    await d.handleTelegramUpdate(msg(40, '/ajuda'));
+    const sent = method('sendMessage');
+    expect(sent).toHaveLength(1);
+    expect(JSON.stringify(sent[0]!.payload)).toContain('Comandos do Guardião monBlock');
+  });
+
+  it('Ajudante interativo: comando /status responde com resumo das categorias e regras', async () => {
+    const { d } = await setup();
+    calls.length = 0;
+    await d.handleTelegramUpdate(msg(41, '/status'));
+    const sent = method('sendMessage');
+    expect(sent).toHaveLength(1);
+    expect(JSON.stringify(sent[0]!.payload)).toContain('Estado da Proteção monBlock');
+    expect(JSON.stringify(sent[0]!.payload)).toContain('adult');
+  });
+
+  it('Ajudante interativo: comando /bloquear adiciona novo domínio imediatamente e aplica ao hosts', async () => {
+    const { d } = await setup();
+    calls.length = 0;
+    expect(hostsBlocks('novo-bloqueio.com')).toBe(false);
+    await d.handleTelegramUpdate(msg(42, '/bloquear novo-bloqueio.com'));
+    expect(hostsBlocks('novo-bloqueio.com')).toBe(true);
+    const sent = method('sendMessage');
+    expect(JSON.stringify(sent[0]!.payload)).toContain('Bloqueio aplicado com sucesso: novo-bloqueio.com');
+  });
+
+  it('Ajudante interativo: comando /liberar concede liberação temporária e /revogar cancela', async () => {
+    const { d } = await setup();
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
+    await d.handleTelegramUpdate(msg(43, '/liberar exemplo-bloqueado.com 15m'));
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(false);
+    const state = await d.handleCommand({ type: 'GET_STATE' });
+    expect(state.status === 200 && 'state' in state && state.state.temporaryGrants.some((g) => g.target === 'exemplo-bloqueado.com')).toBe(true);
+
+    await d.handleTelegramUpdate(msg(44, '/revogar exemplo-bloqueado.com'));
+    expect(hostsBlocks('exemplo-bloqueado.com')).toBe(true);
+  });
+
+  it('Ajudante interativo: mensagem de texto de remetente não autorizado é ignorada', async () => {
+    const { d } = await setup();
+    calls.length = 0;
+    await d.handleTelegramUpdate(msg(45, '/bloquear invasor.com', { chat: '999', from: '999' }));
+    expect(hostsBlocks('invasor.com')).toBe(false);
+    expect(method('sendMessage')).toHaveLength(0);
   });
 });
