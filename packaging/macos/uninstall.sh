@@ -4,6 +4,18 @@
 # Quem tem sudo consegue rodar este script direto: é o limite aceito contra Admin (ADR-0007).
 set -u
 
+CONSOLE_USER=$(/usr/bin/stat -f%Su /dev/console 2>/dev/null || echo "")
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
+  CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER" 2>/dev/null || echo "")
+  USER_HOME=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')
+  if [ -n "$CONSOLE_UID" ]; then
+    /bin/launchctl bootout "gui/$CONSOLE_UID/com.ccat.monblock.watcher" 2>/dev/null || true
+  fi
+  if [ -n "$USER_HOME" ]; then
+    /bin/rm -f "$USER_HOME/Library/LaunchAgents/com.ccat.monblock.watcher.plist"
+  fi
+fi
+
 /bin/launchctl bootout system/com.ccat.monblockd 2>/dev/null || true
 /bin/rm -f /Library/LaunchDaemons/com.ccat.monblockd.plist
 /usr/bin/profiles remove -identifier com.ccat.monblock.browsers >/dev/null 2>&1 || true

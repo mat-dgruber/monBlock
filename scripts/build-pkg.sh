@@ -15,7 +15,7 @@ npm run build >/dev/null
 
 rm -rf "$ROOT"
 mkdir -p "$HELPER/design" "$ROOT/Library/LaunchDaemons"
-cp build/daemon/monblockd packaging/macos/uninstall.sh "$HELPER/"
+cp build/daemon/monblockd packaging/macos/uninstall.sh packaging/macos/com.ccat.monblock.watcher.plist "$HELPER/"
 cp docs/design/blocked-page.html docs/design/tokens.css docs/design/tokens-showcase.html "$HELPER/design/"
 cp packaging/macos/com.ccat.monblockd.plist "$ROOT/Library/LaunchDaemons/"
 

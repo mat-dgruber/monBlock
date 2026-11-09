@@ -20,6 +20,26 @@ fi
 
 /bin/launchctl bootstrap system "$PLIST" 2>/dev/null || /bin/launchctl kickstart -k system/com.ccat.monblockd
 
+# Watcher em sessão Aqua (LaunchAgent do usuário):
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
+  CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER")
+  USER_HOME=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | /usr/bin/awk '{print $2}')
+  if [ -n "$USER_HOME" ] && [ -d "$USER_HOME" ]; then
+    USER_AGENTS="$USER_HOME/Library/LaunchAgents"
+    WATCHER_PLIST="$USER_AGENTS/com.ccat.monblock.watcher.plist"
+    if [ -f "$HELPER_DIR/com.ccat.monblock.watcher.plist" ]; then
+      /bin/mkdir -p "$USER_AGENTS"
+      /bin/cp "$HELPER_DIR/com.ccat.monblock.watcher.plist" "$WATCHER_PLIST"
+      /usr/sbin/chown "$CONSOLE_USER" "$WATCHER_PLIST"
+      /bin/chmod 0644 "$WATCHER_PLIST"
+      if [ -d "/Applications/monBlock.app" ]; then
+        /bin/launchctl bootout "gui/$CONSOLE_UID/com.ccat.monblock.watcher" 2>/dev/null || true
+        /bin/launchctl bootstrap "gui/$CONSOLE_UID" "$WATCHER_PLIST" 2>/dev/null || true
+      fi
+    fi
+  fi
+fi
+
 # Perfil das políticas Chromium: o macOS exige aprovação do usuário em Ajustes (spike S1).
 if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then
   CONSOLE_UID=$(/usr/bin/id -u "$CONSOLE_USER")
