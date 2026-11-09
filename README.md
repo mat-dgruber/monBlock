@@ -229,7 +229,7 @@ O monBlock inclui um catálogo estruturado em 11 categorias de navegação. As l
 
 |       ID        | Categoria                               |       Padrão        | Descrição & Alvo | Domínios | Palavras-chave |
 | :-------------: | :-------------------------------------- | :-----------------: | :--- | ---: | ---: |
-|     `adult`     | **Conteúdo Adulto & Pornografia**       | 🔒 **Sempre Ativa** | Trancada pela catraca na primeira inicialização. Impossível desmarcar sem autorização. | 6.397 | 258 |
+|     `adult`     | **Conteúdo Adulto & Pornografia**       | 🔒 **Sempre Ativa** | Trancada pela catraca na primeira inicialização. Impossível desmarcar sem autorização. | 6.452 | 290 |
 |   `gambling`    | **Apostas & Cassinos (Bets)**           |      Opcional       | Plataformas de apostas esportivas, roletas, slots e cassinos online.                   | 408 | 113 |
 |     `games`     | **Jogos Online**                        |      Opcional       | Portais de jogos casuais e streams recreativas contínuas.                              | 184 | 27 |
 |     `proxy`     | **Proxies, VPNs & Bypass**              |      Opcional       | Serviços de web proxy e túneis projetados para contornar bloqueadores.                 | 116 | 26 |

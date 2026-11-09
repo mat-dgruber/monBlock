@@ -75,6 +75,18 @@ describe('listas: casamento de domínio por sufixo', () => {
     };
     for (const [id, d] of Object.entries(anchors)) expect(findCategoryForHost(d, [id])?.id, `${id}:${d}`).toBe(id);
   });
+  it('bloqueia sex shops e artigos eróticos na categoria adult por domínio e palavra-chave', () => {
+    const adult = PREDEFINED_CATEGORIES.find((c) => c.id === 'adult')!;
+    expect(adult.domains).toContain('sexshop.com.br');
+    expect(adult.domains).toContain('miess.com.br');
+    expect(adult.domains).toContain('pantynova.com');
+    expect(findCategoryForHost('sexshop.com.br', ['adult'])?.id).toBe('adult');
+    expect(findCategoryForHost('loja.pantynova.com', ['adult'])?.id).toBe('adult');
+
+    const state = { enabledCategories: ['adult'], blockedDomains: [], allowlistDomains: [], keywords: [], lockIncognito: false };
+    expect(evaluateUrlAndTitle({ url: 'https://exemplo.com/comprar', title: 'Sex Shop Online - Produtos Eróticos', state }).blocked).toBe(true);
+    expect(evaluateUrlAndTitle({ url: 'https://exemplo.com/catalogo', title: 'Comprar Brinquedos Eróticos', state }).blocked).toBe(true);
+  });
 });
 
 describe('listas: falsos positivos e alvos nas palavras-chave (c)', () => {
