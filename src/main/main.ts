@@ -308,12 +308,43 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   const refreshTrayMenu = async (): Promise<void> => {
     if (!tray) return;
     const stateRes = await call({ type: 'GET_STATE' });
-    const pubState = 'state' in stateRes ? stateRes.state : null;
+    const pubState = 'state' in stateRes ? (stateRes.state as any) : null;
     const hasMenuSymbol = typeof (nativeImage as any).createMenuSymbol === 'function';
+
+    let temporaryUnlockRemainingFormatted: string | null = null;
+    if (pubState?.temporaryGrants && Array.isArray(pubState.temporaryGrants) && pubState.temporaryGrants.length > 0) {
+      const now = Date.now();
+      const activeGrants = pubState.temporaryGrants.filter((g: any) => g.expiresAtMs > now);
+      if (activeGrants.length > 0) {
+        const maxExpiry = Math.max(...activeGrants.map((g: any) => g.expiresAtMs));
+        const remainingSeconds = Math.max(0, Math.ceil((maxExpiry - now) / 1000));
+        const mins = Math.floor(remainingSeconds / 60);
+        const secs = remainingSeconds % 60;
+        temporaryUnlockRemainingFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+    }
+
+    let cooldownRemainingFormatted: string | null = null;
+    if (pubState?.cooldown?.active && typeof pubState.cooldown.startedAtMs === 'number') {
+      const now = Date.now();
+      const remainingMs = Math.max(0, 72 * 3600_000 - Math.max(0, now - pubState.cooldown.startedAtMs));
+      const remainingSeconds = Math.ceil(remainingMs / 1000);
+      const hours = Math.floor(remainingSeconds / 3600);
+      const mins = Math.floor((remainingSeconds % 3600) / 60);
+      const secs = remainingSeconds % 60;
+      cooldownRemainingFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    const partnerName = pubState?.partner?.paired
+      ? (pubState?.bot?.username ? `@${pubState.bot.username}` : 'Pareado')
+      : null;
+
     const menuItems = buildTrayMenuTemplate(
       {
         active: Boolean(pubState),
-        partnerName: pubState?.paired ? 'Pareado' : null,
+        partnerName,
+        temporaryUnlockRemainingFormatted,
+        cooldownRemainingFormatted,
       },
       {
         onQuickAdd: () => navigateMainWindow('rules'),
@@ -350,9 +381,10 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   ipcMain.handle('monblock:check-url', (_event, payload: { input: string; rules: Record<string, unknown> }) => {
     const r = (payload?.rules ?? {}) as Record<string, unknown>;
     const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+    const inputStr = String(payload?.input ?? '').trim();
     return evaluateUrlAndTitle({
-      url: String(payload?.input ?? ''),
-      title: '',
+      url: inputStr,
+      title: inputStr,
       state: {
         enabledCategories: arr(r.enabledCategories),
         blockedDomains: arr(r.blockedDomains),
@@ -485,11 +517,22 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     });
   });
 
-  ipcMain.handle('monblock:request-unblock', () => ({
-    status: 503,
-    requested: false,
-    detail: 'O envio de pedidos ao Ajudante ainda não está disponível nesta versão.',
-  }));
+  ipcMain.handle('monblock:request-unblock', async (_event, payload: {
+    domain?: string;
+    reason?: string;
+    durationMinutes?: number;
+    ruleLabel?: string;
+    title?: string;
+  }) => {
+    return call({
+      type: 'CREATE_UNBLOCK_REQUEST',
+      domain: String(payload?.domain ?? '').trim(),
+      reason: String(payload?.reason ?? '').trim(),
+      durationMinutes: payload?.durationMinutes,
+      ruleLabel: payload?.ruleLabel,
+      title: payload?.title,
+    });
+  });
 
   ipcMain.handle('monblock:verify-offline-token', async (_event, payload: {
     challengeCode: string;
@@ -549,8 +592,11 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   const winOpts = createSecureWindowOptions(path.join(CURRENT_DIR, '../preload/preload-bridge.cjs'));
   mainWindow = new BrowserWindow(winOpts);
 
+  const startHidden = process.argv.includes('--watcher') || process.argv.includes('--hidden');
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+    if (!startHidden) {
+      mainWindow?.show();
+    }
   });
 
   mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
@@ -588,6 +634,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   tray = new Tray(trayIcon);
   tray.setToolTip('monBlock — Painel de proteção');
   await refreshTrayMenu();
+  setInterval(() => void refreshTrayMenu(), 10_000);
 
   // Camada 3 (ADR-0002): Watcher de abas. O tick consulta o daemon (que também expira concessões vencidas)
   // e avalia a aba em foco; se o estado falhar, mantém as últimas regras conhecidas (Fail-Closed).

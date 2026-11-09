@@ -1,6 +1,8 @@
 {
   "name": "monblock",
   "version": "0.8.1",
+  "license": "UNLICENSED",
+  "author": "Matheus Diniz",
   "type": "module",
   "main": "dist/main/main.js",
   "scripts": {
