@@ -1,4 +1,14 @@
-# ADR 0009: Broker único do Telegram e token do bot no cofre do daemon
+<!--
+================================================================================
+LOG DE MANUTENÇÃO DE DOCUMENTAÇÃO
+--------------------------------------------------------------------------------
+Data       | Autor          | Descrição
+--------------------------------------------------------------------------------
+2026-11-06 | Matheus Diniz  | Criação da ADR 0010 definindo broker único do Telegram e cofre do token.
+================================================================================
+-->
+
+# ADR 0010: Broker único do Telegram e token do bot no cofre do daemon
 
 | Metadado | Detalhe |
 | :--- | :--- |
@@ -11,7 +21,7 @@
 
 O pedido de liberação nunca chegava ao Ajudante: não havia como configurar o bot e nada lia os botões. O Telegram devolve `409 Conflict` com dois leitores de `getUpdates`, e sem `offset` persistido decisões antigas seriam reprocessadas após reinício.
 
-## Decisão
+## 2. Decisão de Arquitetura
 
 1. **Token no cofre do daemon** (`telegramBot`), nunca em `config.json` à mão nem no app. O estado público expõe só `configured` e `username`.
 2. **Um único leitor** de `getUpdates` (laço do broker em `entry.ts`, `pollTelegramOnce`), com `offset` por `botId` gravado no mesmo `save` atômico da decisão.

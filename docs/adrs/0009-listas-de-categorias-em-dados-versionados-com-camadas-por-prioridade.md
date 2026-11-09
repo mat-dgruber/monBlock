@@ -1,3 +1,13 @@
+<!--
+================================================================================
+LOG DE MANUTENÇÃO DE DOCUMENTAÇÃO
+--------------------------------------------------------------------------------
+Data       | Autor          | Descrição
+--------------------------------------------------------------------------------
+2026-11-06 | mat-dgruber    | Criação da ADR 0009 sobre listas de categorias versionadas em camadas.
+================================================================================
+-->
+
 # ADR 0009: Listas de categorias em dados versionados, com camadas por prioridade
 
 | Metadado | Detalhe |
@@ -10,7 +20,7 @@
 ## Contexto
 As categorias tinham 2 a 5 domínios em arrays no TypeScript, duplicados na UI. Listas públicas passam de 900 mil domínios no adult (56 MB de hosts), mas o `URLBlocklist` do Chromium/Edge documenta 1000 entradas e o perfil exige reaprovação do usuário a cada mudança.
 
-## Decisão
+## 2. Decisão de Arquitetura
 1. Uma lista por categoria em `src/domain/lists/<id>.{domains,keywords}.txt`; a **ordem é a prioridade**.
 2. `scripts/gen-lists.mjs` valida (falha o build) e gera `lists.generated.ts` (funciona em tsc, esbuild SEA e Vitest).
 3. Camadas: perfil = 900 primeiros do adult (`POLICY_DOMAIN_LIMIT`); hosts = até 25 000 domínios, usuário primeiro (`HOSTS_MAX_DOMAINS`); vigia = lista completa por índice de sufixo.

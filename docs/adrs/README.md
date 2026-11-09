@@ -12,3 +12,6 @@
 | [0006](0006-chave-por-instalacao-e-cofres-cifrados-aes-gcm.md) | **Chave Aleatória por Instalação (safeStorage) e Cofres Cifrados com AES-256-GCM** | `Substituída parcialmente por ADR-0007` | 2026-11-05 |
 | [0007](0007-daemon-root-pkg-ipc-relogio-confiavel.md) | **Daemon Root Distribuído por `.pkg` (Node SEA), IPC por Socket com Permissão de Diretório, Relógio Confiável e Tombstone de Pareamento** | `Aprovada` | 2026-11-05 |
 | [0008](0008-adocao-ddd-pragmatico-use-cases-unit-of-work.md) | **Adoção de DDD Pragmático com Use Cases e Unit of Work** | `Aprovada` | 2026-11-05 |
+| [0009](0009-listas-de-categorias-em-dados-versionados-com-camadas-por-prioridade.md) | **Listas de categorias em dados versionados, com camadas por prioridade** | `Aprovada` | 2026-11-06 |
+| [0010](0010-telegram-broker-unico-cofre-do-token.md) | **Broker único do Telegram e token do bot no cofre do daemon** | `Aprovada` | 2026-11-06 |
+| [0011](0011-resiliencia-sessao-aqua-launchagent-e-comandos-remotos-telegram.md) | **Resiliência de Monitoramento em Sessão Aqua via LaunchAgent e Comandos Remotos no Telegram** | `Implementada` | 2026-11-09 |

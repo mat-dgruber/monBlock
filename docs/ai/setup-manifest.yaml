@@ -1,4 +1,4 @@
-ai_guides_version: 2.13.0
+ai_guides_version: 2.9.0
 project:
   purpose: desktop
   stack:
@@ -103,7 +103,7 @@ guides:
       PD-02: pass
   ux-cognicao-comportamental:
     version: 2
-    applied_at: '2026-11-04T11:09:21'
+    applied_at: '2026-11-08T22:03:25'
     status: pass
     heuristics:
       UX-01: pass
