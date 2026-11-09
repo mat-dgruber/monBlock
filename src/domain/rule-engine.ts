@@ -204,7 +204,55 @@ export function evaluateUrlAndTitle(input: {
   state: RuleEngineState;
 }): BlockDecision {
   const normalized = sanitizeAndNormalizeUrl(input.url);
-  if (!normalized) return { blocked: false };
+  if (!normalized) {
+    const rawTerm = (input.url || '').trim().toLowerCase();
+    const sanitizedTitle = sanitizeBenignTitleContexts(safeDecodeUri(input.title || '')).toLowerCase();
+    if (!rawTerm && !sanitizedTitle) return { blocked: false };
+
+    // Se não é uma URL com TLD (ex.: busca de termo ou domínio sem TLD no Raio-X):
+    // 1. Verifica se casa com domínios de categorias ativas (ex.: "pornhub" casa com "pornhub.com")
+    for (const catId of input.state.enabledCategories) {
+      const cat = PREDEFINED_CATEGORIES.find((c) => c.id === catId);
+      if (!cat) continue;
+      if (cat.domains.some((d) => d === rawTerm || d.startsWith(rawTerm + '.') || d.endsWith('.' + rawTerm))) {
+        return { blocked: true, reason: 'CATEGORY', ruleLabel: `Categoria: ${cat.namePt}` };
+      }
+    }
+
+    // 2. Verifica se casa com domínios customizados bloqueados
+    for (const blocked of input.state.blockedDomains) {
+      const b = blocked.trim().toLowerCase();
+      if (b === rawTerm || b.startsWith(rawTerm + '.') || b.endsWith('.' + rawTerm)) {
+        return { blocked: true, reason: 'CUSTOM_DOMAIN', ruleLabel: `Domínio bloqueado: ${b}` };
+      }
+    }
+
+    // 3. Verifica palavras-chave simples e combinadas (AND) das categorias ativas e customizadas
+    const haystack = `${rawTerm} ${sanitizedTitle}`.trim();
+    const activeCategoryKeywords = input.state.enabledCategories.flatMap(
+      (id) => PREDEFINED_CATEGORIES.find((c) => c.id === id)?.keywords ?? []
+    );
+    const allKeywords = [...activeCategoryKeywords, ...input.state.keywords];
+
+    for (const rawKw of allKeywords) {
+      const terms = rawKw
+        .split(',')
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
+      if (terms.length > 0 && terms.every((term) => matchesKeywordWholeWord(haystack, term))) {
+        return {
+          blocked: true,
+          reason: 'KEYWORD',
+          ruleLabel:
+            terms.length > 1
+              ? `Palavra-chave combinada: ${terms.join(',')}`
+              : `Palavra-chave: ${terms[0]}`,
+        };
+      }
+    }
+
+    return { blocked: false };
+  }
 
   const { domain, cleanUrl } = normalized;
   if (
