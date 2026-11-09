@@ -339,13 +339,15 @@ button:active:not(:disabled),
   color: var(--ccat-text-primary);
   font-size: var(--text-xs);
 }
+#themeSelect,
 .theme-control select.sr-only,
 .sr-only {
+  display: none !important;
   position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
+  width: 0 !important;
+  height: 0 !important;
   padding: 0 !important;
-  margin: -1px !important;
+  margin: 0 !important;
   overflow: hidden !important;
   clip: rect(0, 0, 0, 0) !important;
   white-space: nowrap !important;
