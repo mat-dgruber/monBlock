@@ -339,6 +339,20 @@ button:active:not(:disabled),
   color: var(--ccat-text-primary);
   font-size: var(--text-xs);
 }
+.theme-control select.sr-only,
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
 
 /* Componente Canônico CCAT Custom Select / Dropdown de Tema */
 .ccat-custom-select {
@@ -1053,7 +1067,26 @@ dialog#profileStepsDialog::backdrop {
 .step-title { font-weight: 700;
   color: var(--ccat-brand-primary);
   font-size: 0.85rem;
-  margin-bottom: 0.25rem; }
+  margin-bottom: 0.35rem; }
+.step-desc {
+  font-size: var(--text-xs, 0.8rem);
+  line-height: 1.5;
+  color: var(--ccat-text-secondary);
+  margin: 0;
+}
+.step-desc strong {
+  color: var(--ccat-text-primary);
+  font-weight: 600;
+}
+.step-desc code {
+  background: var(--ccat-bg-elevated);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ccat-border-subtle);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  color: var(--ccat-brand-accent);
+}
 .pairing-form-card { background: var(--ccat-bg-surface);
   padding: 1.25rem;
   border-radius: var(--radius-md);
