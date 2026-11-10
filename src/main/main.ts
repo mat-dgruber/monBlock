@@ -691,7 +691,14 @@ export async function bootstrapElectronRuntime(): Promise<void> {
             allowlistDomains: [...res.state.rules.allowlistDomains, ...grants.map((g) => g.target)],
           };
         }
-        if (!wildcardGrant) await watcher.inspectOnce(now);
+        if (!wildcardGrant) {
+          const interception = await watcher.inspectOnce(now);
+          if (interception.blocked) {
+            console.log(
+              `[monBlock] Watcher interceptou e redirecionou aba em ${interception.browser}: ${interception.domain} (${interception.ruleLabel})`
+            );
+          }
+        }
       } catch (err) {
         console.error('[monBlock] Falha no ciclo do watcher:', err);
       } finally {

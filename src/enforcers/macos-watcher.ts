@@ -153,7 +153,7 @@ export type ExecFileExecutor = (
 export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
   private readonly timeoutMs: number;
   private readonly execFn: ExecFileExecutor;
-  private warnedFailure = false;
+  private lastWarningAtMs = 0;
 
   constructor(
     timeoutOrExecFn: number | ExecFileExecutor = execFileAsync,
@@ -185,10 +185,14 @@ export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
         title,
       };
     } catch (err) {
-      // Antes era silencioso: sem permissão de Automação o bloqueio por palavras-chave simplesmente não age.
-      if (!this.warnedFailure) {
-        this.warnedFailure = true;
-        console.error('[monBlock] Watcher não conseguiu ler a aba (permissão de Automação negada ou navegador fechado?):', (err as Error | null | undefined)?.message ?? String(err));
+      // Log com throttle de 60s para não inundar o log nem silenciar permanentemente.
+      const now = Date.now();
+      if (now - this.lastWarningAtMs > 60_000) {
+        this.lastWarningAtMs = now;
+        console.error(
+          '[monBlock] Watcher não conseguiu ler a aba (permissão de Automação negada ou navegador fechado?):',
+          (err as Error | null | undefined)?.message ?? String(err)
+        );
       }
       return null;
     }
@@ -206,7 +210,11 @@ export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
         timeout: this.timeoutMs,
       });
       return true;
-    } catch {
+    } catch (err) {
+      console.error(
+        `[monBlock] Falha ao redirecionar aba em ${browser}:`,
+        (err as Error | null | undefined)?.message ?? String(err)
+      );
       return false;
     }
   }
