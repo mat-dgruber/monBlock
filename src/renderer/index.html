@@ -139,6 +139,24 @@
           </ul>
         </div>
       </div>
+
+      <div class="app-version-info" id="appVersionInfo" aria-label="Versão do aplicativo">
+        <span class="app-version-label">Versão</span>
+        <div class="app-version-badge-container">
+          <span class="app-version-badge tabular-nums" id="appVersionValue">v0.8.1</span>
+          <button type="button" class="app-update-pill" id="appUpdatePill" hidden aria-label="Nova versão disponível">
+            <span class="app-update-dot" aria-hidden="true"></span>
+            <span id="appUpdatePillText">Atualizar</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="sidebar-legal-links" aria-label="Informações legais">
+        <button type="button" class="legal-link-btn" id="openPrivacyBtn">Privacidade</button>
+        <span aria-hidden="true" class="legal-link-sep">•</span>
+        <button type="button" class="legal-link-btn" id="openTermsBtn">Termos</button>
+      </div>
+    </div>
   </aside>
 
   <!-- ÁREA PRINCIPAL COM SCROLL ISOLADO -->
@@ -830,6 +848,85 @@
       <p class="ccat-field-hint">Este aviso some sozinho em até meio minuto depois da aprovação.</p>
       <div class="profile-banner-actions">
         <button type="button" class="ccat-btn ccat-btn-primary" id="closeProfileStepsBtn" autofocus>Fechar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal de Atualização In-App -->
+  <dialog id="updateDialog" aria-labelledby="update-dialog-title">
+    <div class="dialog-content update-dialog-content">
+      <div class="legal-dialog-header">
+        <h2 id="update-dialog-title">Atualização do monBlock</h2>
+        <p class="app-subtitle" id="updateSubtitle">Uma nova versão está disponível para download.</p>
+      </div>
+
+      <div class="update-dialog-body">
+        <div class="update-version-card">
+          <div class="update-version-row">
+            <span>Versão atual: <strong class="tabular-nums" id="updateCurrentVersion">v0.8.1</strong></span>
+            <span>Nova versão: <strong class="tabular-nums" id="updateTargetVersion">v0.8.2</strong></span>
+          </div>
+        </div>
+
+        <div class="update-notes-box">
+          <h3 id="updateNotesHeader">Novidades desta versão</h3>
+          <div class="update-notes-content" id="updateNotesContent">
+            Carregando notas de versão...
+          </div>
+        </div>
+
+        <div id="updateDownloadProgress" class="update-progress-container" hidden>
+          <div class="update-progress-bar">
+            <div class="update-progress-fill" id="updateProgressFill"></div>
+          </div>
+          <p class="update-progress-text tabular-nums" id="updateProgressText">Baixando pacote... 0%</p>
+        </div>
+
+        <p id="updateFeedback" class="action-feedback" role="status" aria-live="polite" hidden></p>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="ccat-btn" id="closeUpdateDialogBtn">Mais tarde</button>
+        <button type="button" class="ccat-btn ccat-btn-primary" id="confirmUpdateBtn" autofocus>Baixar e Atualizar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal Legal Acessível (Privacidade & Termos de Uso) -->
+  <dialog id="legalDialog" aria-labelledby="legal-dialog-title">
+    <div class="dialog-content legal-dialog-content">
+      <div class="legal-dialog-header">
+        <h2 id="legal-dialog-title">Privacidade e Termos</h2>
+        <div class="legal-tab-group" role="tablist" aria-label="Seções legais">
+          <button type="button" role="tab" class="legal-tab-btn" id="tabPrivacyBtn" aria-selected="true" aria-controls="legalPrivacyPanel">Privacidade</button>
+          <button type="button" role="tab" class="legal-tab-btn" id="tabTermsBtn" aria-selected="false" aria-controls="legalTermsPanel">Termos de uso</button>
+        </div>
+      </div>
+
+      <div class="legal-dialog-body" id="legalPrivacyPanel" role="tabpanel" aria-labelledby="tabPrivacyBtn">
+        <h3>Privacidade por Padrão e Custódia Local</h3>
+        <p>O monBlock opera sob o princípio de <strong>Privacy by Design</strong>: todo o processamento de regras e inspeção de abas é 100% local em memória.</p>
+        <ul class="legal-bullet-list">
+          <li><strong>Zero Coleta Externa:</strong> Não há telemetria, rastreamento comportamental nem servidores proprietários em nuvem.</li>
+          <li><strong>Inspeção em Memória:</strong> URLs e títulos são comparados em tempo real e descartados imediatamente, sem gravação de histórico.</li>
+          <li><strong>Cofre Local Seguro:</strong> Credenciais do Telegram e chaves criptográficas ficam no cofre seguro com chave de hardware (Keychain/macOS).</li>
+        </ul>
+        <p class="ccat-field-hint">Documento completo disponível em <code>docs/legal/privacy-policy.md</code> no repositório.</p>
+      </div>
+
+      <div class="legal-dialog-body" id="legalTermsPanel" role="tabpanel" aria-labelledby="tabTermsBtn" hidden>
+        <h3>Compromisso Compartilhado e Catraca Unidirecional</h3>
+        <p>O monBlock é uma ferramenta de tecnologia assistiva de autocontrole baseada no compromisso mútuo (CCAT).</p>
+        <ul class="legal-bullet-list">
+          <li><strong>Catraca Estrita:</strong> Regras ativadas só podem ser afrouxadas com autorização do Ajudante ou pelo Kit de Emergência.</li>
+          <li><strong>Cooldown de 72 Horas:</strong> A liberação sem Ajudante exige intencionalmente 72h de reflexão para proteção contra impulsos.</li>
+          <li><strong>Sem Monitoramento Secreto:</strong> O aplicativo não é spyware; seu uso requer consentimento pleno do usuário do computador.</li>
+        </ul>
+        <p class="ccat-field-hint">Documento completo disponível em <code>docs/legal/terms-of-use.md</code> no repositório.</p>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="ccat-btn ccat-btn-primary" id="closeLegalDialogBtn" autofocus>Entendido</button>
       </div>
     </div>
   </dialog>

@@ -187,7 +187,9 @@ describe('MOD-04: Ponte Segura Preload (src/preload/preload.ts)', () => {
         'removeAllowlistDomain',
         'cancelPairing',
         'checkPairingStatus',
+        'checkUpdates',
         'checkUrl',
+        'downloadUpdate',
         'enableCategory',
         'getCategories',
         'getState',
@@ -383,6 +385,15 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     expect(html).toContain('html[data-ui-state="active"] [data-state-panel]:not([data-state-panel="active"])');
     expect(html).toContain('[data-view][hidden]');
     expect(html).toContain('id="themeSelect"');
+    expect(html).toContain('id="appVersionInfo"');
+    expect(html).toContain('id="appVersionValue"');
+    expect(html).toContain('v0.8.1');
+    expect(html).toContain('id="openPrivacyBtn"');
+    expect(html).toContain('id="openTermsBtn"');
+    expect(html).toContain('id="legalDialog"');
+    expect(html).toContain('id="appUpdatePill"');
+    expect(html).toContain('id="updateDialog"');
+    expect(html).toContain('id="confirmUpdateBtn"');
     expect(html).toContain('aria-current="page"');
     expect(html).toContain('id="useRecoveryCodeBtn"');
     expect(html).toContain('id="partnerAuthDialog"');

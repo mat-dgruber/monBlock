@@ -856,6 +856,133 @@ globalThis.monblockRenderer = { pickInitialView };
   );
   document.getElementById('showProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.showModal());
   document.getElementById('closeProfileStepsBtn')?.addEventListener('click', () => profileStepsDialog?.close());
+
+  // Modal Legal (Privacidade e Termos)
+  const legalDialog = document.getElementById('legalDialog');
+  const openPrivacyBtn = document.getElementById('openPrivacyBtn');
+  const openTermsBtn = document.getElementById('openTermsBtn');
+  const closeLegalDialogBtn = document.getElementById('closeLegalDialogBtn');
+  const tabPrivacyBtn = document.getElementById('tabPrivacyBtn');
+  const tabTermsBtn = document.getElementById('tabTermsBtn');
+  const legalPrivacyPanel = document.getElementById('legalPrivacyPanel');
+  const legalTermsPanel = document.getElementById('legalTermsPanel');
+
+  function showLegalTab(tab) {
+    const isPrivacy = tab === 'privacy';
+    if (tabPrivacyBtn) tabPrivacyBtn.setAttribute('aria-selected', String(isPrivacy));
+    if (tabTermsBtn) tabTermsBtn.setAttribute('aria-selected', String(!isPrivacy));
+    if (legalPrivacyPanel) legalPrivacyPanel.hidden = !isPrivacy;
+    if (legalTermsPanel) legalTermsPanel.hidden = isPrivacy;
+  }
+
+  openPrivacyBtn?.addEventListener('click', () => {
+    showLegalTab('privacy');
+    legalDialog?.showModal();
+  });
+  openTermsBtn?.addEventListener('click', () => {
+    showLegalTab('terms');
+    legalDialog?.showModal();
+  });
+  closeLegalDialogBtn?.addEventListener('click', () => legalDialog?.close());
+  tabPrivacyBtn?.addEventListener('click', () => showLegalTab('privacy'));
+  tabTermsBtn?.addEventListener('click', () => showLegalTab('terms'));
+
+  // In-App Updater & Diálogo de Atualização
+  const appUpdatePill = document.getElementById('appUpdatePill');
+  const appUpdatePillText = document.getElementById('appUpdatePillText');
+  const updateDialog = document.getElementById('updateDialog');
+  const updateCurrentVersion = document.getElementById('updateCurrentVersion');
+  const updateTargetVersion = document.getElementById('updateTargetVersion');
+  const updateNotesContent = document.getElementById('updateNotesContent');
+  const updateDownloadProgress = document.getElementById('updateDownloadProgress');
+  const updateProgressFill = document.getElementById('updateProgressFill');
+  const updateProgressText = document.getElementById('updateProgressText');
+  const updateFeedback = document.getElementById('updateFeedback');
+  const closeUpdateDialogBtn = document.getElementById('closeUpdateDialogBtn');
+  const confirmUpdateBtn = document.getElementById('confirmUpdateBtn');
+
+  let currentUpdateInfo = null;
+
+  async function checkAppUpdates() {
+    if (!bridge?.checkUpdates) return;
+    try {
+      const res = await bridge.checkUpdates();
+      if (res && res.hasUpdate && res.latestVersion) {
+        currentUpdateInfo = res;
+        if (appUpdatePill) {
+          appUpdatePill.hidden = false;
+          if (appUpdatePillText) appUpdatePillText.textContent = `v${res.latestVersion}`;
+        }
+      }
+    } catch {
+      // Ignora falhas de rede na checagem em background
+    }
+  }
+
+  function openUpdateModal() {
+    if (!currentUpdateInfo) return;
+    if (updateCurrentVersion) updateCurrentVersion.textContent = `v${currentUpdateInfo.currentVersion || '0.8.1'}`;
+    if (updateTargetVersion) updateTargetVersion.textContent = `v${currentUpdateInfo.latestVersion}`;
+    if (updateNotesContent) {
+      updateNotesContent.textContent = currentUpdateInfo.releaseNotes || 'Melhorias de estabilidade, desempenho e segurança do monBlock.';
+    }
+    if (updateDownloadProgress) updateDownloadProgress.hidden = true;
+    if (updateFeedback) updateFeedback.hidden = true;
+    if (confirmUpdateBtn) confirmUpdateBtn.disabled = false;
+    if (closeUpdateDialogBtn) closeUpdateDialogBtn.disabled = false;
+    updateDialog?.showModal();
+  }
+
+  appUpdatePill?.addEventListener('click', openUpdateModal);
+  closeUpdateDialogBtn?.addEventListener('click', () => updateDialog?.close());
+
+  confirmUpdateBtn?.addEventListener('click', async () => {
+    if (!currentUpdateInfo?.pkgUrl || !bridge?.downloadUpdate) {
+      if (updateFeedback) {
+        updateFeedback.hidden = false;
+        updateFeedback.textContent = 'Pacote de instalação indisponível nesta release.';
+      }
+      return;
+    }
+
+    if (updateDownloadProgress) updateDownloadProgress.hidden = false;
+    if (updateProgressFill) updateProgressFill.style.width = '45%';
+    if (updateProgressText) updateProgressText.textContent = 'Baixando pacote oficial...';
+    if (confirmUpdateBtn) confirmUpdateBtn.disabled = true;
+    if (closeUpdateDialogBtn) closeUpdateDialogBtn.disabled = true;
+
+    try {
+      const result = await bridge.downloadUpdate({
+        pkgUrl: currentUpdateInfo.pkgUrl,
+        expectedSha256: currentUpdateInfo.sha256,
+      });
+
+      if (result && result.success) {
+        if (updateProgressFill) updateProgressFill.style.width = '100%';
+        if (updateProgressText) updateProgressText.textContent = '100% — Concluído!';
+        setTimeout(() => {
+          updateDialog?.close();
+          notify('Instalador do monBlock aberto. Siga as instruções no instalador do macOS.');
+        }, 1200);
+      } else {
+        if (updateFeedback) {
+          updateFeedback.hidden = false;
+          updateFeedback.textContent = result?.error || 'Não foi possível baixar o instalador.';
+        }
+        if (confirmUpdateBtn) confirmUpdateBtn.disabled = false;
+        if (closeUpdateDialogBtn) closeUpdateDialogBtn.disabled = false;
+      }
+    } catch (err) {
+      if (updateFeedback) {
+        updateFeedback.hidden = false;
+        updateFeedback.textContent = `Erro ao atualizar: ${err?.message || String(err)}`;
+      }
+      if (confirmUpdateBtn) confirmUpdateBtn.disabled = false;
+      if (closeUpdateDialogBtn) closeUpdateDialogBtn.disabled = false;
+    }
+  });
+
+  void checkAppUpdates();
   // Confere a cada 15 s só o aviso (sem re-renderizar o painel): some após a aprovação e volta se o perfil for removido.
   setInterval(async () => {
     if (!profileBanner) return;
