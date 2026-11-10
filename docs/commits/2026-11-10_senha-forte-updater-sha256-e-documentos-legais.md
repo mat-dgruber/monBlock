@@ -97,3 +97,4 @@ sequenceDiagram
 - **TypeScript Typecheck:** `tsc --noEmit` executado sem erros.
 - **CSP & Higiene de Código:** Zero estilos inline não permitidos (`style=""`), CSP estrito respeitado.
 - **Artefatos de Instalação:** `build/monBlock.app` assinado e `build/monblockd.pkg` montados e conferidos.
+

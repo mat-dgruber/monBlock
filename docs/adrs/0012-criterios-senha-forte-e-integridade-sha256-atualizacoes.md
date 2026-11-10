@@ -76,3 +76,4 @@ sequenceDiagram
 - Histórico do Telegram protegido contra exposição acidental de senhas.
 - Integridade fim a fim na distribuição de atualizações com proteção contra binários corrompidos ou adulterados.
 - Transparência jurídica garantida com inclusão de Termos de Uso e Política de Privacidade acessíveis no aplicativo.
+
