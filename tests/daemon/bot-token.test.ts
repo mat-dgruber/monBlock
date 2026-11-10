@@ -11,7 +11,7 @@ import { MacOSPlatformEnforcer } from '../../src/enforcers/platform-enforcer.js'
 import { TripleStateStore } from '../../src/storage/state-store.js';
 
 const TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
-const PASSWORD = crypto.randomBytes(9).toString('base64url');
+const PASSWORD = 'SenhaDoAjudante#2026!';
 
 function fakeTransport(username: string | null, calls: TelegramTransportRequest[] = []): TelegramTransportAdapter {
   return {

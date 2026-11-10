@@ -10,7 +10,7 @@ import { MonBlockDaemon } from '../../src/daemon/monblockd.js';
 import { TrustedClock } from '../../src/daemon/trusted-clock.js';
 
 // Gerados por execução: credencial de teste fixa no código é indistinguível de segredo real para scanners.
-const freshTestCredential = (): string => crypto.randomBytes(12).toString('base64url');
+const freshTestCredential = (): string => 'Aa1#' + crypto.randomBytes(12).toString('base64url');
 const TEST_PASSWORD = freshTestCredential();
 const OTHER_TEST_PASSWORD = freshTestCredential();
 
@@ -609,13 +609,13 @@ describe('MonBlockDaemon & MacOSPlatformEnforcer (MOD-03)', () => {
       expect(check1.partnerName).toBe('Carlos Ajudante');
     }
 
-    // Act 3: Ajudante envia mensagem no Telegram: "/senha SenhaDoCarlos2026"
+    // Act 3: Ajudante envia mensagem no Telegram: "/senha SenhaDoCarlos#2026!"
     mockUpdates.push({
       update_id: 1,
       message: {
         message_id: 99,
         chat: { id: 88776655 },
-        text: '/senha SenhaDoCarlos2026',
+        text: '/senha SenhaDoCarlos#2026!',
       },
     });
 
@@ -755,7 +755,7 @@ describe('MonBlockDaemon — tombstone (RN-DAEMON-07) e rate limit (RN-DAEMON-09
       }),
       extractPasswordFromUpdate: (update: any, expected: string) =>
         String(update?.message?.chat?.id) === expected
-          ? { valid: true, password: PASSWORD, messageId: 7 }
+          ? { valid: true, isPasswordCommand: true, rawPassword: PASSWORD, password: PASSWORD, messageId: 7 }
           : { valid: false, error: 'chat diferente' },
       sendEmergencyKit: async () => ({ ok: true, status: 200 }),
       deleteMessage: async () => ({ ok: true, status: 200 }),

@@ -14,8 +14,10 @@ import { TrustedClock } from './trusted-clock.js';
 import {
   canMutateProtectionRule,
   evaluateEmergencyCooldown,
+  formatPasswordChecklistMessage,
   generateRecoveryKit,
   hashPartnerPassword,
+  validateMasterPassword,
   verifyChallengeToken,
   verifyPartnerPassword,
   type UnlockDuration,
@@ -100,6 +102,7 @@ export type DaemonCommand =
   | {
       type: 'PAIR_PARTNER';
       password: string;
+      partnerName?: string;
       hmacSecret?: string;
       telegramChatId?: string;
       currentPartnerPassword?: string;
@@ -1230,9 +1233,32 @@ export class MonBlockDaemon {
                 update,
                 this.pendingPairing.telegramChatId
               );
-              if (pwdCheck.valid && pwdCheck.password) {
+              if (pwdCheck.isPasswordCommand || (pwdCheck.valid && pwdCheck.password)) {
+                // Tenta remover a mensagem com a senha para higienização
+                if (pwdCheck.messageId) {
+                  try {
+                    await client.deleteMessage(this.pendingPairing.telegramChatId, pwdCheck.messageId);
+                  } catch {
+                    // Silencioso em caso de falha de remoção no Telegram
+                  }
+                }
+
+                const rawPassword = pwdCheck.rawPassword ?? pwdCheck.password ?? '';
+                const validation = validateMasterPassword(rawPassword, {
+                  partnerName: this.pendingPairing.partnerName,
+                });
+
+                if (!validation.valid) {
+                  const feedbackText = formatPasswordChecklistMessage(validation);
+                  await client.sendMessage(feedbackText, {
+                    chatId: this.pendingPairing.telegramChatId,
+                    parseMode: 'HTML',
+                  });
+                  continue;
+                }
+
                 const hmacSecret = crypto.randomBytes(32).toString('hex');
-                const passwordHash = hashPartnerPassword(pwdCheck.password);
+                const passwordHash = hashPartnerPassword(rawPassword);
                 const salt = passwordHash.split('$')[1] ?? '';
                 const kit = generateRecoveryKit();
 
@@ -1265,11 +1291,6 @@ export class MonBlockDaemon {
                   partnerName: this.pendingPairing.partnerName,
                   chatId: this.pendingPairing.telegramChatId,
                 });
-
-                // Tenta remover a mensagem com a senha para higienização
-                if (pwdCheck.messageId) {
-                  await client.deleteMessage(this.pendingPairing.telegramChatId, pwdCheck.messageId);
-                }
 
                 const finalizedPartnerName = this.pendingPairing.partnerName;
                 this.pendingPairing = null;
@@ -1306,11 +1327,14 @@ export class MonBlockDaemon {
       }
 
       case 'PAIR_PARTNER': {
-        if (!cmd.password || cmd.password.trim().length < 6) {
+        const passwordValidation = validateMasterPassword(cmd.password ?? '', {
+          partnerName: cmd.partnerName,
+        });
+        if (!passwordValidation.valid) {
           return buildProblem(
             400,
-            'Credenciais de Pareamento Inválidas',
-            'A senha do Ajudante deve possuir no mínimo 6 caracteres.',
+            'Senha Fraca (Critérios de Segurança Não Atendidos)',
+            passwordValidation.errors.join(' '),
             '/ipc/monblockd/pair-partner'
           );
         }

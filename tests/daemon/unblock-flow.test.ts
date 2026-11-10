@@ -12,7 +12,7 @@ import { TripleStateStore } from '../../src/storage/state-store.js';
 
 const TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw';
 const CHAT = '42';
-const PASSWORD = crypto.randomBytes(9).toString('base64url');
+const PASSWORD = 'Aa1#' + crypto.randomBytes(12).toString('base64url');
 const MIN = 60_000;
 
 describe('fluxo do pedido de liberação', () => {

@@ -247,3 +247,109 @@ export function canMutateProtectionRule(
 
   return { allowed: true };
 }
+
+// MARK: - Validação de Senha Forte do Ajudante (NIST SP 800-63B + CCAT)
+
+export interface PasswordCriterion {
+  id: 'length' | 'uppercase' | 'lowercase' | 'digit' | 'special' | 'nonTrivial';
+  label: string;
+  passed: boolean;
+}
+
+export interface PasswordValidationResult {
+  valid: boolean;
+  errors: string[];
+  criteria: PasswordCriterion[];
+}
+
+const COMMON_DISALLOWED_EXACT = new Set([
+  '12345678',
+  '123456789',
+  '1234567890',
+  'password',
+  'password123',
+  'senha123',
+  'senha1234',
+  'admin123',
+  'monblock',
+  'monblock123',
+  'qwertyuiop',
+  'asdfghjk',
+]);
+
+/**
+ * Valida a Senha Mestra contra critérios fortes de segurança (NIST SP 800-63B).
+ *
+ * @param password - Senha em texto plano.
+ * @param options - Metadados contextuais (ex.: nome do ajudante).
+ */
+export function validateMasterPassword(
+  password: string,
+  options?: { partnerName?: string }
+): PasswordValidationResult {
+  const trimmed = password ?? '';
+  const byteLength = Buffer.byteLength(trimmed, 'utf8');
+
+  const lengthPassed = trimmed.length >= 8 && byteLength <= 128;
+  const uppercasePassed = /[A-Z]/.test(trimmed);
+  const lowercasePassed = /[a-z]/.test(trimmed);
+  const digitPassed = /[0-9]/.test(trimmed);
+  const specialPassed = /[^A-Za-z0-9]/.test(trimmed);
+
+  const lower = trimmed.toLowerCase();
+  const stripped = lower.replace(/[^a-z0-9]/g, '');
+  let nonTrivialPassed =
+    !COMMON_DISALLOWED_EXACT.has(lower) &&
+    !COMMON_DISALLOWED_EXACT.has(stripped);
+
+  if (options?.partnerName) {
+    const partnerClean = options.partnerName.trim().toLowerCase();
+    if (partnerClean.length >= 3 && lower.includes(partnerClean)) {
+      nonTrivialPassed = false;
+    }
+  }
+
+  const criteria: PasswordCriterion[] = [
+    { id: 'length', label: 'Mínimo de 8 caracteres', passed: lengthPassed },
+    { id: 'uppercase', label: 'Ao menos 1 letra maiúscula (A-Z)', passed: uppercasePassed },
+    { id: 'lowercase', label: 'Ao menos 1 letra minúscula (a-z)', passed: lowercasePassed },
+    { id: 'digit', label: 'Ao menos 1 número (0-9)', passed: digitPassed },
+    { id: 'special', label: 'Ao menos 1 caractere especial (!@#$%&*)', passed: specialPassed },
+    { id: 'nonTrivial', label: 'Não conter sequências óbvias ou seu nome', passed: nonTrivialPassed },
+  ];
+
+  const errors: string[] = [];
+  if (!lengthPassed) {
+    errors.push(byteLength > 128 ? 'A senha não pode exceder 128 bytes.' : 'A senha deve ter no mínimo 8 caracteres.');
+  }
+  if (!uppercasePassed) errors.push('A senha deve conter ao menos 1 letra maiúscula.');
+  if (!lowercasePassed) errors.push('A senha deve conter ao menos 1 letra minúscula.');
+  if (!digitPassed) errors.push('A senha deve conter ao menos 1 número.');
+  if (!specialPassed) errors.push('A senha deve conter ao menos 1 caractere especial (!@#$%&*).');
+  if (!nonTrivialPassed) errors.push('A senha não pode conter sequências óbvias ou o nome do ajudante.');
+
+  const valid = criteria.every((c) => c.passed);
+
+  return {
+    valid,
+    errors,
+    criteria,
+  };
+}
+
+/**
+ * Formata mensagem visual em HTML para retorno no Telegram com checklist de pendências.
+ */
+export function formatPasswordChecklistMessage(result: PasswordValidationResult): string {
+  const lines = [
+    '⚠️ <b>A senha não atende aos critérios de segurança forte:</b>',
+    '',
+    ...result.criteria.map((c) => `${c.passed ? '✅' : '❌'} ${c.label}`),
+    '',
+    'Por favor, tente novamente respondendo com:',
+    '👉 <code>/senha &lt;sua_senha&gt;</code>',
+    '<i>(Exemplo: <code>/senha Foco#2026!</code>)</i>',
+  ];
+  return lines.join('\n');
+}
+

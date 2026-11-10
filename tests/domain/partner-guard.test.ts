@@ -14,6 +14,8 @@ import {
   generateRecoveryKit,
   evaluateEmergencyCooldown,
   canMutateProtectionRule,
+  validateMasterPassword,
+  formatPasswordChecklistMessage,
 } from '../../src/domain/partner-guard.js';
 import type { RuleEngineState } from '../../src/domain/rule-engine.js';
 
@@ -215,5 +217,69 @@ describe('PartnerGuard Crypto, Replay Protection & 72h Cooldown', () => {
         partnerAuthorized: false,
       })
     ).toEqual({ allowed: true });
+  });
+
+  describe('validateMasterPassword & Checklist Formatting', () => {
+    it('aprova senha forte completa com mais de 8 caracteres, maiúscula, minúscula, número e símbolo', () => {
+      const res = validateMasterPassword('Foco#Protegido2026!', { partnerName: 'Beatriz' });
+      expect(res.valid).toBe(true);
+      expect(res.errors).toHaveLength(0);
+      expect(res.criteria.every((c) => c.passed)).toBe(true);
+    });
+
+    it('rejeita senha com menos de 8 caracteres', () => {
+      const res = validateMasterPassword('Ab1!xyz');
+      expect(res.valid).toBe(false);
+      expect(res.errors).toContain('A senha deve ter no mínimo 8 caracteres.');
+      const lengthCrit = res.criteria.find((c) => c.id === 'length');
+      expect(lengthCrit?.passed).toBe(false);
+    });
+
+    it('rejeita senha sem maiúscula', () => {
+      const res = validateMasterPassword('foco#protegido2026!');
+      expect(res.valid).toBe(false);
+      expect(res.errors).toContain('A senha deve conter ao menos 1 letra maiúscula.');
+      expect(res.criteria.find((c) => c.id === 'uppercase')?.passed).toBe(false);
+    });
+
+    it('rejeita senha sem minúscula', () => {
+      const res = validateMasterPassword('FOCO#PROTEGIDO2026!');
+      expect(res.valid).toBe(false);
+      expect(res.errors).toContain('A senha deve conter ao menos 1 letra minúscula.');
+      expect(res.criteria.find((c) => c.id === 'lowercase')?.passed).toBe(false);
+    });
+
+    it('rejeita senha sem número', () => {
+      const res = validateMasterPassword('Foco#Protegido!');
+      expect(res.valid).toBe(false);
+      expect(res.errors).toContain('A senha deve conter ao menos 1 número.');
+      expect(res.criteria.find((c) => c.id === 'digit')?.passed).toBe(false);
+    });
+
+    it('rejeita senha sem caractere especial', () => {
+      const res = validateMasterPassword('FocoProtegido2026');
+      expect(res.valid).toBe(false);
+      expect(res.errors).toContain('A senha deve conter ao menos 1 caractere especial (!@#$%&*).');
+      expect(res.criteria.find((c) => c.id === 'special')?.passed).toBe(false);
+    });
+
+    it('rejeita senha comum proibida ou contendo o nome do ajudante', () => {
+      const resNome = validateMasterPassword('Beatriz#2026!', { partnerName: 'Beatriz' });
+      expect(resNome.valid).toBe(false);
+      expect(resNome.errors).toContain('A senha não pode conter sequências óbvias ou o nome do ajudante.');
+
+      const resComum = validateMasterPassword('Password123!');
+      expect(resComum.valid).toBe(false);
+      expect(resComum.criteria.find((c) => c.id === 'nonTrivial')?.passed).toBe(false);
+    });
+
+    it('formata mensagem HTML com checklist indicando acertos e falhas', () => {
+      const res = validateMasterPassword('fraca123');
+      const formatted = formatPasswordChecklistMessage(res);
+      expect(formatted).toContain('⚠️ <b>A senha não atende aos critérios de segurança forte:</b>');
+      expect(formatted).toContain('❌ Ao menos 1 letra maiúscula (A-Z)');
+      expect(formatted).toContain('❌ Ao menos 1 caractere especial (!@#$%&*)');
+      expect(formatted).toContain('/senha &lt;sua_senha&gt;');
+    });
   });
 });

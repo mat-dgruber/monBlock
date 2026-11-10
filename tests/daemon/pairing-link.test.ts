@@ -97,8 +97,18 @@ describe('INITIATE_PAIRING_LINK', () => {
     await d.handleCommand({ type: 'CHECK_PAIRING_STATUS' });
     expect(sent.filter((r) => r.endpointUrl.endsWith('/sendMessage'))).toHaveLength(1);
 
-    // a senha só vale vinda do chat vinculado
-    updates = [start(6, 77, '/senha SenhaDoIntruso1'), start(7, 42, '/senha SenhaDoAjudante1')];
+    // a senha só vale vinda do chat vinculado; senha fraca recebe checklist de erro e não pareia
+    updates = [start(6, 42, '/senha fraca')];
+    const weakTry = await d.handleCommand({ type: 'CHECK_PAIRING_STATUS' });
+    expect(weakTry).toMatchObject({ status: 200, paired: false, pending: true });
+    const feedbackMsg = sent.find((r) =>
+      typeof (r.payload as { text?: unknown })?.text === 'string' &&
+      ((r.payload as { text: string }).text).includes('A senha não atende aos critérios')
+    );
+    expect((feedbackMsg?.payload as { chat_id?: unknown })?.chat_id).toBe('42');
+
+    // senha de intruso é ignorada e senha forte válida conclui o pareamento
+    updates = [start(7, 77, '/senha Intruso#2026!'), start(8, 42, '/senha SenhaDoAjudante#2026!')];
     const done = await d.handleCommand({ type: 'CHECK_PAIRING_STATUS' });
     expect(done).toMatchObject({ status: 200, paired: true, pending: false });
   });

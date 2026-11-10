@@ -401,7 +401,15 @@ export class TelegramPartnerClient {
       '',
       'Para concluir o pareamento e ativar a proteção contra distrações, defina a <b>Senha Mestra</b> respondendo a esta mensagem com:',
       '👉 <code>/senha &lt;sua_senha&gt;</code>',
-      '<i>(Exemplo: <code>/senha FocoProtegido2026</code> — mínimo 6 caracteres)</i>',
+      '',
+      '<b>Critérios da Senha Forte:</b>',
+      '• Mínimo de 8 caracteres',
+      '• Pelo menos 1 letra maiúscula (A-Z) e 1 minúscula (a-z)',
+      '• Pelo menos 1 número (0-9)',
+      '• Pelo menos 1 caractere especial (!@#$%&*)',
+      '• Não conter sequências óbvias ou seu nome',
+      '',
+      '<i>(Exemplo: <code>/senha Foco#2026!</code>)</i>',
       '',
       '⚠️ <b>Guarde esta senha com você.</b> O usuário no computador NÃO terá acesso a ela. Ela será solicitada caso você precise autorizar alterações extremas ou desinstalar o guardião.',
     ].join('\n');
@@ -618,7 +626,14 @@ export class TelegramPartnerClient {
   extractPasswordFromUpdate(
     update: TelegramUpdate,
     expectedChatId?: string
-  ): { valid: boolean; password?: string; messageId?: number; error?: string } {
+  ): {
+    valid: boolean;
+    isPasswordCommand?: boolean;
+    rawPassword?: string;
+    password?: string;
+    messageId?: number;
+    error?: string;
+  } {
     const message = update.message;
     if (!message || !message.text) {
       return { valid: false, error: 'Atualização não contém texto de mensagem.' };
@@ -643,15 +658,25 @@ export class TelegramPartnerClient {
       return { valid: false, error: 'Mensagem não é um comando /senha válido.' };
     }
 
-    const rawPassword = match[1]?.trim();
+    const rawPassword = match[1]?.trim() ?? '';
+    const messageId = message.message_id;
+
     if (!rawPassword || rawPassword.length < 6) {
-      return { valid: false, error: 'A senha precisa ter no mínimo 6 caracteres.' };
+      return {
+        valid: false,
+        isPasswordCommand: true,
+        rawPassword,
+        messageId,
+        error: 'A senha precisa ter no mínimo 6 caracteres.',
+      };
     }
 
     return {
       valid: true,
+      isPasswordCommand: true,
+      rawPassword,
       password: rawPassword,
-      messageId: message.message_id,
+      messageId,
     };
   }
 
