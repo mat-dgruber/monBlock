@@ -6,7 +6,7 @@
   <string>com.ccat.monblock.watcher</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Applications/monBlock.app/Contents/MacOS/monBlock</string>
+    <string>/Applications/monBlock.app/Contents/MacOS/Electron</string>
     <string>--watcher</string>
   </array>
   <key>RunAtLoad</key>

@@ -25,6 +25,7 @@ cp -R dist "$RES/app/"
 # index.html carrega ../../docs/design/tokens.css; o main abre docs/design/blocked-page.html.
 cp -R docs/design "$RES/app/docs/"
 cp build/monblockd.pkg "$RES/"
+ln -sf Electron "$APP/Contents/MacOS/monBlock"
 
 # ponytail: CFBundleExecutable fica "Electron" (os helpers são achados por esse nome); renomear = renomear os 4 helpers.
 plutil -replace CFBundleName -string monBlock "$PLIST"
