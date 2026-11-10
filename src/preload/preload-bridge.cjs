@@ -61,6 +61,12 @@ const api = Object.freeze({
   requestAuthorizedUninstall(payload) {
     return ipcRenderer.invoke('monblock:request-authorized-uninstall', payload);
   },
+  checkUpdates() {
+    return ipcRenderer.invoke('monblock:check-updates');
+  },
+  downloadUpdate(payload) {
+    return ipcRenderer.invoke('monblock:download-update', payload);
+  },
   daemonStatus() {
     return ipcRenderer.invoke('monblock:daemon-status');
   },

@@ -44,6 +44,8 @@ export interface MonBlockPreloadApi {
     credential: string;
     challengeCode?: string;
   }) => Promise<unknown>;
+  checkUpdates: () => Promise<unknown>;
+  downloadUpdate: (payload: { pkgUrl: string; expectedSha256?: string }) => Promise<unknown>;
 }
 
 export interface ContextBridgeLike {
@@ -131,6 +133,12 @@ export function createMonBlockPreloadApi(ipcInvoker: IpcInvokeFn): MonBlockPrelo
     },
     requestAuthorizedUninstall(payload) {
       return ipcInvoker('monblock:request-authorized-uninstall', payload);
+    },
+    checkUpdates() {
+      return ipcInvoker('monblock:check-updates');
+    },
+    downloadUpdate(payload) {
+      return ipcInvoker('monblock:download-update', payload);
     },
   };
 

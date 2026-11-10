@@ -17,6 +17,8 @@ import { MacOSBrowserWatcher } from '../enforcers/macos-watcher.js';
 import { createDefaultPersistentState } from '../storage/state-store.js';
 import { DaemonClient } from './daemon-client.js';
 import { migrateLegacyVaults, readUserVaultKey } from './legacy-migration.js';
+import { AppNotificationManager } from './notifications.js';
+import { checkForAppUpdates, downloadAppUpdatePkg } from './updater.js';
 
 /** Socket do `monblockd` root (ADR-0007). Override só em build não empacotado (dev/CI). */
 export const DAEMON_SOCKET_PATH = '/var/run/monblock/monblockd.sock';
@@ -245,6 +247,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
 
   const electron = await import('electron');
   const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, powerMonitor, safeStorage, shell } = electron;
+  const notificationManager = new AppNotificationManager({ notificationClass: electron.Notification });
 
   const gotSingleLock = app.requestSingleInstanceLock();
   if (!gotSingleLock) {
@@ -400,6 +403,40 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   ipcMain.handle('monblock:reinstall-service', async () => {
     const error = await shell.openPath(path.join(process.resourcesPath, 'monblockd.pkg'));
     return error ? { status: 500, detail: `Não foi possível abrir o instalador: ${error}` } : { status: 200 };
+  });
+
+  // Verificação e download assistido de atualizações (In-App Updater)
+  ipcMain.handle('monblock:check-updates', async () => {
+    const currentVersion = app.getVersion();
+    const result = await checkForAppUpdates({ currentVersion });
+    if (result.hasUpdate && result.latestVersion) {
+      notificationManager.notify({
+        id: 'update-available',
+        title: 'monBlock — Atualização disponível',
+        body: `Nova versão v${result.latestVersion} disponível para instalação.`,
+      });
+    }
+    return result;
+  });
+
+  ipcMain.handle('monblock:download-update', async (_event, payload: { pkgUrl?: string; expectedSha256?: string }) => {
+    if (!payload || typeof payload.pkgUrl !== 'string' || !payload.pkgUrl.trim()) {
+      return { success: false, error: 'URL do pacote não fornecida.' };
+    }
+    const res = await downloadAppUpdatePkg({
+      pkgUrl: payload.pkgUrl.trim(),
+      expectedSha256: payload.expectedSha256,
+    });
+    if (res.success && res.pkgPath) {
+      notificationManager.notify({
+        id: 'update-downloaded',
+        title: 'monBlock — Atualização pronta',
+        body: 'O instalador foi aberto para conclusão da atualização.',
+        force: true,
+      });
+      await shell.openPath(res.pkgPath);
+    }
+    return res;
   });
 
   // Sem parâmetros do renderer: caminho e URL fixos. Rebaixa o perfil só se o daemon não o vê instalado
