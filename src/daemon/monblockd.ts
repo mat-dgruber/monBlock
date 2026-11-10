@@ -1327,18 +1327,6 @@ export class MonBlockDaemon {
       }
 
       case 'PAIR_PARTNER': {
-        const passwordValidation = validateMasterPassword(cmd.password ?? '', {
-          partnerName: cmd.partnerName,
-        });
-        if (!passwordValidation.valid) {
-          return buildProblem(
-            400,
-            'Senha Fraca (Critérios de Segurança Não Atendidos)',
-            passwordValidation.errors.join(' '),
-            '/ipc/monblockd/pair-partner'
-          );
-        }
-
         if (state.paired && state.partnerCredentials) {
           const authorized =
             Boolean(cmd.currentPartnerPassword) &&
@@ -1359,6 +1347,18 @@ export class MonBlockDaemon {
         // PAIR_PARTNER não passa pelo Telegram: o chatId informado não prova nada, só o cooldown libera.
         const pairGate = this.repairingGate(state, trustedNow, undefined, '/ipc/monblockd/pair-partner');
         if (pairGate) return pairGate;
+
+        const passwordValidation = validateMasterPassword(cmd.password ?? '', {
+          partnerName: cmd.partnerName,
+        });
+        if (!passwordValidation.valid) {
+          return buildProblem(
+            400,
+            'Senha Fraca (Critérios de Segurança Não Atendidos)',
+            passwordValidation.errors.join(' '),
+            '/ipc/monblockd/pair-partner'
+          );
+        }
 
         const hmacSecret =
           cmd.hmacSecret && cmd.hmacSecret.trim().length > 0

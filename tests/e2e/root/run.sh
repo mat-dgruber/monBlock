@@ -14,7 +14,7 @@ RUN=/var/run/monblock
 SOCK=$RUN/monblockd.sock
 LABEL=system/com.ccat.monblockd
 TEST_USER=mbtest$$
-PASSWORD="t-$(openssl rand -hex 12)" # gerada por execução, nunca fixa no código
+PASSWORD="Aa1#$(openssl rand -hex 12)" # gerada por execução, nunca fixa no código
 
 step() { printf '\n== %s\n' "$1"; }
 fail() { echo "FALHOU: $1" >&2; [ -f /var/log/monblockd.log ] && tail -20 /var/log/monblockd.log >&2; exit 1; }
@@ -109,7 +109,7 @@ expect_status 200 "{\"type\":\"PAIR_PARTNER\",\"password\":\"$PASSWORD\"}" "pare
 rm -f "$APPSUP/state.primary" "$DB/state.mirror" "$DB/partner.seal"
 out=$(ipc '{"type":"GET_STATE"}') || fail "daemon offline após apagar cofres"
 echo "$out" | grep -q '"tamperLockdown":true' || fail "sem tamperLockdown: $out"
-expect_status 423 "{\"type\":\"PAIR_PARTNER\",\"password\":\"o-$(openssl rand -hex 12)\"}" "novo pareamento após perda dos cofres"
+expect_status 423 "{\"type\":\"PAIR_PARTNER\",\"password\":\"Aa1#$(openssl rand -hex 12)\"}" "novo pareamento após perda dos cofres"
 
 step "Limpeza"
 sh "$HELPER/uninstall.sh"
