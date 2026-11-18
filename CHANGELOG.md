@@ -6,6 +6,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 ### Adicionado
+- Fundação Arquitetural Multiplataforma ([ADR-0013](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0013-fundacao-arquitetural-multiplataforma-linux-windows.md)): fábrica abstrata `createPlatformEnforcer(platform, options)` desacoplando o daemon de particularidades de SO, layout de caminhos de sistema agnóstico (`resolveLayout` para `darwin`, `linux` e `win32`), e suporte a canais IPC via Unix Domain Socket (`0750`, grupo `monblock`) e Windows Named Pipe (`\\.\pipe\monblockd`).
+- Imposição Nativa de Sistema e Políticas no Linux ([ADR-0014](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0014-politicas-corporativas-e-imposicao-no-linux.md)):
+  - Camada 1: `/etc/hosts` atômico com atributo imutável `chattr +i` e descarga de cache DNS via `resolvectl flush-caches` / `systemd-resolve`.
+  - Camada 2: Políticas corporativas multi-navegador em manifestos JSON gerenciados em `/etc/opt/chrome/policies/managed/`, `/etc/chromium/policies/managed/`, `/etc/brave/policies/managed/`, `/etc/opt/edge/policies/managed/`, `/etc/vivaldi/policies/managed/` e `/etc/firefox/policies/policies.json`.
+  - Camada 3: `LinuxBrowserWatcher` com adaptador `X11BrowserTabAdapter` inspecionando janelas via `xdotool` / `xprop WM_CLASS` e redirecionando para `127.0.0.1:49152/blocked` via `xdg-open`.
+  - Empacotamento e Sandboxing: unidade `scripts/linux/monblockd.service` com `ProtectSystem=strict`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE CAP_LINUX_IMMUTABLE` e script gerador de pacote `.deb` (`scripts/build-linux-pkg.sh`).
+- Imposição Nativa de Sistema e Políticas no Windows ([ADR-0015](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0015-politicas-corporativas-e-imposicao-no-windows.md)):
+  - Camada 1: `%SystemRoot%\System32\drivers\etc\hosts` com descritor de segurança NTFS (`icacls`) restringindo usuários comuns a leitura e garantindo controle total apenas a SYSTEM e Administradores; descarga de DNS via `ipconfig /flushdns`.
+  - Camada 2: Geração e importação de manifestos `.reg` sob `HKLM\SOFTWARE\Policies` para Chrome, Edge, Brave, Chromium, Vivaldi e Firefox (`URLBlocklist`, `URLAllowlist`, `WebsiteFilter`, bloqueio de DoH e Incógnito).
+  - Camada 3: `WindowsBrowserWatcher` com adaptador `WindowsBrowserTabAdapter` consultando janela em primeiro plano via Win32/PowerShell (`GetForegroundWindow`) e redirecionamento seguro via `cmd.exe /c start`.
+  - Serviço do Windows: script de provisionamento `scripts/windows/install-service.ps1` criando serviço Windows automático sob `NT AUTHORITY\SYSTEM` com reinício em falha em 5s e proteção de `%ProgramData%\monBlock`.
 - Suporte ao navegador Facet (`app.panes.browser`): monitoramento de abas ativas e detecção de palavras-chave/URLs via System Events e redirecionamento direcionado para a página de bloqueio via `/usr/bin/open -b app.panes.browser`.
 
 ## [0.8.1] - 2026-11-07
