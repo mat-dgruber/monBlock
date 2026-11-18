@@ -26,6 +26,12 @@ import {
   buildManagedHostsContent,
   rollbackHostsFromBackup,
 } from './hosts-enforcer.js';
+import {
+  LinuxPlatformEnforcer,
+  type LinuxPlatformEnforcerOptions,
+} from './linux-platform-enforcer.js';
+
+export { LinuxPlatformEnforcer, type LinuxPlatformEnforcerOptions };
 
 const execFileAsync = promisify(execFile);
 
@@ -43,7 +49,7 @@ export function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function writeFileAtomically(filePath: string, content: string): void {
+export function writeFileAtomically(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
   try {
@@ -59,7 +65,7 @@ function writeFileAtomically(filePath: string, content: string): void {
   }
 }
 
-function writeIfChanged(filePath: string, content: string): void {
+export function writeIfChanged(filePath: string, content: string): void {
   if (fs.existsSync(filePath) && fs.readFileSync(filePath, 'utf8') === content) return;
   writeFileAtomically(filePath, content);
 }
@@ -277,10 +283,10 @@ export interface MacOSPlatformEnforcerOptions {
 
 // MARK: - Implementação MacOSPlatformEnforcer e Fábrica
 
-export type PlatformEnforcerOptions = MacOSPlatformEnforcerOptions;
+export type PlatformEnforcerOptions = MacOSPlatformEnforcerOptions & LinuxPlatformEnforcerOptions;
 
 /**
- * Fábrica de PlatformEnforcer sensível ao sistema operacional (ADR-0013).
+ * Fábrica de PlatformEnforcer sensível ao sistema operacional (ADR-0013, ADR-0014).
  */
 export function createPlatformEnforcer(
   platform: NodeJS.Platform = process.platform,
@@ -290,10 +296,73 @@ export function createPlatformEnforcer(
     case 'darwin':
       return new MacOSPlatformEnforcer(options);
     case 'linux':
+      return new LinuxPlatformEnforcer(options);
     case 'win32':
     default:
       return new MacOSPlatformEnforcer(options);
   }
+}
+
+export function normalizeDomainList(entries: string[]): string[] {
+  const result: string[] = [];
+  for (const raw of entries) {
+    if (typeof raw !== 'string' || /[\r\n]/.test(raw)) continue;
+    const parsed = sanitizeAndNormalizeUrl(raw);
+    if (parsed?.domain) {
+      result.push(parsed.domain.toLowerCase().replace(/^www\./, ''));
+    }
+  }
+  return Array.from(new Set(result));
+}
+
+/**
+ * Consolida todos os domínios bloqueados (categorias ativas + customizados),
+ * respeitando a precedência da `allowlistDomains`, `activeGrants` e `CRITICAL_INFRA_ALLOWLIST`.
+ */
+export function resolveEffectiveBlockedDomains(
+  rules: ProtectionRuleset,
+  activeGrants: Array<{ target: string; expiresAtMs: number }> = []
+): { effectiveBlockedDomains: string[]; effectiveAllowlistDomains: string[] } {
+  const normalizedAllowlist = normalizeDomainList(rules.allowlistDomains);
+  const hasWildcardGrant = activeGrants.some(
+    (g) => g.target.trim() === '*' && g.expiresAtMs > 0
+  );
+  if (hasWildcardGrant) {
+    return {
+      effectiveBlockedDomains: [],
+      effectiveAllowlistDomains: normalizedAllowlist,
+    };
+  }
+
+  const grantDomains = normalizeDomainList(
+    activeGrants
+      .filter((g) => g.target.trim() !== '*' && g.expiresAtMs > 0)
+      .map((g) => g.target)
+  );
+  const allAllowed = Array.from(new Set([...normalizedAllowlist, ...grantDomains]));
+
+  const categoryDomains = rules.enabledCategories.flatMap(
+    (catId) => PREDEFINED_CATEGORIES.find((c) => c.id === catId)?.domains ?? []
+  );
+  // Domínios do usuário primeiro: o corte por teto (RN-WEB-09) só atinge o fim das categorias.
+  const normalizedBlocked = normalizeDomainList([
+    ...rules.blockedDomains,
+    ...categoryDomains,
+  ]);
+
+  const allowedSet = new Set(allAllowed);
+  const isAllowed = (d: string): boolean => {
+    for (let h = d; h; h = h.includes('.') ? h.slice(h.indexOf('.') + 1) : '') if (allowedSet.has(h)) return true;
+    return false;
+  };
+  const effectiveBlockedDomains = normalizedBlocked
+    .filter((d) => Boolean(d) && !CRITICAL_INFRA_ALLOWLIST.has(d) && !isAllowed(d))
+    .slice(0, HOSTS_MAX_DOMAINS);
+
+  return {
+    effectiveBlockedDomains,
+    effectiveAllowlistDomains: allAllowed,
+  };
 }
 
 export class MacOSPlatformEnforcer implements PlatformEnforcer {
@@ -313,65 +382,14 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
   }
 
   private normalizeDomainList(entries: string[]): string[] {
-    const result: string[] = [];
-    for (const raw of entries) {
-      if (typeof raw !== 'string' || /[\r\n]/.test(raw)) continue;
-      const parsed = sanitizeAndNormalizeUrl(raw);
-      if (parsed?.domain) {
-        result.push(parsed.domain.toLowerCase().replace(/^www\./, ''));
-      }
-    }
-    return Array.from(new Set(result));
+    return normalizeDomainList(entries);
   }
 
-  /**
-   * Consolida todos os domínios bloqueados (categorias ativas + customizados),
-   * respeitando a precedência da `allowlistDomains`, `activeGrants` e `CRITICAL_INFRA_ALLOWLIST`.
-   */
   private resolveEffectiveBlockedDomains(
     rules: ProtectionRuleset,
     activeGrants: Array<{ target: string; expiresAtMs: number }> = []
   ): { effectiveBlockedDomains: string[]; effectiveAllowlistDomains: string[] } {
-    const normalizedAllowlist = this.normalizeDomainList(rules.allowlistDomains);
-    const hasWildcardGrant = activeGrants.some(
-      (g) => g.target.trim() === '*' && g.expiresAtMs > 0
-    );
-    if (hasWildcardGrant) {
-      return {
-        effectiveBlockedDomains: [],
-        effectiveAllowlistDomains: normalizedAllowlist,
-      };
-    }
-
-    const grantDomains = this.normalizeDomainList(
-      activeGrants
-        .filter((g) => g.target.trim() !== '*' && g.expiresAtMs > 0)
-        .map((g) => g.target)
-    );
-    const allAllowed = Array.from(new Set([...normalizedAllowlist, ...grantDomains]));
-
-    const categoryDomains = rules.enabledCategories.flatMap(
-      (catId) => PREDEFINED_CATEGORIES.find((c) => c.id === catId)?.domains ?? []
-    );
-    // Domínios do usuário primeiro: o corte por teto (RN-WEB-09) só atinge o fim das categorias.
-    const normalizedBlocked = this.normalizeDomainList([
-      ...rules.blockedDomains,
-      ...categoryDomains,
-    ]);
-
-    const allowedSet = new Set(allAllowed);
-    const isAllowed = (d: string): boolean => {
-      for (let h = d; h; h = h.includes('.') ? h.slice(h.indexOf('.') + 1) : '') if (allowedSet.has(h)) return true;
-      return false;
-    };
-    const effectiveBlockedDomains = normalizedBlocked
-      .filter((d) => Boolean(d) && !CRITICAL_INFRA_ALLOWLIST.has(d) && !isAllowed(d))
-      .slice(0, HOSTS_MAX_DOMAINS);
-
-    return {
-      effectiveBlockedDomains,
-      effectiveAllowlistDomains: allAllowed,
-    };
+    return resolveEffectiveBlockedDomains(rules, activeGrants);
   }
 
   /**

@@ -1,0 +1,27 @@
+[Unit]
+Description=monBlock Protection Daemon
+Documentation=https://github.com/mat-dgruber/monBlock
+After=network.target systemd-resolved.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+Group=monblock
+ExecStart=/usr/libexec/monblock/monblockd
+Restart=always
+RestartSec=5s
+RuntimeDirectory=monblock
+RuntimeDirectoryMode=0750
+StateDirectory=monblock
+ConfigurationDirectory=monblock
+StandardOutput=journal
+StandardError=journal
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE CAP_LINUX_IMMUTABLE
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE CAP_LINUX_IMMUTABLE
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/etc/hosts /etc/opt /etc/chromium /etc/brave /etc/firefox /etc/monblock /var/lib/monblock /run/monblock
+
+[Install]
+WantedBy=multi-user.target

@@ -92,8 +92,8 @@ describe('resolveLayout por plataforma (ADR-0013)', () => {
     expect(layout.runDir).toBe('/run/monblock');
     expect(layout.socketPath).toBe('/run/monblock/monblockd.sock');
     expect(layout.hostsPath).toBe('/etc/hosts');
-    expect(layout.chromiumPlistPaths).toEqual([]);
-    expect(layout.firefoxPlistPath).toBe('');
+    expect(layout.chromiumPlistPaths.length).toBe(5);
+    expect(layout.firefoxPlistPath).toBe('/etc/firefox/policies/policies.json');
   });
 
   it('retorna layout Windows com Named Pipe e %ProgramData%', () => {

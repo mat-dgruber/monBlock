@@ -61,8 +61,14 @@ export function resolveLayout(
       runDir,
       socketPath: path.join(runDir, 'monblockd.sock'),
       hostsPath: r('etc/hosts'),
-      chromiumPlistPaths: [],
-      firefoxPlistPath: '',
+      chromiumPlistPaths: [
+        r('etc/opt/chrome/policies/managed/monblock.json'),
+        r('etc/chromium/policies/managed/monblock.json'),
+        r('etc/brave/policies/managed/monblock.json'),
+        r('etc/opt/edge/policies/managed/monblock.json'),
+        r('etc/vivaldi/policies/managed/monblock.json'),
+      ],
+      firefoxPlistPath: r('etc/firefox/policies/policies.json'),
     };
   }
 
