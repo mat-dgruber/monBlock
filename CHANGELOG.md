@@ -5,6 +5,8 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+
+## [0.9.0] - 2026-11-18
 ### Adicionado
 - Fundação Arquitetural Multiplataforma ([ADR-0013](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0013-fundacao-arquitetural-multiplataforma-linux-windows.md)): fábrica abstrata `createPlatformEnforcer(platform, options)` desacoplando o daemon de particularidades de SO, layout de caminhos de sistema agnóstico (`resolveLayout` para `darwin`, `linux` e `win32`), e suporte a canais IPC via Unix Domain Socket (`0750`, grupo `monblock`) e Windows Named Pipe (`\\.\pipe\monblockd`).
 - Imposição Nativa de Sistema e Políticas no Linux ([ADR-0014](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0014-politicas-corporativas-e-imposicao-no-linux.md)):

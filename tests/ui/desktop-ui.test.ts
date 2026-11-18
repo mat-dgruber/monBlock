@@ -387,7 +387,7 @@ describe('MOD-04: Interface Desktop CCAT & Conformidade WCAG 2.2 AAA / Zero-Roxo
     expect(html).toContain('id="themeSelect"');
     expect(html).toContain('id="appVersionInfo"');
     expect(html).toContain('id="appVersionValue"');
-    expect(html).toContain('v0.8.1');
+    expect(html).toContain('v0.9.0');
     expect(html).toContain('id="openPrivacyBtn"');
     expect(html).toContain('id="openTermsBtn"');
     expect(html).toContain('id="legalDialog"');
