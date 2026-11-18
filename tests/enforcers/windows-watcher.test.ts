@@ -168,7 +168,7 @@ describe('WindowsBrowserTabAdapter: Inspeção Win32/PowerShell', () => {
     expect(tab).toBeNull();
   });
 
-  it('redireciona executando cmd.exe start com a URL de bloqueio', async () => {
+  it('redireciona executando cmd.exe start com a URL de bloqueio entre aspas (proteção contra & e meta-chars)', async () => {
     const executed: string[] = [];
     const execFn = async (cmd: string, args: string[]) => {
       executed.push(`${cmd} ${args.join(' ')}`);
@@ -176,10 +176,10 @@ describe('WindowsBrowserTabAdapter: Inspeção Win32/PowerShell', () => {
     };
 
     const adapter = new WindowsBrowserTabAdapter({ execFn });
-    const success = await adapter.redirectActiveTab('chrome.exe', 'http://127.0.0.1:49152/blocked?domain=test.com');
+    const success = await adapter.redirectActiveTab('chrome.exe', 'http://127.0.0.1:49152/blocked?domain=test.com&reason=gambling');
 
     expect(success).toBe(true);
-    expect(executed).toContain('cmd.exe /c start "" http://127.0.0.1:49152/blocked?domain=test.com');
+    expect(executed).toContain('cmd.exe /c start "" "http://127.0.0.1:49152/blocked?domain=test.com&reason=gambling"');
   });
 
   it('rejeita redirecionamento para URLs que não sejam 127.0.0.1:49152/blocked', async () => {

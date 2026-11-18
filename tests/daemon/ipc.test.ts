@@ -3,7 +3,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createIpcServer, type IpcServer } from '../../src/daemon/ipc-server.js';
+import { createIpcServer, isWindowsNamedPipe, type IpcServer } from '../../src/daemon/ipc-server.js';
 import { DaemonClient } from '../../src/main/daemon-client.js';
 import type { DaemonCommand, DaemonResponse } from '../../src/daemon/monblockd.js';
 
@@ -192,5 +192,11 @@ describe('DaemonClient', () => {
     await waitFor(() => client.status === 'online');
 
     await expect(client.call({ type: 'GET_STATE' })).rejects.toThrow(/timeout/i);
+  });
+
+  it('reconhece Named Pipes do Windows e evita operações em filesystem (fs.lstat/chmod)', () => {
+    expect(isWindowsNamedPipe('\\\\.\\pipe\\monblockd')).toBe(true);
+    expect(isWindowsNamedPipe('/var/run/monblock/monblockd.sock')).toBe(false);
+    expect(isWindowsNamedPipe('/tmp/test.sock')).toBe(false);
   });
 });

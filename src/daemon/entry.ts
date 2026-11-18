@@ -88,20 +88,35 @@ export function resolveLayout(
 function ensureDir(dir: string, mode: number, isRoot: boolean, gid = 0): void {
   fs.mkdirSync(dir, { recursive: true, mode });
   if (fs.lstatSync(dir).isSymbolicLink()) throw new Error(`Diretório do daemon é link simbólico: ${dir}`);
-  if (isRoot) fs.chownSync(dir, 0, gid);
-  fs.chmodSync(dir, mode);
+  if (isRoot && process.platform !== 'win32') fs.chownSync(dir, 0, gid);
+  if (process.platform !== 'win32') fs.chmodSync(dir, mode);
 }
 
-/** GID do grupo `monblock` (criado pelo postinstall). Ausente → socket fica só para root (Fail-Closed). */
-function lookupMonblockGid(): number | undefined {
-  if (process.platform !== 'darwin') return undefined;
-  try {
-    const out = execFileSync('/usr/bin/dscl', ['.', '-read', '/Groups/monblock', 'PrimaryGroupID'], { encoding: 'utf8' });
-    const gid = Number(out.match(/PrimaryGroupID:\s*(\d+)/)?.[1]);
-    return Number.isInteger(gid) ? gid : undefined;
-  } catch {
-    return undefined;
+/** GID do grupo `monblock` (criado pelo postinstall/postinst). Ausente → socket fica só para root (Fail-Closed). */
+export function lookupMonblockGid(
+  platform: NodeJS.Platform = process.platform,
+  execFn: (file: string, args: string[], options: { encoding: 'utf8' }) => string = execFileSync
+): number | undefined {
+  if (platform === 'darwin') {
+    try {
+      const out = execFn('/usr/bin/dscl', ['.', '-read', '/Groups/monblock', 'PrimaryGroupID'], { encoding: 'utf8' });
+      const gid = Number(out.match(/PrimaryGroupID:\s*(\d+)/)?.[1]);
+      return Number.isInteger(gid) ? gid : undefined;
+    } catch {
+      return undefined;
+    }
   }
+  if (platform === 'linux') {
+    try {
+      const out = execFn('getent', ['group', 'monblock'], { encoding: 'utf8' });
+      const parts = out.trim().split(':');
+      const gid = Number(parts[2]);
+      return Number.isInteger(gid) ? gid : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 /** Chave dos cofres: 32 bytes aleatórios, `root 0600`. Nunca sai do daemon (spec §7). */

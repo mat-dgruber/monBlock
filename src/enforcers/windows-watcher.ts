@@ -132,11 +132,13 @@ export class WindowsBrowserTabAdapter implements BrowserTabAdapter {
     if (!SUPPORTED_WINDOWS_BROWSERS.includes(browser as SupportedWindowsBrowser)) {
       return false;
     }
-    if (!targetUrl.startsWith('http://127.0.0.1:49152/blocked')) {
+    const cleanUrl = targetUrl.replace(/^"|"$/g, '');
+    if (!cleanUrl.startsWith('http://127.0.0.1:49152/blocked')) {
       throw new Error('URL de redirecionamento inválida: permitido apenas 127.0.0.1:49152/blocked.');
     }
     try {
-      await this.execFn('cmd.exe', ['/c', 'start', '""', targetUrl]);
+      const quotedUrl = `"${cleanUrl}"`;
+      await this.execFn('cmd.exe', ['/c', 'start', '""', quotedUrl]);
       return true;
     } catch (err) {
       console.error(

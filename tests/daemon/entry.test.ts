@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveLayout, startDaemon, type RunningDaemon } from '../../src/daemon/entry.js';
+import { lookupMonblockGid, resolveLayout, startDaemon, type RunningDaemon } from '../../src/daemon/entry.js';
 import { DaemonClient } from '../../src/main/daemon-client.js';
 
 const base = os.tmpdir().length > 40 ? '/tmp' : os.tmpdir(); // sun_path ≤ 104 bytes
@@ -103,5 +103,28 @@ describe('resolveLayout por plataforma (ADR-0013)', () => {
     expect(layout.runDir).toBe('/ProgramData/monBlock/run');
     expect(layout.socketPath).toBe('\\\\.\\pipe\\monblockd');
     expect(layout.hostsPath).toBe('/Windows/System32/drivers/etc/hosts');
+  });
+});
+
+describe('lookupMonblockGid (Multiplataforma)', () => {
+  it('retorna GID no macOS a partir do dscl', () => {
+    const mockExec = () => 'PrimaryGroupID: 501\n';
+    const gid = lookupMonblockGid('darwin', mockExec);
+    expect(gid).toBe(501);
+  });
+
+  it('retorna GID no Linux a partir de getent group', () => {
+    const mockExec = () => 'monblock:x:1002:user1\n';
+    const gid = lookupMonblockGid('linux', mockExec);
+    expect(gid).toBe(1002);
+  });
+
+  it('retorna undefined em caso de falha ou plataforma win32', () => {
+    const mockExecFail = () => {
+      throw new Error('Command failed');
+    };
+    expect(lookupMonblockGid('darwin', mockExecFail)).toBeUndefined();
+    expect(lookupMonblockGid('linux', mockExecFail)).toBeUndefined();
+    expect(lookupMonblockGid('win32')).toBeUndefined();
   });
 });
