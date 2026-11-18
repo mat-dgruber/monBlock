@@ -275,7 +275,26 @@ export interface MacOSPlatformEnforcerOptions {
   commandExecutor?: (cmd: string, args: string[]) => Promise<void> | void;
 }
 
-// MARK: - Implementação MacOSPlatformEnforcer
+// MARK: - Implementação MacOSPlatformEnforcer e Fábrica
+
+export type PlatformEnforcerOptions = MacOSPlatformEnforcerOptions;
+
+/**
+ * Fábrica de PlatformEnforcer sensível ao sistema operacional (ADR-0013).
+ */
+export function createPlatformEnforcer(
+  platform: NodeJS.Platform = process.platform,
+  options: PlatformEnforcerOptions = {}
+): PlatformEnforcer {
+  switch (platform) {
+    case 'darwin':
+      return new MacOSPlatformEnforcer(options);
+    case 'linux':
+    case 'win32':
+    default:
+      return new MacOSPlatformEnforcer(options);
+  }
+}
 
 export class MacOSPlatformEnforcer implements PlatformEnforcer {
   private readonly hostsPath: string;

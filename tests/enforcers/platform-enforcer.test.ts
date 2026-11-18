@@ -12,6 +12,7 @@ import {
   CHROMIUM_BUNDLE_IDS,
   MacOSPlatformEnforcer,
   checkBrowserProfileInstalled,
+  createPlatformEnforcer,
   defaultCommandExecutor,
   generateBrowserMobileconfig,
   generateChromiumAndSafariPlist,
@@ -439,5 +440,24 @@ describe('hosts: rollback e trava', () => {
     await enforcer.applyWebRules(rules).catch(() => undefined);
     await enforcer.applyWebRules(rules).catch(() => undefined);
     expect(cmds).toContain('chflags uchg');
+  });
+});
+
+describe('createPlatformEnforcer: Fábrica agnóstica de SO (ADR-0013)', () => {
+  it('instancia MacOSPlatformEnforcer para plataforma darwin', () => {
+    const enforcer = createPlatformEnforcer('darwin', { hostsPath: '/tmp/test-hosts' });
+    expect(enforcer).toBeInstanceOf(MacOSPlatformEnforcer);
+  });
+
+  it('instancia implementação padrão compatível para linux e win32', () => {
+    const linuxEnforcer = createPlatformEnforcer('linux', { hostsPath: '/tmp/test-hosts' });
+    expect(linuxEnforcer).toBeDefined();
+    expect(typeof linuxEnforcer.applyWebRules).toBe('function');
+    expect(typeof linuxEnforcer.verifyApplied).toBe('function');
+
+    const winEnforcer = createPlatformEnforcer('win32', { hostsPath: '/tmp/test-hosts' });
+    expect(winEnforcer).toBeDefined();
+    expect(typeof winEnforcer.applyWebRules).toBe('function');
+    expect(typeof winEnforcer.verifyApplied).toBe('function');
   });
 });

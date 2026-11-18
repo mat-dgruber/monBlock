@@ -15,7 +15,11 @@ import { fileURLToPath } from 'node:url';
 import { createIpcServer, type IpcServer } from './ipc-server.js';
 import { MonBlockDaemon } from './monblockd.js';
 import { TrustedClock } from './trusted-clock.js';
-import { CHROMIUM_BUNDLE_IDS, MacOSPlatformEnforcer, checkBrowserProfileInstalled } from '../enforcers/platform-enforcer.js';
+import {
+  CHROMIUM_BUNDLE_IDS,
+  checkBrowserProfileInstalled,
+  createPlatformEnforcer,
+} from '../enforcers/platform-enforcer.js';
 import { createMonBlockHttpServer, UnblockRequestError } from '../server/block-server.js';
 import { TripleStateStore } from '../storage/state-store.js';
 import { maskBotToken } from './telegram-client.js';
@@ -30,9 +34,38 @@ export interface DaemonLayout {
   firefoxPlistPath: string;
 }
 
-/** Layout da spec §4.1. `rootDir` só em desenvolvimento/CI. */
-export function resolveLayout(rootDir = '/'): DaemonLayout {
+/** Layout de diretórios e arquivos por SO (ADR-0007 / ADR-0013). `rootDir` só em desenvolvimento/CI. */
+export function resolveLayout(
+  rootDir = '/',
+  platform: NodeJS.Platform = process.platform
+): DaemonLayout {
   const r = (p: string) => path.join(rootDir, p);
+  if (platform === 'win32') {
+    const runDir = r('ProgramData/monBlock/run');
+    return {
+      appSupportDir: r('ProgramData/monBlock'),
+      dbDir: r('ProgramData/monBlock/db'),
+      runDir,
+      socketPath: '\\\\.\\pipe\\monblockd',
+      hostsPath: r('Windows/System32/drivers/etc/hosts'),
+      chromiumPlistPaths: [],
+      firefoxPlistPath: '',
+    };
+  }
+
+  if (platform === 'linux') {
+    const runDir = r('run/monblock');
+    return {
+      appSupportDir: r('etc/monblock'),
+      dbDir: r('var/lib/monblock'),
+      runDir,
+      socketPath: path.join(runDir, 'monblockd.sock'),
+      hostsPath: r('etc/hosts'),
+      chromiumPlistPaths: [],
+      firefoxPlistPath: '',
+    };
+  }
+
   const runDir = r('var/run/monblock');
   return {
     appSupportDir: r('Library/Application Support/monBlock'),
@@ -55,6 +88,7 @@ function ensureDir(dir: string, mode: number, isRoot: boolean, gid = 0): void {
 
 /** GID do grupo `monblock` (criado pelo postinstall). Ausente → socket fica só para root (Fail-Closed). */
 function lookupMonblockGid(): number | undefined {
+  if (process.platform !== 'darwin') return undefined;
   try {
     const out = execFileSync('/usr/bin/dscl', ['.', '-read', '/Groups/monblock', 'PrimaryGroupID'], { encoding: 'utf8' });
     const gid = Number(out.match(/PrimaryGroupID:\s*(\d+)/)?.[1]);
@@ -129,7 +163,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
     tombstonePath: path.join(layout.dbDir, 'tombstone'),
     integrityKey: loadOrCreateRootVaultKey(path.join(layout.appSupportDir, 'vault.key')),
   });
-  const enforcer = new MacOSPlatformEnforcer({
+  const enforcer = createPlatformEnforcer(process.platform, {
     hostsPath: layout.hostsPath,
     chromiumPlistPaths: layout.chromiumPlistPaths,
     firefoxPlistPath: layout.firefoxPlistPath,

@@ -20,8 +20,13 @@ import { migrateLegacyVaults, readUserVaultKey } from './legacy-migration.js';
 import { AppNotificationManager } from './notifications.js';
 import { checkForAppUpdates, downloadAppUpdatePkg } from './updater.js';
 
-/** Socket do `monblockd` root (ADR-0007). Override só em build não empacotado (dev/CI). */
-export const DAEMON_SOCKET_PATH = '/var/run/monblock/monblockd.sock';
+/** Socket do `monblockd` root por SO (ADR-0007, ADR-0013). Override só em build não empacotado (dev/CI). */
+export const DAEMON_SOCKET_PATH =
+  process.platform === 'win32'
+    ? '\\\\.\\pipe\\monblockd'
+    : process.platform === 'linux'
+      ? '/run/monblock/monblockd.sock'
+      : '/var/run/monblock/monblockd.sock';
 /** Perfil gerado pelo `build-pkg.sh` e instalado pelo `.pkg` (`HELPER_DIR` do daemon). */
 const BROWSER_PROFILE_PATH = '/Library/PrivilegedHelperTools/com.ccat.monblockd/monblock-browsers.mobileconfig';
 /** Ajustes > Geral > Gerenciamento de Dispositivos (spike 2026-11-06, macOS 27). */

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { startDaemon, type RunningDaemon } from '../../src/daemon/entry.js';
+import { resolveLayout, startDaemon, type RunningDaemon } from '../../src/daemon/entry.js';
 import { DaemonClient } from '../../src/main/daemon-client.js';
 
 const base = os.tmpdir().length > 40 ? '/tmp' : os.tmpdir(); // sun_path ≤ 104 bytes
@@ -71,5 +71,37 @@ describe('entry do monblockd (modo dev, sem root)', () => {
     expect(sameKey).toBe(true);
     expect(res.status === 200 && 'state' in res && res.state.tamperLockdown).toBeFalsy();
     await expect(startDaemon({ rootDir: root, isRoot: false, blockServerPort: null })).rejects.toThrow(/simbólico/);
+  });
+});
+
+describe('resolveLayout por plataforma (ADR-0013)', () => {
+  it('retorna layout macOS com caminhos padrão darwin', () => {
+    const layout = resolveLayout('/', 'darwin');
+    expect(layout.appSupportDir).toBe('/Library/Application Support/monBlock');
+    expect(layout.dbDir).toBe('/var/db/monblock');
+    expect(layout.runDir).toBe('/var/run/monblock');
+    expect(layout.socketPath).toBe('/var/run/monblock/monblockd.sock');
+    expect(layout.hostsPath).toBe('/etc/hosts');
+    expect(layout.chromiumPlistPaths.length).toBeGreaterThan(0);
+  });
+
+  it('retorna layout Linux com FHS padrão', () => {
+    const layout = resolveLayout('/', 'linux');
+    expect(layout.appSupportDir).toBe('/etc/monblock');
+    expect(layout.dbDir).toBe('/var/lib/monblock');
+    expect(layout.runDir).toBe('/run/monblock');
+    expect(layout.socketPath).toBe('/run/monblock/monblockd.sock');
+    expect(layout.hostsPath).toBe('/etc/hosts');
+    expect(layout.chromiumPlistPaths).toEqual([]);
+    expect(layout.firefoxPlistPath).toBe('');
+  });
+
+  it('retorna layout Windows com Named Pipe e %ProgramData%', () => {
+    const layout = resolveLayout('/', 'win32');
+    expect(layout.appSupportDir).toBe('/ProgramData/monBlock');
+    expect(layout.dbDir).toBe('/ProgramData/monBlock/db');
+    expect(layout.runDir).toBe('/ProgramData/monBlock/run');
+    expect(layout.socketPath).toBe('\\\\.\\pipe\\monblockd');
+    expect(layout.hostsPath).toBe('/Windows/System32/drivers/etc/hosts');
   });
 });
