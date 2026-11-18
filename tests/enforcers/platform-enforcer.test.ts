@@ -10,7 +10,9 @@ import { buildBrowserPolicies } from '../../src/enforcers/browser-policy-enforce
 import { execFileSync } from 'node:child_process';
 import {
   CHROMIUM_BUNDLE_IDS,
+  LinuxPlatformEnforcer,
   MacOSPlatformEnforcer,
+  WindowsPlatformEnforcer,
   checkBrowserProfileInstalled,
   createPlatformEnforcer,
   defaultCommandExecutor,
@@ -451,12 +453,12 @@ describe('createPlatformEnforcer: Fábrica agnóstica de SO (ADR-0013)', () => {
 
   it('instancia implementação padrão compatível para linux e win32', () => {
     const linuxEnforcer = createPlatformEnforcer('linux', { hostsPath: '/tmp/test-hosts' });
-    expect(linuxEnforcer).toBeDefined();
+    expect(linuxEnforcer).toBeInstanceOf(LinuxPlatformEnforcer);
     expect(typeof linuxEnforcer.applyWebRules).toBe('function');
     expect(typeof linuxEnforcer.verifyApplied).toBe('function');
 
     const winEnforcer = createPlatformEnforcer('win32', { hostsPath: '/tmp/test-hosts' });
-    expect(winEnforcer).toBeDefined();
+    expect(winEnforcer).toBeInstanceOf(WindowsPlatformEnforcer);
     expect(typeof winEnforcer.applyWebRules).toBe('function');
     expect(typeof winEnforcer.verifyApplied).toBe('function');
   });

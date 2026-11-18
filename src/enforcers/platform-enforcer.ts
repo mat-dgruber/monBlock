@@ -30,8 +30,17 @@ import {
   LinuxPlatformEnforcer,
   type LinuxPlatformEnforcerOptions,
 } from './linux-platform-enforcer.js';
+import {
+  WindowsPlatformEnforcer,
+  type WindowsPlatformEnforcerOptions,
+} from './windows-platform-enforcer.js';
 
-export { LinuxPlatformEnforcer, type LinuxPlatformEnforcerOptions };
+export {
+  LinuxPlatformEnforcer,
+  type LinuxPlatformEnforcerOptions,
+  WindowsPlatformEnforcer,
+  type WindowsPlatformEnforcerOptions,
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -283,10 +292,12 @@ export interface MacOSPlatformEnforcerOptions {
 
 // MARK: - Implementação MacOSPlatformEnforcer e Fábrica
 
-export type PlatformEnforcerOptions = MacOSPlatformEnforcerOptions & LinuxPlatformEnforcerOptions;
+export type PlatformEnforcerOptions = MacOSPlatformEnforcerOptions &
+  LinuxPlatformEnforcerOptions &
+  WindowsPlatformEnforcerOptions;
 
 /**
- * Fábrica de PlatformEnforcer sensível ao sistema operacional (ADR-0013, ADR-0014).
+ * Fábrica de PlatformEnforcer sensível ao sistema operacional (ADR-0013, ADR-0014, ADR-0015).
  */
 export function createPlatformEnforcer(
   platform: NodeJS.Platform = process.platform,
@@ -298,6 +309,7 @@ export function createPlatformEnforcer(
     case 'linux':
       return new LinuxPlatformEnforcer(options);
     case 'win32':
+      return new WindowsPlatformEnforcer(options);
     default:
       return new MacOSPlatformEnforcer(options);
   }
