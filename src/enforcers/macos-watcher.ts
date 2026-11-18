@@ -28,6 +28,7 @@ export const SUPPORTED_MACOS_BROWSERS = [
   'Arc',
   'Microsoft Edge',
   'Dia',
+  'Facet',
   'Vivaldi',
   'Opera',
   'Chromium',
@@ -98,6 +99,25 @@ on run argv
       set tabTitle to title of active tab of front window
       return frontApp & "\\n" & tabUrl & "\\n" & tabTitle
     end tell
+  else if frontApp is "Facet" then
+    tell application "System Events"
+      tell process "Facet"
+        if (count of windows) is 0 then return ""
+        set tabTitle to name of front window
+        set tabUrl to ""
+        repeat with g in (every UI element of front window whose role is "AXGroup")
+          try
+            set tf to (first UI element of g whose role is "AXTextField")
+            set tabUrl to value of tf
+            if tabUrl is not missing value and tabUrl is not "" then exit repeat
+          end try
+        end repeat
+        if tabUrl is missing value or tabUrl is "" then
+          set tabUrl to "https://facet.active.tab"
+        end if
+        return frontApp & "\\n" & tabUrl & "\\n" & tabTitle
+      end tell
+    end tell
   else if frontApp is "Firefox" then
     tell application "System Events"
       tell process "Firefox"
@@ -134,6 +154,8 @@ on run argv
         set URL of active tab of front window to safeRedirectUrl
       end if
     end tell
+  else if browserName is "Facet" then
+    do shell script "/usr/bin/open -b app.panes.browser " & quoted form of safeRedirectUrl
   else if browserName is "Firefox" then
     open location safeRedirectUrl
   end if

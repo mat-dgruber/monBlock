@@ -5,6 +5,9 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+### Adicionado
+- Suporte ao navegador Facet (`app.panes.browser`): monitoramento de abas ativas e detecção de palavras-chave/URLs via System Events e redirecionamento direcionado para a página de bloqueio via `/usr/bin/open -b app.panes.browser`.
+
 ## [0.8.1] - 2026-11-07
 ### Corrigido
 - App preso em "Conferindo proteção...": o botão "Bloquear de novo" (0.8.0) usava uma variável fora de escopo e o script da interface falhava ao iniciar. Novo teste executa o script do renderer e falha se ele lançar erro na inicialização.

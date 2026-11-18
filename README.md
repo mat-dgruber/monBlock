@@ -66,7 +66,7 @@ Os pacotes oficiais de distribuição são compilados e assinados automaticament
 
 - **Sistema Operacional:** macOS 13.0 (Ventura), macOS 14.0 (Sonoma) ou macOS 15.0 (Sequoia).
 - **Processador:** Binário Universal nativo para **Apple Silicon** (`arm64` - M1/M2/M3/M4) e **Intel** (`x86_64`).
-- **Navegadores Suportados:** Safari, Google Chrome (incluindo Beta e Canary), Brave, Arc, Dia, Microsoft Edge, Vivaldi, Opera, Chromium e Mozilla Firefox. O perfil de políticas cobre os navegadores Chromium (Chrome, Brave, Edge, Vivaldi, Opera, Chromium, Chrome Beta/Canary) e o Firefox; o vigia de abas (palavras-chave e redirecionamento) cobre os que têm AppleScript (Safari, Chromium e derivados, Arc, Dia), com leitura limitada no Firefox.
+- **Navegadores Suportados:** Safari, Google Chrome (incluindo Beta e Canary), Brave, Arc, Dia, Facet, Microsoft Edge, Vivaldi, Opera, Chromium e Mozilla Firefox. O perfil de políticas cobre os navegadores Chromium (Chrome, Brave, Edge, Vivaldi, Opera, Chromium, Chrome Beta/Canary) e o Firefox; o vigia de abas (palavras-chave e redirecionamento) cobre os navegadores suportados com automação e acessibilidade (Safari, Chromium e derivados, Arc, Dia, Facet), com leitura limitada no Firefox.
 
 ---
 
