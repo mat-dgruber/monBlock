@@ -214,7 +214,7 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   } catch (err) {
     throw new Error(`Falha ao abrir o socket ${layout.socketPath}: ${(err as Error).message}`);
   }
-  if (isRoot) fs.chownSync(layout.socketPath, 0, gid ?? 0);
+  if (isRoot && process.platform !== 'win32') fs.chownSync(layout.socketPath, 0, gid ?? 0);
 
   const blockServer =
     options.blockServerPort === null

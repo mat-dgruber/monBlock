@@ -137,7 +137,8 @@ export class WindowsBrowserTabAdapter implements BrowserTabAdapter {
       throw new Error('URL de redirecionamento inválida: permitido apenas 127.0.0.1:49152/blocked.');
     }
     try {
-      const quotedUrl = `"${cleanUrl}"`;
+      const safeUrl = cleanUrl.replace(/"/g, '%22');
+      const quotedUrl = `"${safeUrl}"`;
       await this.execFn('cmd.exe', ['/c', 'start', '""', quotedUrl]);
       return true;
     } catch (err) {
