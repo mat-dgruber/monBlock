@@ -319,4 +319,73 @@ describe('MOD-01: scripts AppleScript cobrem os navegadores Chromium adicionados
     expect(all).toContain('tell process "Facet"');
     expect(all).toContain('open -b app.panes.browser');
   });
+
+  it('deve descartar chamadas concorrentes no MacOSBrowserWatcher para evitar sobreposição de inspeções', async () => {
+    // Arrange
+    let resolveActiveTab: ((snapshot: ActiveTabSnapshot) => void) | null = null;
+    const slowAdapter: BrowserTabAdapter = {
+      getActiveTab: vi.fn(
+        () =>
+          new Promise<ActiveTabSnapshot>((resolve) => {
+            resolveActiveTab = resolve;
+          })
+      ),
+      redirectActiveTab: vi.fn(async () => true),
+    };
+    const watcher = new MacOSBrowserWatcher({
+      adapter: slowAdapter,
+      getRules: () => createBaseRules(),
+    });
+
+    // Act: inicia uma inspeção que fica em voo
+    const p1 = watcher.inspectOnce(1000);
+    // Dispara uma segunda inspeção imediatamente enquanto a primeira ainda está aguardando
+    const p2 = watcher.inspectOnce(1001);
+
+    const result2 = await p2;
+    expect(result2.blocked).toBe(false);
+    expect(result2.debounced).toBe(true);
+
+    // Resolve a primeira inspeção
+    if (resolveActiveTab) {
+      (resolveActiveTab as (snapshot: ActiveTabSnapshot) => void)({
+        browser: 'Safari',
+        url: 'https://exemplo-limpo.com.br',
+        title: 'Portal Limpo',
+      });
+    }
+    const result1 = await p1;
+    expect(result1.blocked).toBe(false);
+  });
+
+  it('deve retornar null em chamadas concorrentes no OsascriptBrowserTabAdapter', async () => {
+    const { OsascriptBrowserTabAdapter } = await import('../../src/enforcers/macos-watcher.js');
+    let resolveExec: ((val: { stdout: string; stderr: string }) => void) | null = null;
+    const slowExec = vi.fn(
+      () =>
+        new Promise<{ stdout: string; stderr: string }>((resolve) => {
+          resolveExec = resolve;
+        })
+    );
+    const adapter = new OsascriptBrowserTabAdapter(1500, slowExec);
+
+    const p1 = adapter.getActiveTab();
+    const p2 = adapter.getActiveTab();
+
+    const result2 = await p2;
+    expect(result2).toBeNull();
+
+    if (resolveExec) {
+      (resolveExec as (val: { stdout: string; stderr: string }) => void)({
+        stdout: 'Safari\nhttps://site.com\nTítulo\n',
+        stderr: '',
+      });
+    }
+    const result1 = await p1;
+    expect(result1).toEqual({
+      browser: 'Safari',
+      url: 'https://site.com',
+      title: 'Título',
+    });
+  });
 });

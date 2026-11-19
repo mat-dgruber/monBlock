@@ -168,6 +168,23 @@ function sanitizeBenignTitleContexts(rawTitle: string): string {
 }
 
 const KEYWORD_REGEX_CACHE = new Map<string, RegExp>();
+const PARSED_KEYWORDS_CACHE = new Map<string, string[]>();
+
+/**
+ * Retorna os termos higienizados de uma regra de palavra-chave (simples ou separada por vírgula),
+ * mantendo cache para evitar splits e alocações repetidas a cada avaliação de aba.
+ */
+function getParsedKeywordTerms(rawKw: string): string[] {
+  let terms = PARSED_KEYWORDS_CACHE.get(rawKw);
+  if (!terms) {
+    terms = rawKw
+      .split(',')
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+    PARSED_KEYWORDS_CACHE.set(rawKw, terms);
+  }
+  return terms;
+}
 
 /**
  * Verifica se um termo de palavra-chave casa por fronteira de palavra inteira Unicode (\p{L}\p{N}),
@@ -176,6 +193,10 @@ const KEYWORD_REGEX_CACHE = new Map<string, RegExp>();
  * "sexta-feira", "unissex", "análise", "canal", "assunto" ou "documento" (RN-WEB-07).
  */
 function matchesKeywordWholeWord(haystack: string, term: string): boolean {
+  // Fast-path: se o termo sequer existe na string (busca nativa O(N)), descarta sem avaliar Regex Unicode
+  if (!haystack.includes(term)) {
+    return false;
+  }
   let pattern = KEYWORD_REGEX_CACHE.get(term);
   if (!pattern) {
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -235,10 +256,7 @@ export function evaluateUrlAndTitle(input: {
     const allKeywords = [...activeCategoryKeywords, ...input.state.keywords];
 
     for (const rawKw of allKeywords) {
-      const terms = rawKw
-        .split(',')
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean);
+      const terms = getParsedKeywordTerms(rawKw);
       if (terms.length > 0 && terms.every((term) => matchesKeywordWholeWord(haystack, term))) {
         return {
           blocked: true,
@@ -309,10 +327,7 @@ export function evaluateUrlAndTitle(input: {
   const allKeywords = [...activeCategoryKeywords, ...input.state.keywords];
 
   for (const rawKw of allKeywords) {
-    const terms = rawKw
-      .split(',')
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
+    const terms = getParsedKeywordTerms(rawKw);
     if (terms.length > 0 && terms.every((term) => matchesKeywordWholeWord(haystack, term))) {
       return {
         blocked: true,

@@ -313,63 +313,71 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     mainWindow.webContents.send('monblock:tray-navigate', viewId);
   };
 
+  let isRefreshingTray = false;
   const refreshTrayMenu = async (): Promise<void> => {
-    if (!tray) return;
-    const stateRes = await call({ type: 'GET_STATE' });
-    const pubState = 'state' in stateRes ? (stateRes.state as any) : null;
-    const hasMenuSymbol = typeof (nativeImage as any).createMenuSymbol === 'function';
+    if (!tray || isRefreshingTray) return;
+    isRefreshingTray = true;
+    try {
+      const stateRes = await call({ type: 'GET_STATE' });
+      const pubState = 'state' in stateRes ? (stateRes.state as any) : null;
+      const hasMenuSymbol = typeof (nativeImage as any).createMenuSymbol === 'function';
 
-    let temporaryUnlockRemainingFormatted: string | null = null;
-    if (pubState?.temporaryGrants && Array.isArray(pubState.temporaryGrants) && pubState.temporaryGrants.length > 0) {
-      const now = Date.now();
-      const activeGrants = pubState.temporaryGrants.filter((g: any) => g.expiresAtMs > now);
-      if (activeGrants.length > 0) {
-        const maxExpiry = Math.max(...activeGrants.map((g: any) => g.expiresAtMs));
-        const remainingSeconds = Math.max(0, Math.ceil((maxExpiry - now) / 1000));
-        const mins = Math.floor(remainingSeconds / 60);
-        const secs = remainingSeconds % 60;
-        temporaryUnlockRemainingFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      let temporaryUnlockRemainingFormatted: string | null = null;
+      if (pubState?.temporaryGrants && Array.isArray(pubState.temporaryGrants) && pubState.temporaryGrants.length > 0) {
+        const now = Date.now();
+        const activeGrants = pubState.temporaryGrants.filter((g: any) => g.expiresAtMs > now);
+        if (activeGrants.length > 0) {
+          const maxExpiry = Math.max(...activeGrants.map((g: any) => g.expiresAtMs));
+          const remainingSeconds = Math.max(0, Math.ceil((maxExpiry - now) / 1000));
+          const mins = Math.floor(remainingSeconds / 60);
+          const secs = remainingSeconds % 60;
+          temporaryUnlockRemainingFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
       }
+
+      let cooldownRemainingFormatted: string | null = null;
+      if (pubState?.cooldown?.active && typeof pubState.cooldown.startedAtMs === 'number') {
+        const now = Date.now();
+        const remainingMs = Math.max(0, 72 * 3600_000 - Math.max(0, now - pubState.cooldown.startedAtMs));
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        const hours = Math.floor(remainingSeconds / 3600);
+        const mins = Math.floor((remainingSeconds % 3600) / 60);
+        const secs = remainingSeconds % 60;
+        cooldownRemainingFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+
+      const partnerName = pubState?.partner?.paired
+        ? (pubState?.bot?.username ? `@${pubState.bot.username}` : 'Pareado')
+        : null;
+
+      const menuItems = buildTrayMenuTemplate(
+        {
+          active: Boolean(pubState),
+          partnerName,
+          temporaryUnlockRemainingFormatted,
+          cooldownRemainingFormatted,
+        },
+        {
+          onQuickAdd: () => navigateMainWindow('rules'),
+          onRequestUnblock: () => navigateMainWindow('partner'),
+          onEnterToken: () => navigateMainWindow('partner'),
+          onOpenDashboard: () => navigateMainWindow('categories'),
+          onQuit: () => app.quit(),
+        },
+        process.platform === 'darwin' && hasMenuSymbol ? {
+          'quick-add': (nativeImage as any).createMenuSymbol('plus.circle'),
+          'request-unblock': (nativeImage as any).createMenuSymbol('person.crop.circle.badge.questionmark'),
+          'enter-token': (nativeImage as any).createMenuSymbol('key'),
+          'open-dashboard': (nativeImage as any).createMenuSymbol('square.grid.2x2'),
+        } : undefined
+      );
+      tray.setContextMenu(Menu.buildFromTemplate(menuItems));
+      if (process.platform === 'darwin') tray.setTitle(trayTitleFor(pubState));
+    } catch (err) {
+      console.error('[monBlock] Falha ao atualizar menu da tray:', err);
+    } finally {
+      isRefreshingTray = false;
     }
-
-    let cooldownRemainingFormatted: string | null = null;
-    if (pubState?.cooldown?.active && typeof pubState.cooldown.startedAtMs === 'number') {
-      const now = Date.now();
-      const remainingMs = Math.max(0, 72 * 3600_000 - Math.max(0, now - pubState.cooldown.startedAtMs));
-      const remainingSeconds = Math.ceil(remainingMs / 1000);
-      const hours = Math.floor(remainingSeconds / 3600);
-      const mins = Math.floor((remainingSeconds % 3600) / 60);
-      const secs = remainingSeconds % 60;
-      cooldownRemainingFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-
-    const partnerName = pubState?.partner?.paired
-      ? (pubState?.bot?.username ? `@${pubState.bot.username}` : 'Pareado')
-      : null;
-
-    const menuItems = buildTrayMenuTemplate(
-      {
-        active: Boolean(pubState),
-        partnerName,
-        temporaryUnlockRemainingFormatted,
-        cooldownRemainingFormatted,
-      },
-      {
-        onQuickAdd: () => navigateMainWindow('rules'),
-        onRequestUnblock: () => navigateMainWindow('partner'),
-        onEnterToken: () => navigateMainWindow('partner'),
-        onOpenDashboard: () => navigateMainWindow('categories'),
-        onQuit: () => app.quit(),
-      },
-      process.platform === 'darwin' && hasMenuSymbol ? {
-        'quick-add': (nativeImage as any).createMenuSymbol('plus.circle'),
-        'request-unblock': (nativeImage as any).createMenuSymbol('person.crop.circle.badge.questionmark'),
-        'enter-token': (nativeImage as any).createMenuSymbol('key'),
-        'open-dashboard': (nativeImage as any).createMenuSymbol('square.grid.2x2'),
-      } : undefined
-    );
-    tray.setContextMenu(Menu.buildFromTemplate(menuItems));
-    if (process.platform === 'darwin') tray.setTitle(trayTitleFor(pubState));
   };
 
   // Registro dos canais IPC conectados ao MonBlockDaemon
@@ -676,14 +684,20 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   tray = new Tray(trayIcon);
   tray.setToolTip('monBlock — Painel de proteção');
   await refreshTrayMenu();
-  setInterval(() => void refreshTrayMenu(), 10_000);
+  // Atualização periódica a cada 30s (ou reativa a mutações IPC) para não sobrecarregar o RunLoop do AppKit
+  setInterval(() => void refreshTrayMenu(), 30_000);
 
-  // Camada 3 (ADR-0002): Watcher de abas. O tick consulta o daemon (que também expira concessões vencidas)
-  // e avalia a aba em foco; se o estado falhar, mantém as últimas regras conhecidas (Fail-Closed).
+  // Camada 3 (ADR-0002): Watcher de abas com proteção contra sobreposição e backoff dinâmico sob carga (ex: Spotlight)
   if (process.platform === 'darwin') {
     let watcherRules = createDefaultPersistentState().rules;
     const watcher = new MacOSBrowserWatcher({ getRules: () => watcherRules });
+    let isInspecting = false;
+    let nextDelayMs = 1500;
+
     const watchTick = async (): Promise<void> => {
+      if (isInspecting) return;
+      isInspecting = true;
+      const startTime = Date.now();
       try {
         const now = Date.now();
         let wildcardGrant = false;
@@ -704,10 +718,20 @@ export async function bootstrapElectronRuntime(): Promise<void> {
             );
           }
         }
+        // Resiliência contra contenção do AppKit/System Events: se a inspeção demorou mais de 800ms,
+        // aplica backoff para dar folga ao subsistema de eventos do macOS
+        const duration = Date.now() - startTime;
+        if (duration > 800) {
+          nextDelayMs = Math.min(5000, nextDelayMs + 1000);
+        } else {
+          nextDelayMs = 1500;
+        }
       } catch (err) {
         console.error('[monBlock] Falha no ciclo do watcher:', err);
+        nextDelayMs = 5000;
       } finally {
-        setTimeout(() => void watchTick(), 1500);
+        isInspecting = false;
+        setTimeout(() => void watchTick(), nextDelayMs);
       }
     };
     void watchTick();
