@@ -6,6 +6,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-19
+### Corrigido
+- Resiliência do Watcher macOS contra travamento de interface (hang):
+  - Prevenção de concorrência: adicionada trava explícita (`isInspecting` e `isExecuting`) no ciclo de inspeção e no adaptador AppleScript (`OsascriptBrowserTabAdapter`), descartando chamadas sobrepostas e prevenindo contenção de eventos AppKit/AppleEvents.
+  - Backoff dinâmico sob carga do sistema: o loop do vigia agora eleva automaticamente o intervalo de 1500 ms para até 5000 ms quando uma inspeção exceder 800 ms ou encontrar falhas, aliviando a contenção de I/O (ex.: sob indexação do Spotlight).
+  - Redução de contenção do AppKit na Tray: a reconstrução periódica do menu `NSMenu` da bandeja do sistema foi espaçada de 10 s para 30 s com trava contra chamadas concorrentes, mantendo atualização imediata reativa a mutações IPC.
+  - Otimização do motor de regras: adicionado fast-path nativo O(N) e cache em memória de termos de palavras-chave (`getParsedKeywordTerms`), acelerando a avaliação de abas em 18x (de ~1,4 s para ~78 ms por milhar).
+
 ## [0.9.0] - 2026-11-18
 ### Adicionado
 - Fundação Arquitetural Multiplataforma ([ADR-0013](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0013-fundacao-arquitetural-multiplataforma-linux-windows.md)): fábrica abstrata `createPlatformEnforcer(platform, options)` desacoplando o daemon de particularidades de SO, layout de caminhos de sistema agnóstico (`resolveLayout` para `darwin`, `linux` e `win32`), e suporte a canais IPC via Unix Domain Socket (`0750`, grupo `monblock`) e Windows Named Pipe (`\\.\pipe\monblockd`).
