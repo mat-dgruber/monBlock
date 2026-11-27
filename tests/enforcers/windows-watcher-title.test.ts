@@ -33,6 +33,9 @@ describe('cleanBrowserTitle (W7)', () => {
     ['Notícias - Vivaldi', 'Notícias'],
     ['Página - Opera', 'Página'],
     ['Sem sufixo', 'Sem sufixo'],
+    // Título real capturado no Edge desta máquina (perfil + abas + espaço de largura zero):
+    ['Pornhub videos teste monBlock e mais 1 página - Perfil 1 — Microsoft​ Edge', 'Pornhub videos teste monBlock'],
+    ['Vídeo - YouTube — Microsoft​ Edge', 'Vídeo - YouTube'],
   ])('%s → %s', (raw, clean) => {
     expect(cleanBrowserTitle(raw)).toBe(clean);
   });
@@ -145,6 +148,22 @@ describe('WindowsBrowserWatcher por título (W7)', () => {
     // Assert
     expect(adapter.redirects).toHaveLength(2);
   });
+
+  it('o título que muda depois do redirecionamento ("e mais 1 página") não abre outra aba no mesmo intervalo', async () => {
+    // Arrange
+    const adapter = new Fake();
+    const watcher = new WindowsBrowserWatcher({ adapter, getRules: () => adult });
+
+    // Act
+    adapter.tab = { browser: 'msedge', url: '', title: 'Pornhub videos — Microsoft​ Edge' };
+    await watcher.inspectOnce(1000);
+    adapter.tab = { browser: 'msedge', url: '', title: 'Pornhub videos e mais 1 página - Perfil 1 — Microsoft​ Edge' };
+    await watcher.inspectOnce(2500);
+    await watcher.inspectOnce(4000);
+
+    // Assert
+    expect(adapter.redirects).toHaveLength(1);
+  });
 });
 
 describe('WindowsBrowserTabAdapter com helper persistente (W6, W11a)', () => {
@@ -157,6 +176,17 @@ describe('WindowsBrowserTabAdapter com helper persistente (W6, W11a)', () => {
 
     // Assert
     expect(tab).toEqual({ browser: 'msedge', url: '', title: 'Google - Microsoft Edge' });
+  });
+
+  it('reconhece o Dia (processo "Dia", título sem sufixo), visto como navegador padrão no teste real', async () => {
+    // Arrange
+    const adapter = new WindowsBrowserTabAdapter({ helper: { probe: async () => ({ proc: 'Dia', title: 'Página pausada — monBlock' }) } });
+
+    // Act
+    const tab = await adapter.getActiveTab();
+
+    // Assert
+    expect(tab).toEqual({ browser: 'dia', url: '', title: 'Página pausada — monBlock' });
   });
 
   it('processo que não é navegador, ou helper sem resposta, devolve null', async () => {

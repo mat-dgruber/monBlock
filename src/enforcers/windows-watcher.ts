@@ -36,6 +36,13 @@ export const SUPPORTED_WINDOWS_BROWSERS = [
   'firefox',
   'opera',
   'vivaldi',
+  // Também no Windows (vistos no teste real: o Dia era o navegador padrão e o título não traz sufixo).
+  'dia.exe',
+  'arc.exe',
+  'chromium.exe',
+  'dia',
+  'arc',
+  'chromium',
 ] as const;
 
 export type SupportedWindowsBrowser = (typeof SUPPORTED_WINDOWS_BROWSERS)[number];
@@ -53,13 +60,19 @@ export interface WindowsTabAdapterOptions {
 
 const BLOCKED_PAGE_PREFIX = 'http://127.0.0.1:49152/blocked?';
 
-/** Sufixos dos navegadores no título da janela, com o "e mais N páginas" do Chromium. */
+/**
+ * Sufixo do navegador no título da janela. O Edge acrescenta o perfil quando há mais de um
+ * ("… - Perfil 1 — Microsoft​ Edge", com espaço de largura zero); só os nomes padrão são removidos,
+ * para não cortar parte legítima do título.
+ */
 const BROWSER_TITLE_SUFFIX =
-  /(?:\s+e mais \d+ p[áa]ginas?)?\s+[-—–]\s+(?:Google Chrome|Mozilla Firefox|Microsoft​?\s?Edge|Brave|Vivaldi|Opera)\s*$/i;
+  /(?:\s+-\s+(?:Perfil \d+|Pessoal|Trabalho|Profile \d+|Personal|Work))?\s+[-—–]\s+(?:Google Chrome|Mozilla Firefox|Microsoft​?\s?Edge|Brave|Vivaldi|Opera)\s*$/i;
+/** "e mais N páginas" do Chromium quando há abas agrupadas/selecionadas. */
+const MORE_PAGES = /\s+e mais \d+ p[áa]ginas?(?=\s+[-—–]|$)/i;
 
 /** Tira do título o sufixo do navegador (W7). */
 export function cleanBrowserTitle(title: string): string {
-  return title.replace(BROWSER_TITLE_SUFFIX, '').trim();
+  return title.replace(BROWSER_TITLE_SUFFIX, '').replace(MORE_PAGES, '').trim();
 }
 
 /** Títulos de páginas internas, que não dizem nada sobre o conteúdo. */
@@ -281,7 +294,9 @@ export class WindowsBrowserWatcher {
       `?domain=${encodeURIComponent(ruleLabel)}` +
       `&reason=${encodeURIComponent(reason)}` +
       `&rule=${encodeURIComponent(ruleLabel)}`;
-    await this.redirectOnce(cacheKey, tab.browser, redirectUrl, nowMs);
+    // Por navegador, não por título: depois do redirecionamento o título muda ("e mais 1 página")
+    // e uma chave por título abriria uma aba nova a cada ciclo (visto no teste real com o Edge).
+    await this.redirectOnce(`${tab.browser}|title`, tab.browser, redirectUrl, nowMs);
     return { blocked: true, browser: tab.browser, redirectUrl, reason, ruleLabel };
   }
 
