@@ -36,6 +36,9 @@ describe('cleanBrowserTitle (W7)', () => {
     // Título real capturado no Edge desta máquina (perfil + abas + espaço de largura zero):
     ['Pornhub videos teste monBlock e mais 1 página - Perfil 1 — Microsoft​ Edge', 'Pornhub videos teste monBlock'],
     ['Vídeo - YouTube — Microsoft​ Edge', 'Vídeo - YouTube'],
+    ['Notícias - Chromium', 'Notícias'],
+    ['Notícias - Arc', 'Notícias'],
+    ['Notícias - Dia', 'Notícias'],
   ])('%s → %s', (raw, clean) => {
     expect(cleanBrowserTitle(raw)).toBe(clean);
   });
@@ -56,8 +59,78 @@ describe('WindowsBrowserWatcher por título (W7)', () => {
     expect(adapter.redirects).toHaveLength(1);
     const url = new URL(adapter.redirects[0]);
     expect(url.origin + url.pathname).toBe('http://127.0.0.1:49152/blocked');
-    expect(url.searchParams.get('domain')).toBe(res.ruleLabel);
+    // Sem domínio identificável não vai `domain` (o rótulo viraria o endereço do pedido de liberação).
+    expect(url.searchParams.has('domain')).toBe(false);
+    expect(url.searchParams.get('rule')).toBe(res.ruleLabel);
     expect(url.searchParams.get('reason')).toBe(res.reason);
+  });
+
+  it('a própria página de bloqueio nunca é avaliada, nem com a palavra-chave "monblock"', async () => {
+    // Arrange
+    const adapter = new Fake();
+    adapter.tab = { browser: 'dia', url: '', title: 'Página pausada — monBlock' };
+    const watcher = new WindowsBrowserWatcher({ adapter, getRules: () => ({ ...adult, keywords: ['monblock'] }) });
+
+    // Act
+    const res = await watcher.inspectOnce(1000);
+
+    // Assert
+    expect(res.blocked).toBe(false);
+    expect(adapter.redirects).toEqual([]);
+  });
+
+  it('título que começa por domínio IDN bloqueado é avaliado como domínio', async () => {
+    // Arrange
+    const adapter = new Fake();
+    adapter.tab = { browser: 'chrome', url: '', title: 'apostas-ação.com.br - Jogos - Google Chrome' };
+    const watcher = new WindowsBrowserWatcher({ adapter, getRules: () => ({ ...adult, enabledCategories: [], blockedDomains: ['apostas-ação.com.br'] }) });
+
+    // Act
+    const res = await watcher.inspectOnce(1000);
+
+    // Assert
+    expect(res.blocked).toBe(true);
+    expect(res.domain).toBe('apostas-ação.com.br');
+    expect(adapter.redirects).toHaveLength(1);
+  });
+
+  it('outra regra no mesmo navegador, dentro dos 10 s, redireciona normalmente', async () => {
+    // Arrange
+    const adapter = new Fake();
+    const rules = { ...adult, keywords: ['cassino'] };
+    const watcher = new WindowsBrowserWatcher({ adapter, getRules: () => rules });
+
+    // Act
+    adapter.tab = { browser: 'chrome', url: '', title: 'Pornhub - Google Chrome' };
+    await watcher.inspectOnce(1000);
+    adapter.tab = { browser: 'chrome', url: '', title: 'Melhor cassino online - Google Chrome' };
+    await watcher.inspectOnce(2000);
+
+    // Assert
+    expect(adapter.redirects).toHaveLength(2);
+  });
+
+  it('redirecionamento que falhou não conta o intervalo: o próximo ciclo tenta de novo', async () => {
+    // Arrange
+    let ok = false;
+    const opened: string[] = [];
+    const adapter: BrowserTabAdapter = {
+      getActiveTab: async () => ({ browser: 'chrome', url: '', title: 'Pornhub - Google Chrome' }),
+      redirectActiveTab: async (_b, url) => {
+        opened.push(url);
+        return ok;
+      },
+    };
+    const watcher = new WindowsBrowserWatcher({ adapter, getRules: () => adult });
+
+    // Act
+    await watcher.inspectOnce(1000);
+    ok = true;
+    await watcher.inspectOnce(2500);
+    await watcher.inspectOnce(4000);
+
+    // Assert
+    expect(opened).toHaveLength(2);
   });
 
   it('título que começa com um domínio é avaliado como domínio (bet365.com - Apostas)', async () => {

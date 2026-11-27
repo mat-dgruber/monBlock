@@ -27,6 +27,68 @@ describe('startBrowserWatcherLoop (W5)', () => {
     expect(seen[0]).toEqual(['ok.org', 'liberado.com']);
   });
 
+  it('se a consulta ao daemon falhar, segue com as últimas regras mas sem nenhum grant', async () => {
+    // Arrange
+    let fail = false;
+    const seen: string[][] = [];
+    const stop = startBrowserWatcherLoop({
+      watcher: { inspectOnce: async () => ({ blocked: false }) },
+      fetchState: async () => (fail ? null : stateWith([{ target: 'liberado.com', expiresAtMs: Date.now() + 60_000 }])),
+      onRules: (r) => seen.push(r.allowlistDomains),
+    });
+    await vi.advanceTimersByTimeAsync(10);
+
+    // Act
+    fail = true;
+    await vi.advanceTimersByTimeAsync(1600);
+    stop();
+
+    // Assert
+    expect(seen[0]).toEqual(['ok.org', 'liberado.com']);
+    expect(seen.at(-1)).toEqual(['ok.org']);
+  });
+
+  it('grant que vence enquanto a consulta roda já não vale', async () => {
+    // Arrange
+    const inspectOnce = vi.fn(async () => ({ blocked: false }));
+    const stop = startBrowserWatcherLoop({
+      watcher: { inspectOnce },
+      fetchState: async () => {
+        const expiresAtMs = Date.now() + 50;
+        vi.advanceTimersByTime(100); // a consulta demora mais que o grant
+        return stateWith([{ target: '*', expiresAtMs }]);
+      },
+      onRules: () => {},
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(10);
+    stop();
+
+    // Assert
+    expect(inspectOnce).toHaveBeenCalled();
+  });
+
+  it('o bloqueio vira um evento de auditoria em JSON com horário UTC, sem título', async () => {
+    // Arrange
+    const logs: string[] = [];
+    const stop = startBrowserWatcherLoop({
+      watcher: { inspectOnce: async () => ({ blocked: true, browser: 'chrome', ruleLabel: 'Categoria: Adulto' }) },
+      fetchState: async () => stateWith([]),
+      onRules: () => {},
+      log: (m) => logs.push(m),
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(10);
+    stop();
+
+    // Assert
+    const event = JSON.parse(logs[0]);
+    expect(event).toMatchObject({ event: 'layer3.block', browser: 'chrome', rule: 'Categoria: Adulto' });
+    expect(new Date(event.at).toISOString()).toBe(event.at);
+  });
+
   it('com grant * ativo não inspeciona', async () => {
     // Arrange
     const inspectOnce = vi.fn(async () => ({ blocked: false }));

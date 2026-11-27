@@ -717,7 +717,16 @@ export async function bootstrapElectronRuntime(): Promise<void> {
       onRules: (rules) => (watcherRules = rules),
     });
   } else if (process.platform === 'win32') {
-    const helper = new ForegroundHelper();
+    const helper = new ForegroundHelper({
+      // Sem isso a pessoa veria "Proteção ativa" sem saber que a Camada 3 parou (o hosts e as políticas seguem).
+      onUnavailable: () =>
+        notificationManager.notify({
+          id: 'layer3-unavailable',
+          title: 'monBlock — vigia de abas desligado',
+          body: 'O Windows bloqueou o PowerShell que o monBlock usa para ver as abas. O bloqueio de sites e as políticas dos navegadores continuam ativos.',
+          force: true,
+        }),
+    });
     const stopWatcher = startBrowserWatcherLoop({
       watcher: new WindowsBrowserWatcher({
         adapter: new WindowsBrowserTabAdapter({ helper, openExternal: (url) => shell.openExternal(url) }),
