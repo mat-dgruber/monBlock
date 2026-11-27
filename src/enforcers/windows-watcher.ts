@@ -2,7 +2,7 @@
  * @file windows-watcher.ts
  * @description Camada 3 de Bloqueio Web (MOD-01) — Watcher de Navegadores Windows (ADR-0015).
  * Monitora janelas/abas ativas nos navegadores suportados no Windows (Chrome, Edge, Brave,
- * Firefox, Opera, Vivaldi), aplicando debounce de 150ms, higienização Zero-PII,
+ * Firefox, Opera, Vivaldi, Dia, Arc e Chromium), aplicando debounce de 150ms, higienização Zero-PII,
  * verificação de TemporaryGrants e redirecionamento seguro para `127.0.0.1:49152/blocked`.
  */
 
@@ -66,7 +66,7 @@ const BLOCKED_PAGE_PREFIX = 'http://127.0.0.1:49152/blocked?';
  * para não cortar parte legítima do título.
  */
 const BROWSER_TITLE_SUFFIX =
-  /(?:\s+-\s+(?:Perfil \d+|Pessoal|Trabalho|Profile \d+|Personal|Work))?\s+[-—–]\s+(?:Google Chrome|Mozilla Firefox|Microsoft​?\s?Edge|Brave|Vivaldi|Opera)\s*$/i;
+  /(?:\s+-\s+(?:Perfil \d+|Pessoal|Trabalho|Profile \d+|Personal|Work))?\s+[-—–]\s+(?:Google Chrome|Mozilla Firefox|Microsoft​?\s?Edge|Brave|Vivaldi|Opera|Chromium|Arc|Dia)\s*$/i;
 /** "e mais N páginas" do Chromium quando há abas agrupadas/selecionadas. */
 const MORE_PAGES = /\s+e mais \d+ p[áa]ginas?(?=\s+[-—–]|$)/i;
 
@@ -74,6 +74,9 @@ const MORE_PAGES = /\s+e mais \d+ p[áa]ginas?(?=\s+[-—–]|$)/i;
 export function cleanBrowserTitle(title: string): string {
   return title.replace(BROWSER_TITLE_SUFFIX, '').replace(MORE_PAGES, '').trim();
 }
+
+/** Título da própria página de bloqueio: nunca avaliado (com a palavra-chave "monblock" ela se bloquearia em loop). */
+const OWN_BLOCK_PAGE_TITLE = /^p[áa]gina pausada\s+[—–-]\s+monblock$/i;
 
 /** Títulos de páginas internas, que não dizem nada sobre o conteúdo. */
 const NEUTRAL_TITLES = new Set(['nova guia', 'nova aba', 'new tab', 'início', 'new private tab', 'nova janela anônima']);
@@ -213,7 +216,8 @@ export class WindowsBrowserWatcher {
     // W7: sem URL (o helper só dá o título), avalia pelo título limpo. Um título que começa por um domínio
     // ("bet365.com - Apostas") é avaliado como domínio.
     const cleanTitle = cleanBrowserTitle(tab.title);
-    const leadingDomain = /^([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})(?:\s|$)/i.exec(cleanTitle)?.[1];
+    // \p{L}: domínios IDN ("exemplo-ação.com.br") também; o sanitize converte para punycode.
+    const leadingDomain = /^([\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,})(?:\s|$)/u.exec(cleanTitle)?.[1];
     const normalized = sanitizeAndNormalizeUrl(tab.url) ?? (leadingDomain ? sanitizeAndNormalizeUrl(leadingDomain) : null);
     if (!normalized) {
       return this.inspectByTitle(tab, cleanTitle, nowMs);
@@ -274,7 +278,9 @@ export class WindowsBrowserWatcher {
   }
 
   private async inspectByTitle(tab: ActiveTabSnapshot, cleanTitle: string, nowMs: number): Promise<WatcherInterceptionResult> {
-    if (!cleanTitle || NEUTRAL_TITLES.has(cleanTitle.toLowerCase())) return { blocked: false, browser: tab.browser };
+    if (!cleanTitle || NEUTRAL_TITLES.has(cleanTitle.toLowerCase()) || OWN_BLOCK_PAGE_TITLE.test(cleanTitle)) {
+      return { blocked: false, browser: tab.browser };
+    }
     const cacheKey = `${tab.browser}|title|${cleanTitle}`;
     if (cacheKey === this.lastCheckedKey && nowMs - this.lastCheckedAtMs < this.debounceMs) {
       return { blocked: false, debounced: true, browser: tab.browser };
@@ -291,12 +297,14 @@ export class WindowsBrowserWatcher {
     const ruleLabel = decision.ruleLabel ?? 'Regra do monBlock';
     const redirectUrl =
       `http://127.0.0.1:49152/blocked` +
-      `?domain=${encodeURIComponent(ruleLabel)}` +
-      `&reason=${encodeURIComponent(reason)}` +
+      // Sem domínio identificável não vai `domain`: a página mostra só a regra (um rótulo ali viraria o
+      // endereço do pedido de liberação, que o daemon recusaria).
+      `?reason=${encodeURIComponent(reason)}` +
       `&rule=${encodeURIComponent(ruleLabel)}`;
-    // Por navegador, não por título: depois do redirecionamento o título muda ("e mais 1 página")
-    // e uma chave por título abriria uma aba nova a cada ciclo (visto no teste real com o Edge).
-    await this.redirectOnce(`${tab.browser}|title`, tab.browser, redirectUrl, nowMs);
+    // Por navegador e regra, não pelo título: depois do redirecionamento o título muda ("e mais 1 página")
+    // e uma chave por título abriria uma aba nova a cada ciclo (teste real com o Edge); outra regra no
+    // mesmo intervalo redireciona normalmente.
+    await this.redirectOnce(`${tab.browser}|title|${ruleLabel}`, tab.browser, redirectUrl, nowMs);
     return { blocked: true, browser: tab.browser, redirectUrl, reason, ruleLabel };
   }
 
@@ -304,8 +312,10 @@ export class WindowsBrowserWatcher {
   private async redirectOnce(key: string, browser: string, url: string, nowMs: number): Promise<void> {
     const last = this.lastRedirectAt.get(key);
     if (last !== undefined && nowMs - last < this.redirectCooldownMs) return;
-    this.lastRedirectAt.set(key, nowMs);
+    // Só conta o intervalo se abriu de fato: se o openExternal falhar, o próximo ciclo tenta de novo.
+    const opened = await this.adapter.redirectActiveTab(browser, url);
+    if (opened === false) return;
     if (this.lastRedirectAt.size > 200) this.lastRedirectAt.clear();
-    await this.adapter.redirectActiveTab(browser, url);
+    this.lastRedirectAt.set(key, nowMs);
   }
 }

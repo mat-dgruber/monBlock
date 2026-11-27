@@ -14,6 +14,7 @@
 import { spawn } from 'node:child_process';
 import type { EventEmitter } from 'node:events';
 import path from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 
 export interface ForegroundProbe {
   proc: string;
@@ -75,6 +76,8 @@ export interface ForegroundHelperOptions {
   readyTimeoutMs?: number;
   probeTimeoutMs?: number;
   maxStartFailures?: number;
+  /** Chamado uma vez quando a Camada 3 fica desligada (o app avisa a pessoa). */
+  onUnavailable?: () => void;
 }
 
 export class ForegroundHelper {
@@ -82,6 +85,7 @@ export class ForegroundHelper {
   private readonly readyTimeoutMs: number;
   private readonly probeTimeoutMs: number;
   private readonly maxStartFailures: number;
+  private readonly onUnavailable?: () => void;
   private child: HelperChild | null = null;
   private ready: Promise<boolean> | null = null;
   private lineWaiter: ((line: string | null) => void) | null = null;
@@ -94,6 +98,7 @@ export class ForegroundHelper {
     this.readyTimeoutMs = options.readyTimeoutMs ?? 10_000;
     this.probeTimeoutMs = options.probeTimeoutMs ?? 2_000;
     this.maxStartFailures = options.maxStartFailures ?? 3;
+    this.onUnavailable = options.onUnavailable;
   }
 
   status(): HelperStatus {
@@ -128,9 +133,15 @@ export class ForegroundHelper {
     if (this.ready) return this.ready;
     const child = this.spawnFn();
     this.child = child;
+    // Decodificador em fluxo: um caractere multibyte do título pode vir partido entre dois chunks.
+    const decoder = new StringDecoder('utf8');
     let buf = '';
+    // Saída e saída do processo de um helper antigo (já substituído) são ignoradas: senão a morte
+    // atrasada dele resolveria o handshake do novo como falha e o mataria.
+    const isCurrent = () => this.child === child;
     child.stdout?.on('data', (chunk: Buffer) => {
-      buf += chunk.toString('utf8');
+      if (!isCurrent()) return;
+      buf += decoder.write(chunk);
       let nl: number;
       while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl).trim();
@@ -139,13 +150,14 @@ export class ForegroundHelper {
       }
     });
     child.on('exit', () => {
-      if (this.child === child) {
-        this.child = null;
-        this.ready = null;
-      }
+      if (!isCurrent()) return;
+      this.child = null;
+      this.ready = null;
       this.deliver(null);
     });
-    child.on('error', () => this.deliver(null));
+    child.on('error', () => {
+      if (isCurrent()) this.deliver(null);
+    });
 
     this.ready = this.nextLine(this.readyTimeoutMs).then((line) => {
       if (line && line.includes('"ready":true')) {
@@ -158,6 +170,7 @@ export class ForegroundHelper {
       if (this.startFailures >= this.maxStartFailures) {
         this.state = 'unavailable';
         console.error('[monBlock] Camada 3 desligada: o helper do Windows não iniciou (PowerShell restrito/AppLocker?).');
+        this.onUnavailable?.();
       }
       return false;
     });

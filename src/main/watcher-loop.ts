@@ -36,6 +36,7 @@ export function startBrowserWatcherLoop(options: WatcherLoopOptions): () => void
   let inspecting = false;
   let timer: NodeJS.Timeout | null = null;
   let nextDelayMs = 1500;
+  let lastRules: RuleEngineState | null = null;
 
   const tick = async (): Promise<void> => {
     if (stopped || inspecting) return;
@@ -46,18 +47,26 @@ export function startBrowserWatcherLoop(options: WatcherLoopOptions): () => void
     inspecting = true;
     const startedAt = Date.now();
     try {
-      const now = Date.now();
       let wildcard = false;
       const state = await options.fetchState();
+      // Horário depois da consulta: um grant que venceu enquanto ela rodava já não vale.
+      const now = Date.now();
       if (state) {
+        lastRules = state.rules;
         const grants = state.temporaryGrants.filter((g) => g.expiresAtMs > now);
         wildcard = grants.some((g) => g.target === '*');
         options.onRules({ ...state.rules, allowlistDomains: [...state.rules.allowlistDomains, ...grants.map((g) => g.target)] });
+      } else if (lastRules) {
+        // Daemon sem resposta: continua com as últimas regras (fail-closed), mas sem nenhum grant, que
+        // poderia já ter vencido ou sido revogado.
+        options.onRules(lastRules);
       }
       if (!wildcard) {
         const res = await options.watcher.inspectOnce(now);
-        // Sem título nem URL no log (podem ter dados pessoais): só navegador e regra.
-        if (res.blocked) log(`[monBlock] Camada 3 bloqueou em ${res.browser}: ${res.ruleLabel ?? res.domain}`);
+        // Evento de auditoria em JSON com horário UTC. Sem título nem URL (podem ter dados pessoais).
+        if (res.blocked) {
+          log(JSON.stringify({ event: 'layer3.block', at: new Date(now).toISOString(), browser: res.browser, rule: res.ruleLabel ?? res.domain }));
+        }
       }
       nextDelayMs = Date.now() - startedAt > 800 ? Math.min(5000, nextDelayMs + 1000) : 1500;
     } catch (err) {

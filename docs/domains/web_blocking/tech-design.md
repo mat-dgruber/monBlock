@@ -88,6 +88,12 @@ A arquitetura interna do domínio segue separação estrita entre **Núcleo de D
 
 *   **Idempotência de Submissão (`idempotencyStore`):** Cliques múltiplos no botão "Pedir Desbloqueio ao Ajudante" com a mesma `Idempotency-Key` retornam imediatamente o registro em cache com `"deduplicated": true`, prevenindo flood de notificações no Telegram do Ajudante.
 *   **Isolamento de Falhas do Watcher de Navegadores:** No macOS, a inspeção de abas via AppleEvents/`osascript` aplica timeout rígido de `1500ms` por processo para impedir que uma janela travada do navegador congele o loop de fiscalização do daemon.
+*   **Watcher de abas no Windows (F5, ADR-0016 D6):** um helper PowerShell persistente (um processo por app) responde `probe` com o processo e o título da janela em primeiro plano. Contrato:
+    *   só conta como pronto com o handshake `{"ready":true}`; probe sem resposta em 2 s mata e recria o processo; 3 falhas seguidas de subida (ex.: CLM/AppLocker) desligam a Camada 3 até o app reiniciar, com notificação à pessoa;
+    *   sem URL (o helper só lê o título), o título é avaliado sem o sufixo do navegador; se começar por um domínio (inclusive IDN), é avaliado como domínio; sem domínio, só o grant `*` libera; a própria página de bloqueio nunca é avaliada;
+    *   o redirecionamento abre `http://127.0.0.1:49152/blocked?…` pelo `shell.openExternal` (navegador padrão); sem domínio identificável a URL leva só `reason` e `rule`;
+    *   anti-repetição de 10 s por navegador + regra (título) ou navegador + domínio (URL), contada só quando a página abriu de fato;
+    *   cada bloqueio gera um evento de auditoria JSON `{"event":"layer3.block","at":<UTC ISO>,"browser","rule"}`, sem título nem URL.
 *   **Defesa em Profundidade Independente:** Caso o Watcher de abas sofra atraso ou falta de permissão de Acessibilidade, as Camadas 1 (`/etc/hosts`) e 2 (`BrowserPolicies` com DoH desativado) continuam bloqueando a resolução e o carregamento dos domínios das 11 categorias e da blocklist sem qualquer degradação.
 
 *   **Cobertura por camada (0.4.0):** DNS (`/etc/hosts`) vale para qualquer app que use o resolvedor do sistema; a política de navegador, para os identificadores de `CHROMIUM_BUNDLE_IDS` e o Firefox; o vigia de abas (`SUPPORTED_MACOS_BROWSERS`), para os navegadores com AppleScript, incluindo Dia, Vivaldi, Opera, Chromium e Chrome Beta/Canary. Quem tinha o perfil antigo precisa aprovar o perfil atualizado (a checagem exige todos os identificadores).
