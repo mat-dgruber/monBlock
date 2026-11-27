@@ -36,30 +36,27 @@ export interface DaemonLayout {
 
 /**
  * Layout de diretórios e arquivos por SO (ADR-0007 / ADR-0013). `rootDir` só em desenvolvimento/CI.
- * Usa `path.posix`/`path.win32` pela plataforma alvo, não pela do host (W15).
+ * Usa `path.posix`/`path.win32` pela plataforma alvo, não pela do host, para o resultado não depender de onde roda.
  */
 export function resolveLayout(
-  rootDir?: string,
-  platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env
+  rootDir = '/',
+  platform: NodeJS.Platform = process.platform
 ): DaemonLayout {
   if (platform === 'win32') {
-    // W15: sem rootDir, caminhos absolutos de %ProgramData% e %SystemRoot%, e não relativos ao drive atual.
-    const programData = rootDir ? path.win32.join(rootDir, 'ProgramData') : env.ProgramData || 'C:\\ProgramData';
-    const systemRoot = rootDir ? path.win32.join(rootDir, 'Windows') : env.SystemRoot || 'C:\\Windows';
-    const dataDir = path.win32.join(programData, 'monBlock');
+    const w = (p: string) => path.win32.join(rootDir, p);
+    const runDir = w('ProgramData/monBlock/run');
     return {
-      appSupportDir: dataDir,
-      dbDir: path.win32.join(dataDir, 'db'),
-      runDir: path.win32.join(dataDir, 'run'),
+      appSupportDir: w('ProgramData/monBlock'),
+      dbDir: w('ProgramData/monBlock/db'),
+      runDir,
       socketPath: '\\\\.\\pipe\\monblockd',
-      hostsPath: path.win32.join(systemRoot, 'System32', 'drivers', 'etc', 'hosts'),
+      hostsPath: w('Windows/System32/drivers/etc/hosts'),
       chromiumPlistPaths: [],
       firefoxPlistPath: '',
     };
   }
 
-  const r = (p: string) => path.posix.join(rootDir ?? '/', p);
+  const r = (p: string) => path.posix.join(rootDir, p);
 
   if (platform === 'linux') {
     const runDir = r('run/monblock');

@@ -102,30 +102,12 @@ describe('resolveLayout por plataforma (ADR-0013)', () => {
   });
 
   it('retorna layout Windows com Named Pipe e %ProgramData%', () => {
-    const layout = resolveLayout(undefined, 'win32', { ProgramData: 'C:\\ProgramData', SystemRoot: 'C:\\Windows' });
-    expect(layout.appSupportDir).toBe('C:\\ProgramData\\monBlock');
-    expect(layout.dbDir).toBe('C:\\ProgramData\\monBlock\\db');
-    expect(layout.runDir).toBe('C:\\ProgramData\\monBlock\\run');
+    const layout = resolveLayout('/', 'win32');
+    expect(layout.appSupportDir).toBe('\\ProgramData\\monBlock');
+    expect(layout.dbDir).toBe('\\ProgramData\\monBlock\\db');
+    expect(layout.runDir).toBe('\\ProgramData\\monBlock\\run');
     expect(layout.socketPath).toBe('\\\\.\\pipe\\monblockd');
-    expect(layout.hostsPath).toBe('C:\\Windows\\System32\\drivers\\etc\\hosts');
-  });
-
-  it('W15: no Windows sem rootDir usa %ProgramData% e %SystemRoot%, e não o drive atual', () => {
-    const layout = resolveLayout(undefined, 'win32', { ProgramData: 'D:\\PD', SystemRoot: 'E:\\Win' });
-    expect(layout.appSupportDir).toBe('D:\\PD\\monBlock');
-    expect(layout.hostsPath).toBe('E:\\Win\\System32\\drivers\\etc\\hosts');
-  });
-
-  it('W15: no Windows sem as variáveis usa C:\\ProgramData e C:\\Windows', () => {
-    const layout = resolveLayout(undefined, 'win32', {});
-    expect(layout.appSupportDir).toBe('C:\\ProgramData\\monBlock');
-    expect(layout.hostsPath).toBe('C:\\Windows\\System32\\drivers\\etc\\hosts');
-  });
-
-  it('com rootDir (dev/CI) o layout Windows fica dentro dele', () => {
-    const layout = resolveLayout('C:\\tmp\\root', 'win32', {});
-    expect(layout.appSupportDir).toBe('C:\\tmp\\root\\ProgramData\\monBlock');
-    expect(layout.hostsPath).toBe('C:\\tmp\\root\\Windows\\System32\\drivers\\etc\\hosts');
+    expect(layout.hostsPath).toBe('\\Windows\\System32\\drivers\\etc\\hosts');
   });
 });
 

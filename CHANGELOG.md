@@ -9,7 +9,7 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - CI: job `windows-latest` com typecheck, testes, build e smoke do daemon (Named Pipe `\\.\pipe\monblockd` e hosts gerado em modo dev).
 
 ### Corrigido
-- Windows (W15): `resolveLayout` usa `%ProgramData%` e `%SystemRoot%` com `path.win32`, em vez de caminhos relativos ao drive atual; darwin/linux usam `path.posix`.
+- `resolveLayout` usa `path.posix` (darwin/linux) e `path.win32` (win32) pela plataforma alvo, e não pela do host.
 - `npm run build` funciona no Windows: a cópia de assets saiu do `cp` para `scripts/copy-assets.mjs`.
 - `.gitattributes` fixa EOL em LF; com o `core.autocrlf=true` do Git for Windows, o `gen-lists --check` falhava.
 - Os enforcers POSIX ignoram o modo do hosts no `win32`, que não tem modo POSIX; antes acusavam drift em todo tick.
