@@ -341,6 +341,8 @@ export interface MonBlockDaemonOptions {
   onUninstalled?: () => void;
   /** Checagem do perfil dos navegadores no watchdog (`checkBrowserProfileInstalled` no entry root). */
   checkBrowserProfile?: () => Promise<boolean | null>;
+  /** Drift que não vem do enforcer, somado no watchdog (ex.: `ipc:dacl` no Windows, W4). */
+  extraDrift?: () => string[];
 }
 
 export class MonBlockDaemon {
@@ -352,6 +354,7 @@ export class MonBlockDaemon {
   private readonly telegramTransport?: TelegramTransportAdapter;
   private readonly onUninstalled?: () => void;
   private readonly checkBrowserProfile?: () => Promise<boolean | null>;
+  private readonly extraDrift?: () => string[];
   private browserProfileInstalled: boolean | null = null;
   private profileCheck: Promise<void> | null = null;
   private lastProfileCheckMs = 0;
@@ -369,6 +372,7 @@ export class MonBlockDaemon {
     this.telegramTransport = options.telegramTransport;
     this.onUninstalled = options.onUninstalled;
     this.checkBrowserProfile = options.checkBrowserProfile;
+    this.extraDrift = options.extraDrift;
   }
 
   /**
@@ -501,7 +505,7 @@ export class MonBlockDaemon {
     const now = this.clock.nowForExpiry();
 
     const grants = state.temporaryGrants.filter((g) => g.expiresAtMs > now);
-    const drift = this.enforcer.verifyApplied?.(state.rules, grants) ?? [];
+    const drift = [...(this.enforcer.verifyApplied?.(state.rules, grants) ?? []), ...(this.extraDrift?.() ?? [])];
     await this.enforcer.applyWebRules(state.rules, grants);
 
     const alerts: string[] = [];

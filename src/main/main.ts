@@ -18,6 +18,7 @@ import { createDefaultPersistentState } from '../storage/state-store.js';
 import { DaemonClient } from './daemon-client.js';
 import { migrateLegacyVaults, readUserVaultKey } from './legacy-migration.js';
 import { AppNotificationManager } from './notifications.js';
+import { pipeServerVerifier } from './pipe-server-check.js';
 import { applyWindowsAppIdentity, trayIconSpec } from './platform-shell.js';
 import { checkForAppUpdates, downloadAppUpdatePkg } from './updater.js';
 
@@ -275,7 +276,19 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   // Sem fallback para daemon em processo: parar o serviço não pode devolver o app ao modo userland.
   const socketPath =
     !app.isPackaged && process.env.MONBLOCK_SOCKET_PATH ? process.env.MONBLOCK_SOCKET_PATH : DAEMON_SOCKET_PATH;
-  const daemonClient = new DaemonClient({ socketPath });
+  // W21: no Windows, segredo só vai para o pipe servido pelo serviço. O script mora em %ProgramFiles%
+  // (só admin grava); um script em pasta do usuário anularia a checagem.
+  const skipPipeCheck = !app.isPackaged && process.env.MONBLOCK_DEV_SKIP_PIPE_CHECK === '1';
+  const daemonClient = new DaemonClient({
+    socketPath,
+    verifyServer:
+      process.platform === 'win32' && !skipPipeCheck
+        ? pipeServerVerifier(
+            path.win32.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'monBlock', 'pipe-server-check.ps1'),
+            socketPath
+          )
+        : undefined,
+  });
   const call = async (cmd: DaemonCommand): Promise<DaemonResponse> => {
     try {
       return await daemonClient.call(cmd);

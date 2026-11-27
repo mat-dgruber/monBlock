@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createIpcServer, type IpcServer } from './ipc-server.js';
+import { pipeAclHook } from './pipe-acl.js';
 import { MonBlockDaemon } from './monblockd.js';
 import { TrustedClock } from './trusted-clock.js';
 import {
@@ -223,6 +224,8 @@ export interface StartDaemonOptions {
   blockServerPort?: number | null;
   /** Pasta com `blocked-page.html`/`tokens.css`; no SEA fica em `HELPER_DIR/design`. */
   designDir?: string;
+  /** Pasta com `pipe-acl.ps1` (Windows, W4): `INSTALL_DIR` no SEA, `packaging/windows` em dev. */
+  helpersDir?: string;
   onUninstalled?: () => void;
 }
 
@@ -271,11 +274,14 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
     // Modo dev no Windows: nada de icacls/reg no sistema real; só o hosts sob o rootDir.
     ...(process.platform === 'win32' && !isRoot ? { commandExecutor: () => {}, registryReader: () => null } : {}),
   });
+  // Criado depois do daemon; o watchdog só lê o status da DACL (W4).
+  let ipc: IpcServer | undefined;
   const daemon = new MonBlockDaemon({
     store,
     enforcer,
     clock: new TrustedClock(),
     onUninstalled: options.onUninstalled,
+    extraDrift: () => (ipc?.aclStatus() === 'failed' ? ['ipc:dacl'] : []),
     // Sem root o `profiles` não vê perfis de sistema e acusaria "ausente" por engano.
     checkBrowserProfile: shouldCheckBrowserProfile(process.platform, isRoot) ? () => checkBrowserProfileInstalled() : undefined,
   });
@@ -289,9 +295,15 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   };
   await tick(); // regras aplicadas antes de aceitar conexões
 
-  let ipc: IpcServer;
   try {
-    ipc = await createIpcServer({ socketPath: layout.socketPath, handle: (cmd) => daemon.handleCommand(cmd) });
+    ipc = await createIpcServer({
+      socketPath: layout.socketPath,
+      handle: (cmd) => daemon.handleCommand(cmd),
+      secureListen:
+        process.platform === 'win32' && options.helpersDir
+          ? pipeAclHook(path.join(options.helpersDir, 'pipe-acl.ps1'))
+          : undefined,
+    });
   } catch (err) {
     throw new Error(`Falha ao abrir o socket ${layout.socketPath}: ${(err as Error).message}`);
   }
@@ -372,6 +384,9 @@ export async function main(): Promise<void> {
     rootDir,
     isRoot,
     designDir: isSea() ? path.join(path.dirname(process.execPath), 'design') : undefined,
+    helpersDir: isSea()
+      ? path.dirname(process.execPath)
+      : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../packaging/windows'),
     // Desacoplado e fora do grupo de processos: o `bootout` do job não pode matar o desinstalador.
     onUninstalled: () => {
       if (!isRoot || rootDir) return console.error('[monblockd] desinstalação autorizada (modo dev: nada removido).');

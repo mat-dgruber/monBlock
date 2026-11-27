@@ -24,11 +24,19 @@ export interface IpcServerOptions {
   idleMs?: number;
   maxConnections?: number;
   socketMode?: number;
+  /**
+   * Windows (W4): aplica a DACL explícita no pipe já criado. `false`/exceção → o pipe segue no DACL
+   * padrão (fail-closed) e `aclStatus()` vira `failed`. Sem o gancho (macOS/Linux): `not-applicable`.
+   */
+  secureListen?: (socketPath: string) => Promise<boolean>;
 }
+
+export type IpcAclStatus = 'ok' | 'failed' | 'not-applicable';
 
 export interface IpcServer {
   close(): Promise<void>;
   connections(): number;
+  aclStatus(): IpcAclStatus;
 }
 
 const KNOWN_TYPES: ReadonlySet<string> = new Set(DAEMON_COMMAND_TYPES);
@@ -120,7 +128,18 @@ export async function createIpcServer(options: IpcServerOptions): Promise<IpcSer
     fs.chmodSync(options.socketPath, options.socketMode ?? 0o660);
   }
 
+  let acl: IpcAclStatus = 'not-applicable';
+  if (options.secureListen) {
+    try {
+      acl = (await options.secureListen(options.socketPath)) ? 'ok' : 'failed';
+    } catch {
+      acl = 'failed';
+    }
+    if (acl === 'failed') console.error('[monblockd] DACL do pipe não aplicada: usuário comum só lê (fail-closed).');
+  }
+
   return {
+    aclStatus: () => acl,
     connections: () => sockets.size,
     close: () =>
       new Promise<void>((resolve) => {
