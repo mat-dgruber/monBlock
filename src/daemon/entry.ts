@@ -242,7 +242,8 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   ensureDir(layout.appSupportDir, 0o700, isRoot);
   ensureDir(layout.dbDir, 0o700, isRoot);
   const gid = isRoot ? lookupMonblockGid() : undefined;
-  if (isRoot && gid === undefined) {
+  // Grupo POSIX: no Windows o acesso ao pipe vem da DACL (W4), então não há o que avisar.
+  if (isRoot && gid === undefined && process.platform !== 'win32') {
     console.error('[monblockd] grupo monblock ausente: socket acessível só ao root até reinstalar.');
   }
   ensureDir(layout.runDir, gid === undefined && isRoot ? 0o700 : 0o750, isRoot, gid ?? 0);

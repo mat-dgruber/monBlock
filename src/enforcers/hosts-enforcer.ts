@@ -43,6 +43,30 @@ const HOSTNAME_RE =
  */
 export const HOSTS_FILE_MODE = 0o644;
 
+const WINDOWS_REPLACE_LOCK_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+/**
+ * Troca `target` pelo conteúdo de `tmp`. Primeiro por `rename` (atômico). No Windows o `rename` por cima
+ * de um arquivo aberto por outro processo sem `FILE_SHARE_DELETE` dá EPERM — é o que acontece com o hosts
+ * (cliente DNS, antivírus), visto no teste real como SYSTEM. Aí o conteúdo é copiado por cima (`CopyFile`
+ * só precisa de escrita compartilhada). Não é atômico; o `.monblock.bak` e o drift do watchdog cobrem.
+ */
+export function replaceFileFromTemp(
+  tmp: string,
+  target: string,
+  platform: NodeJS.Platform = process.platform,
+  rename: (from: string, to: string) => void = fs.renameSync
+): void {
+  try {
+    rename(tmp, target);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code ?? '';
+    if (platform !== 'win32' || !WINDOWS_REPLACE_LOCK_CODES.has(code)) throw err;
+    fs.copyFileSync(tmp, target);
+    fs.unlinkSync(tmp);
+  }
+}
+
 export function applyAtomicHostsBlock(
   hostsFilePath: string,
   blockedDomains: string[]
@@ -65,7 +89,7 @@ export function applyAtomicHostsBlock(
   try {
     fs.writeFileSync(tmpPath, nextContent, { encoding: 'utf8', mode: HOSTS_FILE_MODE });
     fs.chmodSync(tmpPath, HOSTS_FILE_MODE); // o umask 077 do daemon ignora o `mode` acima
-    fs.renameSync(tmpPath, hostsFilePath);
+    replaceFileFromTemp(tmpPath, hostsFilePath);
   } finally {
     try {
       if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
