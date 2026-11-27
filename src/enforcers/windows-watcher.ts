@@ -6,8 +6,6 @@
  * verificação de TemporaryGrants e redirecionamento seguro para `127.0.0.1:49152/blocked`.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   evaluateUrlAndTitle,
   sanitizeAndNormalizeUrl,
@@ -23,8 +21,6 @@ import type {
 } from './macos-watcher.js';
 
 export type { ActiveTabSnapshot, BrowserTabAdapter, CompatibleTemporaryGrant, WatcherInterceptionResult };
-
-const execFileAsync = promisify(execFile);
 
 /** Lista imutável de executáveis de navegadores Windows monitorados. */
 export const SUPPORTED_WINDOWS_BROWSERS = [
@@ -44,117 +40,76 @@ export const SUPPORTED_WINDOWS_BROWSERS = [
 
 export type SupportedWindowsBrowser = (typeof SUPPORTED_WINDOWS_BROWSERS)[number];
 
-export interface WindowsTabAdapterOptions {
-  execFn?: (cmd: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
-  timeoutMs?: number;
+/** Fonte do processo e do título em primeiro plano (o `ForegroundHelper` do W8). */
+export interface ForegroundSource {
+  probe(): Promise<{ proc: string; title: string } | null>;
 }
 
+export interface WindowsTabAdapterOptions {
+  helper: ForegroundSource;
+  /** `shell.openExternal` do Electron (W11a). Sem ele não há redirecionamento. */
+  openExternal?: (url: string) => Promise<void>;
+}
+
+const BLOCKED_PAGE_PREFIX = 'http://127.0.0.1:49152/blocked?';
+
+/** Sufixos dos navegadores no título da janela, com o "e mais N páginas" do Chromium. */
+const BROWSER_TITLE_SUFFIX =
+  /(?:\s+e mais \d+ p[áa]ginas?)?\s+[-—–]\s+(?:Google Chrome|Mozilla Firefox|Microsoft​?\s?Edge|Brave|Vivaldi|Opera)\s*$/i;
+
+/** Tira do título o sufixo do navegador (W7). */
+export function cleanBrowserTitle(title: string): string {
+  return title.replace(BROWSER_TITLE_SUFFIX, '').trim();
+}
+
+/** Títulos de páginas internas, que não dizem nada sobre o conteúdo. */
+const NEUTRAL_TITLES = new Set(['nova guia', 'nova aba', 'new tab', 'início', 'new private tab', 'nova janela anônima']);
+
 /**
- * Adaptador de inspeção e redirecionamento de janelas no Windows via PowerShell / Win32.
+ * Adaptador Windows da Camada 3: lê a janela em primeiro plano pelo helper persistente (W8, sem o bug do
+ * `$pid` e com o título da própria janela via `GetWindowText`, W6) e redireciona pelo `shell.openExternal`
+ * (W11a; o `cmd /c start` quebrava a URL em `&`).
  */
 export class WindowsBrowserTabAdapter implements BrowserTabAdapter {
-  private readonly execFn: (cmd: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
-  private readonly timeoutMs: number;
-  private lastWarningAtMs = 0;
+  private readonly helper: ForegroundSource;
+  private readonly openExternal?: (url: string) => Promise<void>;
 
-  constructor(options: WindowsTabAdapterOptions = {}) {
-    this.execFn =
-      options.execFn ??
-      ((cmd, args) =>
-        execFileAsync(cmd, args, { timeout: options.timeoutMs ?? 2000, encoding: 'utf8' }) as Promise<{
-          stdout: string;
-          stderr: string;
-        }>);
-    this.timeoutMs = options.timeoutMs ?? 2000;
+  constructor(options: WindowsTabAdapterOptions) {
+    this.helper = options.helper;
+    this.openExternal = options.openExternal;
   }
 
   async getActiveTab(): Promise<ActiveTabSnapshot | null> {
-    try {
-      // Script PowerShell leve para consultar processo em primeiro plano e título da janela
-      const script = `
-        Add-Type @"
-          using System;
-          using System.Runtime.InteropServices;
-          public class User32 {
-            [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-          }
-"@
-        $hwnd = [User32]::GetForegroundWindow()
-        if ($hwnd -ne [IntPtr]::Zero) {
-          $pid = 0
-          [User32]::GetWindowThreadProcessId($hwnd, [ref]$pid)
-          $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
-          if ($proc) {
-            Write-Output $proc.ProcessName
-            Write-Output $proc.MainWindowTitle
-          }
-        }
-      `.trim();
-
-      const { stdout } = await this.execFn('powershell', ['-NoProfile', '-NonInteractive', '-Command', script]);
-      const lines = stdout.trim().split(/\r?\n/).map((l) => l.trim());
-      if (lines.length < 2) return null;
-
-      const processName = lines[0]?.toLowerCase() ?? '';
-      const windowTitle = lines.slice(1).join(' ').trim();
-
-      let matchedBrowser: string | null = null;
-      for (const b of SUPPORTED_WINDOWS_BROWSERS) {
-        const cleanName = b.replace(/\.exe$/, '');
-        if (processName === cleanName || processName === b) {
-          matchedBrowser = b;
-          break;
-        }
-      }
-
-      if (!matchedBrowser) return null;
-
-      return {
-        browser: matchedBrowser,
-        url: windowTitle,
-        title: windowTitle,
-      };
-    } catch (err) {
-      const now = Date.now();
-      if (now - this.lastWarningAtMs > 60_000) {
-        this.lastWarningAtMs = now;
-        console.error(
-          '[monBlock] Watcher Windows não conseguiu ler a janela em primeiro plano:',
-          (err as Error)?.message ?? String(err)
-        );
-      }
-      return null;
-    }
+    const probe = await this.helper.probe();
+    if (!probe) return null;
+    const proc = probe.proc.toLowerCase().replace(/.exe$/, '');
+    if (!SUPPORTED_WINDOWS_BROWSERS.includes(proc as SupportedWindowsBrowser)) return null;
+    // Sem UI Automation (W11b) não há URL: a avaliação é pelo título.
+    return { browser: proc, url: '', title: probe.title };
   }
 
   async redirectActiveTab(browser: string, targetUrl: string): Promise<boolean> {
-    if (!SUPPORTED_WINDOWS_BROWSERS.includes(browser as SupportedWindowsBrowser)) {
-      return false;
-    }
-    const cleanUrl = targetUrl.replace(/^"|"$/g, '');
-    if (!cleanUrl.startsWith('http://127.0.0.1:49152/blocked')) {
+    if (!SUPPORTED_WINDOWS_BROWSERS.includes(browser as SupportedWindowsBrowser)) return false;
+    if (!targetUrl.startsWith(BLOCKED_PAGE_PREFIX)) {
       throw new Error('URL de redirecionamento inválida: permitido apenas 127.0.0.1:49152/blocked.');
     }
+    if (!this.openExternal) return false;
     try {
-      const safeUrl = cleanUrl.replace(/"/g, '%22');
-      const quotedUrl = `"${safeUrl}"`;
-      await this.execFn('cmd.exe', ['/c', 'start', '""', quotedUrl]);
+      await this.openExternal(targetUrl);
       return true;
     } catch (err) {
-      console.error(
-        `[monBlock] Falha ao redirecionar aba em ${browser}:`,
-        (err as Error)?.message ?? String(err)
-      );
+      console.error(`[monBlock] Falha ao abrir a página de bloqueio (${browser}):`, (err as Error)?.message ?? String(err));
       return false;
     }
   }
 }
 
 export interface WindowsBrowserWatcherOptions {
-  adapter?: BrowserTabAdapter;
+  adapter: BrowserTabAdapter;
   getRules: () => RuleEngineState;
   debounceMs?: number;
+  /** Mesma aba/título não redireciona de novo antes disso (anti-loop). Padrão 10 s. */
+  redirectCooldownMs?: number;
   initialGrants?: CompatibleTemporaryGrant[];
 }
 
@@ -169,9 +124,12 @@ export class WindowsBrowserWatcher {
   private readonly activeGrants = new Map<string, number>();
   private lastCheckedKey = '';
   private lastCheckedAtMs = -Infinity;
+  private readonly redirectCooldownMs: number;
+  private readonly lastRedirectAt = new Map<string, number>();
 
   constructor(options: WindowsBrowserWatcherOptions) {
-    this.adapter = options.adapter ?? new WindowsBrowserTabAdapter();
+    this.adapter = options.adapter;
+    this.redirectCooldownMs = options.redirectCooldownMs ?? 10_000;
     this.getRules = options.getRules;
     this.debounceMs = options.debounceMs ?? 150;
 
@@ -239,9 +197,13 @@ export class WindowsBrowserWatcher {
       return { blocked: false };
     }
 
-    const normalized = sanitizeAndNormalizeUrl(tab.url);
+    // W7: sem URL (o helper só dá o título), avalia pelo título limpo. Um título que começa por um domínio
+    // ("bet365.com - Apostas") é avaliado como domínio.
+    const cleanTitle = cleanBrowserTitle(tab.title);
+    const leadingDomain = /^([a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})(?:\s|$)/i.exec(cleanTitle)?.[1];
+    const normalized = sanitizeAndNormalizeUrl(tab.url) ?? (leadingDomain ? sanitizeAndNormalizeUrl(leadingDomain) : null);
     if (!normalized) {
-      return { blocked: false, browser: tab.browser };
+      return this.inspectByTitle(tab, cleanTitle, nowMs);
     }
 
     const cacheKey = `${tab.browser}|${normalized.cleanUrl}|${tab.title}`;
@@ -263,7 +225,7 @@ export class WindowsBrowserWatcher {
     }
 
     const decision = evaluateUrlAndTitle({
-      url: tab.url,
+      url: tab.url || normalized.cleanUrl,
       title: tab.title,
       state: this.getRules(),
     });
@@ -285,7 +247,7 @@ export class WindowsBrowserWatcher {
       `&reason=${encodeURIComponent(reason)}` +
       `&rule=${encodeURIComponent(ruleLabel)}`;
 
-    await this.adapter.redirectActiveTab(tab.browser, redirectUrl);
+    await this.redirectOnce(`${tab.browser}|${normalized.domain}`, tab.browser, redirectUrl, nowMs);
 
     return {
       blocked: true,
@@ -296,5 +258,39 @@ export class WindowsBrowserWatcher {
       reason,
       ruleLabel,
     };
+  }
+
+  private async inspectByTitle(tab: ActiveTabSnapshot, cleanTitle: string, nowMs: number): Promise<WatcherInterceptionResult> {
+    if (!cleanTitle || NEUTRAL_TITLES.has(cleanTitle.toLowerCase())) return { blocked: false, browser: tab.browser };
+    const cacheKey = `${tab.browser}|title|${cleanTitle}`;
+    if (cacheKey === this.lastCheckedKey && nowMs - this.lastCheckedAtMs < this.debounceMs) {
+      return { blocked: false, debounced: true, browser: tab.browser };
+    }
+    this.lastCheckedKey = cacheKey;
+    this.lastCheckedAtMs = nowMs;
+    // Sem domínio, só o grant `*` se aplica.
+    if (this.hasActiveGrant('', nowMs)) return { blocked: false, grantedTemporary: true, browser: tab.browser };
+
+    const decision = evaluateUrlAndTitle({ url: cleanTitle, title: cleanTitle, state: this.getRules() });
+    if (!decision.blocked) return { blocked: false, browser: tab.browser };
+
+    const reason = decision.reason ?? 'KEYWORD';
+    const ruleLabel = decision.ruleLabel ?? 'Regra do monBlock';
+    const redirectUrl =
+      `http://127.0.0.1:49152/blocked` +
+      `?domain=${encodeURIComponent(ruleLabel)}` +
+      `&reason=${encodeURIComponent(reason)}` +
+      `&rule=${encodeURIComponent(ruleLabel)}`;
+    await this.redirectOnce(cacheKey, tab.browser, redirectUrl, nowMs);
+    return { blocked: true, browser: tab.browser, redirectUrl, reason, ruleLabel };
+  }
+
+  /** Anti-loop: o navegador pode manter o título por um tempo depois do redirecionamento. */
+  private async redirectOnce(key: string, browser: string, url: string, nowMs: number): Promise<void> {
+    const last = this.lastRedirectAt.get(key);
+    if (last !== undefined && nowMs - last < this.redirectCooldownMs) return;
+    this.lastRedirectAt.set(key, nowMs);
+    if (this.lastRedirectAt.size > 200) this.lastRedirectAt.clear();
+    await this.adapter.redirectActiveTab(browser, url);
   }
 }
