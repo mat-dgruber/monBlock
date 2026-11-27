@@ -9,6 +9,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - CI: job `windows-latest` com typecheck, testes, build e smoke do daemon (Named Pipe `\\.\pipe\monblockd` e hosts gerado em modo dev).
 
 ### Corrigido
+- Windows: o hosts é gravado mesmo aberto por outro processo (cliente DNS, antivírus): o `rename` com `EPERM` cai para cópia com novas tentativas.
+- Windows: o verificador do servidor do pipe (W21) reconhece o serviço real (o PID era lido como 0).
+- Windows: o `ipconfig /flushdns` só roda quando o hosts muda e em segundo plano; com o hosts grande ele travava o daemon ~25 s por comando.
 - Windows, Camada 2: o manifesto `.reg` usava a abreviação `HKLM\`, que o `reg import` ignora com código 0; nenhuma política de navegador era gravada. Agora usa `HKEY_LOCAL_MACHINE\`, apaga cada lista antes de recriá-la (sem allowlist antiga valendo) e grava sem BOM (W9).
 - Windows: falhas de `icacls`, `ipconfig`, `reg import` não são mais engolidas; todos os passos rodam e as falhas viram drift. O drift lê o Registro (`reg query`) e acusa chave apagada ou valor alterado (W10).
 - Windows: caminhos do daemon vêm de `%ProgramData%` e `%SystemRoot%`, não mais relativos ao drive corrente (W15).
