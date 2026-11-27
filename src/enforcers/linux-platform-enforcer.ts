@@ -120,6 +120,8 @@ export class LinuxPlatformEnforcer implements PlatformEnforcer {
   }
 
   private hostsModeWrong(): boolean {
+    // Modo POSIX não existe no Windows (o Node sempre devolve 0o666): ali não há o que comparar.
+    if (process.platform === 'win32') return false;
     return fs.existsSync(this.hostsPath) && (fs.statSync(this.hostsPath).mode & 0o777) !== HOSTS_FILE_MODE;
   }
 

@@ -465,6 +465,8 @@ export class MacOSPlatformEnforcer implements PlatformEnforcer {
 
   /** `/etc/hosts` fora de 0644: o mDNSResponder (sem root) não o lê e o bloqueio por DNS não vale. */
   private hostsModeWrong(): boolean {
+    // Modo POSIX não existe no Windows (o Node sempre devolve 0o666): ali não há o que comparar.
+    if (process.platform === 'win32') return false;
     return fs.existsSync(this.hostsPath) && (fs.statSync(this.hostsPath).mode & 0o777) !== HOSTS_FILE_MODE;
   }
 
