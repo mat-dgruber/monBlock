@@ -14,12 +14,15 @@ import { buildProblem, type DaemonCommand, type DaemonResponse } from '../daemon
 import { PREDEFINED_CATEGORIES } from '../domain/categories.js';
 import { evaluateUrlAndTitle } from '../domain/rule-engine.js';
 import { MacOSBrowserWatcher } from '../enforcers/macos-watcher.js';
+import { ForegroundHelper } from '../enforcers/windows-foreground-helper.js';
+import { WindowsBrowserTabAdapter, WindowsBrowserWatcher } from '../enforcers/windows-watcher.js';
 import { createDefaultPersistentState } from '../storage/state-store.js';
 import { DaemonClient } from './daemon-client.js';
 import { migrateLegacyVaults, readUserVaultKey } from './legacy-migration.js';
 import { AppNotificationManager } from './notifications.js';
 import { pipeServerVerifier } from './pipe-server-check.js';
 import { applyWindowsAppIdentity, trayIconSpec } from './platform-shell.js';
+import { startBrowserWatcherLoop, type WatcherLoopState } from './watcher-loop.js';
 import { checkForAppUpdates, downloadAppUpdatePkg } from './updater.js';
 
 /** Socket do `monblockd` root por SO (ADR-0007, ADR-0013). Override só em build não empacotado (dev/CI). */
@@ -697,54 +700,43 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   // Atualização periódica a cada 30s (ou reativa a mutações IPC) para não sobrecarregar o RunLoop do AppKit
   setInterval(() => void refreshTrayMenu(), 30_000);
 
-  // Camada 3 (ADR-0002): Watcher de abas com proteção contra sobreposição e backoff dinâmico sob carga (ex: Spotlight)
+  // Camada 3 (ADR-0002): vigia de abas. macOS pelo AppleScript; Windows pelo helper persistente (W5–W8).
+  let watcherRules = createDefaultPersistentState().rules;
+  const fetchWatcherState = async (): Promise<WatcherLoopState | null> => {
+    const res = await call({ type: 'GET_STATE' });
+    return 'state' in res ? { rules: res.state.rules, temporaryGrants: res.state.temporaryGrants } : null;
+  };
   if (process.platform === 'darwin') {
-    let watcherRules = createDefaultPersistentState().rules;
-    const watcher = new MacOSBrowserWatcher({ getRules: () => watcherRules });
-    let isInspecting = false;
-    let nextDelayMs = 1500;
-
-    const watchTick = async (): Promise<void> => {
-      if (isInspecting) return;
-      isInspecting = true;
-      const startTime = Date.now();
-      try {
-        const now = Date.now();
-        let wildcardGrant = false;
-        const res = await call({ type: 'GET_STATE' });
-        if ('state' in res) {
-          const grants = res.state.temporaryGrants.filter((g) => g.expiresAtMs > now);
-          wildcardGrant = grants.some((g) => g.target === '*');
-          watcherRules = {
-            ...res.state.rules,
-            allowlistDomains: [...res.state.rules.allowlistDomains, ...grants.map((g) => g.target)],
-          };
-        }
-        if (!wildcardGrant) {
-          const interception = await watcher.inspectOnce(now);
-          if (interception.blocked) {
-            console.log(
-              `[monBlock] Watcher interceptou e redirecionou aba em ${interception.browser}: ${interception.domain} (${interception.ruleLabel})`
-            );
-          }
-        }
-        // Resiliência contra contenção do AppKit/System Events: se a inspeção demorou mais de 800ms,
-        // aplica backoff para dar folga ao subsistema de eventos do macOS
-        const duration = Date.now() - startTime;
-        if (duration > 800) {
-          nextDelayMs = Math.min(5000, nextDelayMs + 1000);
-        } else {
-          nextDelayMs = 1500;
-        }
-      } catch (err) {
-        console.error('[monBlock] Falha no ciclo do watcher:', err);
-        nextDelayMs = 5000;
-      } finally {
-        isInspecting = false;
-        setTimeout(() => void watchTick(), nextDelayMs);
-      }
-    };
-    void watchTick();
+    startBrowserWatcherLoop({
+      watcher: new MacOSBrowserWatcher({ getRules: () => watcherRules }),
+      fetchState: fetchWatcherState,
+      onRules: (rules) => (watcherRules = rules),
+    });
+  } else if (process.platform === 'win32') {
+    const helper = new ForegroundHelper({
+      // Sem isso a pessoa veria "Proteção ativa" sem saber que a Camada 3 parou (o hosts e as políticas seguem).
+      onUnavailable: () =>
+        notificationManager.notify({
+          id: 'layer3-unavailable',
+          title: 'monBlock — vigia de abas desligado',
+          body: 'O Windows bloqueou o PowerShell que o monBlock usa para ver as abas. O bloqueio de sites e as políticas dos navegadores continuam ativos.',
+          force: true,
+        }),
+    });
+    const stopWatcher = startBrowserWatcherLoop({
+      watcher: new WindowsBrowserWatcher({
+        adapter: new WindowsBrowserTabAdapter({ helper, openExternal: (url) => shell.openExternal(url) }),
+        getRules: () => watcherRules,
+      }),
+      fetchState: fetchWatcherState,
+      onRules: (rules) => (watcherRules = rules),
+      // CLM/AppLocker: o helper desiste após 3 tentativas e a Camada 3 fica desligada (as Camadas 1/2 seguem).
+      isAvailable: () => helper.status() !== 'unavailable',
+    });
+    app.on('will-quit', () => {
+      stopWatcher();
+      helper.dispose();
+    });
   }
 
   // Revogação automática de concessões temporárias quando o Mac entra em sleep (RN-APP-04)
