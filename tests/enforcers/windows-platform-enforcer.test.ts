@@ -6,7 +6,6 @@ import {
   WindowsPlatformEnforcer,
   generateWindowsRegistryManifest,
   WINDOWS_CHROMIUM_REGISTRY_KEYS,
-  WINDOWS_FIREFOX_REGISTRY_KEY,
 } from '../../src/enforcers/windows-platform-enforcer.js';
 import { createPlatformEnforcer } from '../../src/enforcers/platform-enforcer.js';
 import type { ProtectionRuleset } from '../../src/storage/state-store.js';
@@ -33,24 +32,24 @@ describe('WindowsPlatformEnforcer: Imposição de Sistema e Políticas no Window
     });
 
     expect(manifest).toContain('Windows Registry Editor Version 5.00');
-    expect(manifest).toContain('[HKLM\\SOFTWARE\\Policies\\Google\\Chrome]');
+    expect(manifest).toContain('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome]');
     expect(manifest).toContain('"DnsOverHttpsMode"="off"');
     expect(manifest).toContain('"IncognitoModeAvailability"=dword:00000001');
 
-    expect(manifest).toContain('[HKLM\\SOFTWARE\\Policies\\Google\\Chrome\\URLBlocklist]');
+    expect(manifest).toContain('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome\\URLBlocklist]');
     expect(manifest).toContain('"1"="custom-distraction.com"');
     expect(manifest).toContain('"2"="pornhub.com"');
 
-    expect(manifest).toContain('[HKLM\\SOFTWARE\\Policies\\Google\\Chrome\\URLAllowlist]');
+    expect(manifest).toContain('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome\\URLAllowlist]');
     expect(manifest).toContain('"1"="work-safe.org"');
 
     // Firefox
-    expect(manifest).toContain(`[${WINDOWS_FIREFOX_REGISTRY_KEY}]`);
+    expect(manifest).toContain('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Mozilla\\Firefox]');
     expect(manifest).toContain('"DisablePrivateBrowsing"=dword:00000001');
-    expect(manifest).toContain(`[${WINDOWS_FIREFOX_REGISTRY_KEY}\\DNSOverHTTPS]`);
+    expect(manifest).toContain('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Mozilla\\Firefox\\DNSOverHTTPS]');
     expect(manifest).toContain('"Enabled"=dword:00000000');
     expect(manifest).toContain('"Locked"=dword:00000001');
-    expect(manifest).toContain(`[${WINDOWS_FIREFOX_REGISTRY_KEY}\\WebsiteFilter\\Block]`);
+    expect(manifest).toContain('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Mozilla\\Firefox\\WebsiteFilter\\Block]');
     expect(manifest).toContain('"1"="*://*.custom-distraction.com/*"');
     expect(manifest).toContain('"2"="*://*.pornhub.com/*"');
   });
@@ -91,7 +90,7 @@ describe('WindowsPlatformEnforcer: Imposição de Sistema e Políticas no Window
     expect(executedCommands.some((c) => c.cmd === 'reg' && c.args[0] === 'import' && c.args[1] === regFilePath)).toBe(true);
   });
 
-  it('detecta desvios (drift) quando hosts ou arquivo .reg são alterados', async () => {
+  it('detecta desvio quando o hosts é alterado (o Registro é coberto em windows-registry.test.ts)', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'win-drift-'));
     const hostsPath = path.join(tmpDir, 'hosts');
     const regFilePath = path.join(tmpDir, 'policies.reg');
@@ -101,6 +100,7 @@ describe('WindowsPlatformEnforcer: Imposição de Sistema e Políticas no Window
       hostsPath,
       regFilePath,
       commandExecutor: () => {},
+      registryReader: () => null,
     });
 
     await enforcer.applyWebRules(dummyRules);
@@ -109,11 +109,6 @@ describe('WindowsPlatformEnforcer: Imposição de Sistema e Políticas no Window
     // Adulterando hosts
     fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n', 'utf8');
     expect(enforcer.verifyApplied(dummyRules)).toContain(hostsPath);
-
-    // Reaplicando e adulterando registro
-    await enforcer.applyWebRules(dummyRules);
-    fs.writeFileSync(regFilePath, 'adulterado', 'utf8');
-    expect(enforcer.verifyApplied(dummyRules)).toContain(regFilePath);
   });
 
   it('protege caminhos críticos restringindo permissões via icacls', async () => {
