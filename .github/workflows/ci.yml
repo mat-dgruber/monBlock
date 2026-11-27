@@ -64,6 +64,49 @@ jobs:
             Get-Content $log, "$log.err" -ErrorAction SilentlyContinue | Select-Object -Last 50
           }
 
+  # W18 (ADR-0016): o pacote de verdade. Runner descartável e admin sem UAC: instala o Setup, prova o
+  # serviço SYSTEM, IPC de usuário comum, W21, taskkill e a desinstalação até a máquina ficar limpa.
+  windows-package:
+    name: Windows — instalador e E2E como SYSTEM
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      # O npm 11 não roda o postinstall do Electron; o packager precisa do binário.
+      - run: node node_modules/electron/install.js
+      - name: Inno Setup 6.7.4 (hash fixado)
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.4.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe' -OutFile $exe
+          $h = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          if ($h -ne 'a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c') { throw "SHA-256 do Inno divergente: $h" }
+          $dir = Join-Path $env:RUNNER_TEMP 'inno'
+          Start-Process $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/CURRENTUSER', '/NORESTART', '/NOICONS', "/DIR=`"$dir`"" -Wait
+          "INNO_ISCC=$dir\ISCC.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Build do instalador
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows-setup.ps1
+      - name: E2E do pacote como SYSTEM
+        run: |
+          $setup = Get-ChildItem build/windows-setup -Filter 'monBlock-Setup-*.exe' | Select-Object -First 1
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests/e2e/windows/run.ps1 -Setup $setup.FullName
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: monBlock-windows-setup
+          path: |
+            build/windows-setup/*
+            ${{ runner.temp }}/mb-e2e/e2e-results.json
+            ${{ runner.temp }}/mb-e2e/setup.log
+          retention-days: 7
+
   macos-package:
     name: macOS — .pkg do monblockd e E2E como root
     runs-on: macos-latest
