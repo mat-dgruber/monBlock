@@ -10,6 +10,10 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Windows: falhas de `icacls`, `ipconfig`, `reg import` não são mais engolidas; todos os passos rodam e as falhas viram drift. O drift lê o Registro (`reg query`) e acusa chave apagada ou valor alterado (W10).
 - Windows: caminhos do daemon vêm de `%ProgramData%` e `%SystemRoot%`, não mais relativos ao drive corrente (W15).
 - Windows: ícone da bandeja visível (era vazio) e notificações com o AppUserModelID `com.ccat.monblock` (W13, W14).
+- Windows: o daemon reconhece que roda como SYSTEM/administrador pelo SID de integridade (`whoami /groups`) e sobe sem `MONBLOCK_DEV_ROOT_DIR`; antes saía no boot porque `process.getuid` não existe (W1).
+- Windows: no boot, a ACL de `%ProgramData%\monBlock` é conferida por SID e restringida a SYSTEM e Administradores; se não der, o cofre não é aberto (W20).
+- Windows: o Edge trava a navegação InPrivate com `InPrivateModeAvailability` (o `IncognitoModeAvailability` dava "Erro").
+- Windows, modo dev: o daemon não roda mais `icacls`/`reg` no sistema real.
 - Linux: sem root, o enforcer não escala mais com `sudo -n` (travava arquivos de teste com `chattr +i`).
 
 ## [0.9.1] - 2026-11-19
