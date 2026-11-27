@@ -299,7 +299,16 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   try {
     ipc = await createIpcServer({
       socketPath: layout.socketPath,
-      handle: (cmd) => daemon.handleCommand(cmd),
+      handle: async (cmd) => {
+        const started = Date.now();
+        try {
+          return await daemon.handleCommand(cmd);
+        } finally {
+          // O cliente desiste em 5 s: registrar o que passa de 1 s ajuda a achar o gargalo (visto na F3).
+          const ms = Date.now() - started;
+          if (ms > 1000) console.error(`[monblockd] comando ${cmd.type} levou ${ms} ms`);
+        }
+      },
       secureListen:
         process.platform === 'win32' && options.helpersDir
           ? pipeAclHook(path.join(options.helpersDir, 'pipe-acl.ps1'))

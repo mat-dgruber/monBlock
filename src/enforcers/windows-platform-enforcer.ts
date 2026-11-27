@@ -235,11 +235,15 @@ export class WindowsPlatformEnforcer implements PlatformEnforcer {
 
   /** Roda um passo sem interromper os seguintes; a falha vira drift no próximo `verifyApplied`. */
   private async step(failures: string[], id: string, fn: () => unknown): Promise<void> {
+    const started = Date.now();
     try {
       await fn();
     } catch (err) {
       failures.push(id);
       console.error(`[monblockd] passo ${id} falhou:`, (err as Error).message);
+    } finally {
+      const ms = Date.now() - started;
+      if (ms > 500) console.error(`[monblockd] passo ${id} levou ${ms} ms`);
     }
   }
 

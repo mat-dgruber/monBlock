@@ -55,16 +55,33 @@ export function replaceFileFromTemp(
   tmp: string,
   target: string,
   platform: NodeJS.Platform = process.platform,
-  rename: (from: string, to: string) => void = fs.renameSync
+  rename: (from: string, to: string) => void = fs.renameSync,
+  copy: (from: string, to: string) => void = fs.copyFileSync,
+  sleep: (ms: number) => void = sleepSync
 ): void {
   try {
     rename(tmp, target);
+    return;
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code ?? '';
-    if (platform !== 'win32' || !WINDOWS_REPLACE_LOCK_CODES.has(code)) throw err;
-    fs.copyFileSync(tmp, target);
-    fs.unlinkSync(tmp);
+    if (platform !== 'win32' || !WINDOWS_REPLACE_LOCK_CODES.has((err as NodeJS.ErrnoException).code ?? '')) throw err;
   }
+  // A trava é intermitente (o antivírus inspeciona o hosts logo após cada escrita): até ~3 s de novas tentativas.
+  const delays = [0, 100, 200, 400, 800, 1500];
+  for (let i = 0; ; i++) {
+    sleep(delays[i]);
+    try {
+      copy(tmp, target);
+      fs.unlinkSync(tmp);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (!WINDOWS_REPLACE_LOCK_CODES.has(code) || i === delays.length - 1) throw err;
+    }
+  }
+}
+
+function sleepSync(ms: number): void {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 export function applyAtomicHostsBlock(

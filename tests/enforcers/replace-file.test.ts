@@ -49,6 +49,36 @@ describe('replaceFileFromTemp', () => {
     }
   );
 
+  it('cópia travada (EBUSY intermitente do antivírus) é repetida com espera até passar', () => {
+    // Arrange
+    const { target, tmp } = setup();
+    let calls = 0;
+    const sleeps: number[] = [];
+    const copy = (from: string, to: string) => {
+      calls += 1;
+      if (calls < 3) throw err('EBUSY');
+      fs.copyFileSync(from, to);
+    };
+
+    // Act
+    replaceFileFromTemp(tmp, target, 'win32', () => { throw err('EPERM'); }, copy, (ms) => sleeps.push(ms));
+
+    // Assert
+    expect(calls).toBe(3);
+    expect(sleeps).toEqual([0, 100, 200]);
+    expect(fs.readFileSync(target, 'utf8')).toBe('novo');
+  });
+
+  it('desiste depois de ~3 s de travas e propaga o erro', () => {
+    // Arrange
+    const { target, tmp } = setup();
+    const copy = vi.fn(() => { throw err('EBUSY'); });
+
+    // Act / Assert
+    expect(() => replaceFileFromTemp(tmp, target, 'win32', () => { throw err('EPERM'); }, copy, () => {})).toThrow('EBUSY');
+    expect(copy).toHaveBeenCalledTimes(6);
+  });
+
   it('fora do Windows o erro do rename sobe (sem fallback não atômico)', () => {
     // Arrange
     const { target, tmp } = setup();
