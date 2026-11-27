@@ -6,6 +6,8 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 
 ## [Unreleased]
 ### Adicionado
+- Windows, Camada 3 (vigia de abas) ligada: um helper PowerShell persistente lê o processo e o título da janela em primeiro plano; um título com conteúdo bloqueado abre a página de bloqueio pelo navegador padrão. Em PowerShell restrito (CLM/AppLocker) a camada fica desligada, sem loop (W5–W8, W11a).
+- Windows: Dia, Arc e Chromium entram na lista de navegadores do vigia.
 - CI: job `windows-latest` com typecheck, testes, build e smoke do daemon (Named Pipe `\\.\pipe\monblockd` e hosts gerado em modo dev).
 
 ### Corrigido
