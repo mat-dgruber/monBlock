@@ -82,6 +82,18 @@ describe('W9 — manifesto .reg com HKEY_LOCAL_MACHINE e limpeza de valores anti
     expect(lines).not.toContain('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Mozilla\\Firefox\\WebsiteFilter\\Exceptions]');
   });
 
+  it('trava a navegação anônima com o nome de política de cada navegador (Edge usa InPrivateModeAvailability)', () => {
+    // Act
+    const manifest = generateWindowsRegistryManifest({ blockedDomains: [], allowlistDomains: [], lockIncognito: true });
+
+    // Assert
+    const edge = manifest.split('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge]')[1].split('\r\n\r\n')[0];
+    expect(edge).toContain('"InPrivateModeAvailability"=dword:00000001');
+    expect(edge).not.toContain('IncognitoModeAvailability');
+    const chrome = manifest.split('[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome]')[1].split('\r\n\r\n')[0];
+    expect(chrome).toContain('"IncognitoModeAvailability"=dword:00000001');
+  });
+
   it('escapa aspas e barras invertidas nos valores', () => {
     // Act
     const manifest = generateWindowsRegistryManifest({ blockedDomains: ['a"b\\c'], allowlistDomains: [], lockIncognito: false });

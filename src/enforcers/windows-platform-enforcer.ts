@@ -74,12 +74,14 @@ export function buildManagedRegistry(params: {
 }): ManagedRegistryKey[] {
   const keys: ManagedRegistryKey[] = [];
   for (const root of WINDOWS_CHROMIUM_REGISTRY_KEYS) {
+    // O Edge não reconhece IncognitoModeAvailability (edge://policy mostra "Erro"); o dele é InPrivateModeAvailability.
+    const incognitoPolicy = root.endsWith('\\Microsoft\\Edge') ? 'InPrivateModeAvailability' : 'IncognitoModeAvailability';
     keys.push({
       key: root,
       exact: false,
       values: new Map<string, RegValue>([
         ['DnsOverHttpsMode', { type: 'REG_SZ', data: 'off' }],
-        ['IncognitoModeAvailability', dword(params.lockIncognito)],
+        [incognitoPolicy, dword(params.lockIncognito)],
       ]),
     });
     for (const name of ['URLBlocklist', 'URLAllowlist'] as const) {
