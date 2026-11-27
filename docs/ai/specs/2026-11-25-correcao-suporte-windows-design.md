@@ -1,328 +1,407 @@
-# Especificação de Design: Correção do Suporte ao Windows (W1–W18)
+# Especificação de Design: Correção do Suporte ao Windows (W1–W21)
 
-**Data:** 2026-11-25
-**Status:** APROVADA (2026-11-26) com as recomendações D1-A (WinSW), D2-A com spike e fallback D2-B, D3 (`@electron/packager` + Inno Setup 6) e D4 em 2 passos. `/plan-criticize`: 10/100. Próximo artefato: plano em `docs/ai/plans/`, por fase.
+**Data:** 2026-11-25 · **Revisão v2:** 2026-11-27
+**Status:** APROVADA v2 (2026-11-27). Incorpora a auditoria goldfish-critic (que reprovou a v1 para F3–F5) e as respostas da sabatina. Scanner `/plan-criticize`: 0/100. Próximo artefato: plano do S0 em `docs/ai/plans/`.
 **Versão alvo:** `0.10.0` (MINOR: passa a suportar uma plataforma de verdade; sem quebra de contrato IPC no macOS/Linux)
 **Base:** [relatório de revisão](../reports/2026-11-25-revisao-funcionalidade-windows.md) (branch `dev`, commit `e4033cf`)
-**Artefatos:** esta spec em `docs/ai/specs/`; o plano de implementação de cada fase irá para `docs/ai/plans/`; os spikes (D2) para `docs/ai/reports/`.
-**ADRs afetadas:** ADR-0013 e ADR-0015 (premissas que não valem na prática). Esta spec pede a **ADR-0016** (seção 5).
+**Artefatos:** esta spec fica em `docs/ai/specs/`. O plano de cada fase vai para `docs/ai/plans/`. O spike (S0) vai para `docs/ai/reports/`.
+**ADRs afetadas:** a ADR-0013 e a ADR-0015 têm premissas falsas. Esta spec pede a **ADR-0016** (seção 5).
 
 ---
 
+## 0. Glossário
+
+- **Ajudante:** a pessoa de confiança pareada pelo Telegram. A UI envia pelo IPC a **senha do Ajudante** (`PAIR_PARTNER`, `SET_BOT_TOKEN.currentPartnerPassword`) e códigos de desafio/emergência (`VERIFY_OFFLINE_TOKEN`, `VERIFY_RECOVERY_CODE`) **em claro**. Quem escuta o IPC captura esses segredos.
+- **Camadas:**
+  - Camada 1: arquivo `hosts`.
+  - Camada 2: políticas de navegador no Registro (`HKLM\SOFTWARE\Policies`).
+  - Camada 3: watcher de abas no app Electron.
+- **Grant:** liberação temporária (`temporaryGrants`). O grant `*` libera tudo.
+- **`cleanShutdown`:** marca gravada na parada limpa (`monblockd.ts:489,512`). Sem essa marca, o próximo boot avisa o Ajudante sobre inatividade.
+- **`CRITICAL_INFRA_ALLOWLIST`:** domínios que nunca vão para o hosts (`hosts-enforcer.ts`).
+- **`buildProblem`:** gerador de Problem Details (RFC 9457) do daemon.
+- **`INSTALL_DIR` (Windows):** `%ProgramFiles%\monBlock`. É o equivalente do `HELPER_DIR` do macOS e guarda `monblockd.exe`, WinSW, `design\` e `uninstall.ps1`.
+- **`DATA_DIR` (Windows):** `%ProgramData%\monBlock`.
+
 ## 1. Contexto
 
-A ADR-0015 diz que o Windows tem paridade com as 3 camadas de bloqueio, mas a revisão mostrou que o caminho Windows nunca rodou fora de mocks:
+A ADR-0015 diz que o Windows tem paridade com as 3 camadas, mas o caminho Windows nunca rodou fora de mocks:
 
 - o daemon sai no boot (`process.getuid` não existe);
-- o `.exe` registrado com `sc.exe` não é um serviço de verdade (erro 1053);
-- não existe build do daemon nem do app para Windows;
-- o named pipe nasce com o DACL padrão (Everyone só lê), então a UI não consegue mandar comandos;
-- a Camada 3 (watcher) não está ligada, e o script dela tem um bug fatal com `$pid`.
+- o `.exe` registrado com `sc.exe` não é serviço (erro 1053);
+- não há build do daemon nem do app;
+- o named pipe nasce com o DACL padrão (Everyone só lê);
+- a Camada 3 não está ligada e o script dela tem um bug fatal com `$pid`;
+- **provavelmente a Camada 2 não importa nada**, porque o `.reg` usa a abreviação `HKLM\`, e o formato `.reg` exige `HKEY_LOCAL_MACHINE\` (a confirmar no S0).
 
-Duas premissas da ADR-0015 / ADR-0013 são **falsas** e precisam ser corrigidas pela ADR-0016:
+Duas premissas da ADR-0015 / ADR-0013 são falsas e serão corrigidas pela ADR-0016:
 
-1. "Named Pipe com DACL restrita": o `node:net` **não** permite definir DACL ao criar o pipe.
-2. "O daemon roda como Serviço Windows nativo": um executável SEA do Node não implementa o protocolo do SCM.
+1. "O daemon roda como Serviço Windows nativo": um SEA do Node não implementa o protocolo do SCM.
+2. "Pipe com DACL restrita a Administradores e SYSTEM": nenhum código aplica DACL. O mais perto que o `node:net` oferece é `listen({ readableAll, writableAll })`, que abre o pipe para Everyone.
 
 ## 2. Objetivos
 
 - Instalar, iniciar e manter o `monblockd` como SYSTEM no Windows 10 22H2+ e no Windows 11 (x64).
-- Permitir que o app Electron (usuário comum, sem elevação) converse com o daemon por IPC.
-- Fazer as Camadas 1 (hosts), 2 (políticas do Registro) e 3 (watcher) funcionarem e serem verificáveis.
-- Gerar instalador, atualização e desinstalação para Windows.
-- Ter um job `windows-latest` no CI que exercite o caminho real, não só mocks.
+- Fazer o app Electron (usuário comum, sem elevação) conversar com o daemon, **sem entregar segredos a um impostor**.
+- Fazer as Camadas 1, 2 e 3 funcionarem e serem verificáveis, inclusive com detecção de remoção do Registro.
+- Gerar instalador, atualização e desinstalação. A desinstalação só acontece pelo fluxo autorizado pelo Ajudante.
+- Ter o job `windows-latest` no CI exercitando o caminho real.
 
 ## 3. Não objetivos
 
-- Windows ARM64, Windows Server, Windows 7/8.
-- Assinatura Authenticode / EV nesta entrega (fica registrada como risco: avisos do SmartScreen).
+- Windows ARM64, Server, 7/8.
+- Assinatura Authenticode (fica como risco: SmartScreen).
 - Bloqueio de apps (MOD-05) no Windows.
-- Ligar o watcher no Linux. É um achado lateral (`main.ts:691` também deixa o Linux de fora) e deve virar outra spec.
-- Mudar o protocolo de linhas JSON do IPC ou os comandos do daemon.
+- Watcher no Linux. É um achado lateral (`main.ts:691`) e terá spec própria.
+- Mudar o protocolo de linhas JSON ou os comandos do daemon.
+- Resistir a um administrador determinado. O produto dificulta e **detecta** (drift → Ajudante), mas não impede (ver §8).
 
-## 4. Fases e ordem
+## 4. Fases e ordem (dependências reais)
 
-| Fase | Itens | Depende de | Testável só com mocks? |
+| Fase | Itens | Depende de | Precisa de Windows real? |
 |------|-------|-----------|------------------------|
-| F1 — Correções locais | W5, W6, W9, W10, W13, W14, W15, W17, W11a | — | Sim |
-| F2 — Entry multiplataforma | W1, W12 | F1 | Sim (com DI de `platform`/`execFn`) |
-| F3 — Serviço + IPC (ADR-0016) | W2, W4 | F2 + D1, D2 aprovadas | Não: precisa de Windows real |
-| F4 — Build, instalador, update e CI | W3, W16, W18 | F3 + D3 | Não |
-| F5 — Watcher completo | W7, W8, W11b | F1 + D4 | Parcial |
+| **S0 — Spike** (≤ 2 dias) | Validar premissas: `.reg` com `HKLM` × `HKEY_LOCAL_MACHINE`; `listen({readableAll, writableAll})` + ACE; descritor do pipe por instância; WinSW e árvore de processos; `explorer.exe`/`shell.openExternal`; UTF-8 × UTF-16LE no `reg import`; verificação do dono do pipe pelo cliente (W21) | — | Sim |
+| F1 — Camadas 1/2 e correções locais | W9 (+ prefixo `HKEY_LOCAL_MACHINE`), W10, W13, W14, W15, W17 (conforme S0) | S0 | Não (mocks), com validação no S0 |
+| F2 — Entry multiplataforma | W1, W20 | F1 | Não |
+| F3 — Serviço + IPC (ADR-0016) | W2, W4, W21 | F2 + S0 | Sim |
+| F4 — Build, instalador, update, desinstalação, autostart, CI | W3, W12, W16, W18, W19 | F3 | Sim |
+| F5 — Camada 3 completa | W5 + W6 + W7 + W8 + W11a (juntos), depois W11b | F3 (o `GET_STATE` precisa do IPC) | Parcial |
 
-Cada fase gera commits atômicos (`fix(windows): …`, `feat(windows): …`) e uma entrada no `CHANGELOG.md`. As fases F3–F5 só começam depois da ADR-0016 aprovada.
+Regra: **o W5 só liga o watcher junto com o W8** (helper persistente). Até lá a Camada 3 fica desligada no Windows, sem custo de CPU.
 
-## 5. Decisões em aberto (precisam de resposta antes de F3/F4/F5)
+Cada fase gera commits atômicos e uma entrada no `CHANGELOG.md`. F3–F5 só começam com a ADR-0016 aprovada.
 
-### D1 — Como o daemon roda como serviço (W2)
+### Critério de saída do S0
 
-| Opção | Prós | Contras |
-|-------|------|---------|
-| **A. WinSW (recomendada)** — `monblockd-service.exe` + XML ao lado do `monblockd.exe` | Serviço real no SCM, com recuperação, `stop`/`start`, logs com rotação; binário único (licença MIT) | Mais um binário de terceiro no pacote (supply chain: fixar versão + SHA-256) |
-| B. NSSM | Maduro, simples | Sem manutenção ativa desde 2017 |
-| C. Tarefa Agendada como SYSTEM no boot | Nativo, sem binário extra | Não é serviço: sem semântica de parada, recuperação mais fraca, `onUninstalled`/`SIGTERM` diferentes |
-| D. Addon N-API com `StartServiceCtrlDispatcher` | Sem binário de terceiro | Compilação nativa por versão do Node; contradiz "zero dependências nativas" da ADR-0015 |
+O S0 sai com um relatório em `docs/ai/reports/`. Cada premissa recebe **PASSOU** ou **FALHOU**, com o comando e a saída como evidência.
 
-### D2 — Transporte IPC com controle de acesso (W4)
+O critério binário do IPC é: com o pipe criado e um usuário comum sem elevação, 10 conexões simultâneas fazem `GET_STATE` com sucesso; um logon de rede (SMB / `\\host\pipe\monblockd`) é **negado**.
 
-| Opção | Prós | Contras |
-|-------|------|---------|
-| **A. Named pipe + DACL ajustada logo após o `listen` (recomendada se o spike passar)** — helper PowerShell/.NET aplica `PipeSecurity` com `SY:F`, `BA:F`, `IU:RW` | Mantém o pipe e o protocolo; paridade com o `0660 root:monblock` | Precisa de **spike**: o libuv cria várias instâncias do pipe e não se sabe se a DACL vale para todas. Se o spike falhar, cai para B |
-| B. TCP `127.0.0.1:<porta>` + token de sessão em `%ProgramData%\monBlock\run\ipc.token` (ACL `SY:F`, `BA:F`, `IU:R`) | Sem código nativo; testável em qualquer SO | Qualquer processo local de usuário interativo lê o token (equivale ao grupo `monblock`). Exige recusar requisições HTTP (página web fazendo POST para localhost): primeira linha precisa ser o handshake `{"auth":…}`; linhas que começam com verbo HTTP derrubam a conexão |
-| C. Addon nativo que cria o pipe com `SECURITY_ATTRIBUTES` | Correto por construção | Compilação nativa (mesmo problema da D1-D) |
+## 5. Decisões (ADR-0016)
 
-Em qualquer opção, a autorização real continua sendo a credencial do Ajudante validada no daemon (a UI não é confiável). O transporte é só defesa em profundidade.
+### D1 — Serviço: **WinSW v2.12.0** (estável, MIT), versão e SHA-256 fixados no build
 
-### D3 — Empacotamento do Electron e instalador (W3)
+- O WinSW envia Ctrl+C. O Node recebe como `SIGINT`, que já é tratado em `entry.ts:306`.
+- XML com `<preshutdown>true</preshutdown>` e `<preshutdownTimeout>` para gravar o `cleanShutdown` no desligamento do Windows (a parada comum tem cerca de 5 s).
+- `<stoptimeout>10 sec</stoptimeout>`.
+- Alternativas descartadas:
+  - NSSM: sem manutenção.
+  - Tarefa agendada: não é serviço.
+  - Addon N-API: compilação nativa.
 
-- **Recomendada:** `@electron/packager` (dev dependency, gera a pasta do app) + **Inno Setup 6** (`packaging/windows/monblock.iss`) para o instalador único que coloca app, daemon, WinSW e design, registra o serviço e cria o atalho com AppUserModelID.
-- Alternativa: `electron-builder` (NSIS). Faz tudo num lugar só, mas é uma dependência maior e o fluxo de instalar um serviço como SYSTEM fica escondido em scripts NSIS.
-- A dependência nova entra no ADR-0016.
+### D2 — IPC: named pipe; o S0 escolhe entre 2 variantes
 
-### D4 — Ler a URL da aba ativa no Windows (W7, W8, W11b)
+- **D2-A (preferida):** `server.listen({ path, readableAll: true, writableAll: true })`. O libuv aplica `uv_pipe_chmod` no descritor do pipe.
+  - Isso abre para Everyone, inclusive logons de rede. Então o S0 precisa provar que um acesso remoto é negado: `PIPE_REJECT_REMOTE_CLIENTS` é o padrão do libuv recente, e é isso que o S0 confirma.
+  - Se o descritor valer para todas as instâncias, **não há reaplicação periódica** (YAGNI).
+- **D2-B (fallback, se D2-A falhar no S0):** TCP `127.0.0.1` + handshake por token.
+  - Token em `DATA_DIR\run\ipc.token`, ACL `SY:F BA:F IU:R`, rotacionado a cada boot e comparado com `crypto.timingSafeEqual`.
+  - **O servidor se prova primeiro** (W21).
+  - Linhas que começam com verbo HTTP derrubam a conexão.
+  - Limite assumido: o token não é controle de acesso; qualquer usuário interativo, inclusive outra conta com Fast User Switching, consegue lê-lo.
+- **Em ambas as variantes:** o transporte é defesa em profundidade. A autorização real é a credencial do Ajudante validada no daemon. A anti-impostura do cliente fica no W21.
 
-- **Recomendada, em 2 passos:**
-  1. (F1) Avaliar só o **título** quando não há URL (o `evaluateUrlAndTitle` já suporta isso), num processo PowerShell **persistente**.
-  2. (F5) Ler a barra de endereço via **UI Automation** (`System.Windows.Automation`, `ValuePattern`) no mesmo processo persistente, e redirecionar escrevendo a URL bloqueada nessa barra (`SetValue` + Enter).
-- Alternativa: extensão de navegador forçada por política (`ExtensionInstallForcelist`). É a mais confiável, mas é um produto à parte (publicação na loja, manutenção). Fica fora de escopo.
+### D3 — Empacotamento: `@electron/packager` + Inno Setup 6
+
+- `PrivilegesRequired=admin`.
+- **`Uninstallable=no`**: sem entrada em "Aplicativos > Desinstalar". A remoção acontece só pela desinstalação autorizada pelo Ajudante (W12).
+- `PrepareToInstall` para o serviço antes de um upgrade.
+- AppUserModelID `com.ccat.monblock`.
+- Autostart do app (W19).
+- A versão do Node fica fixada em `package.json#engines` e `.nvmrc`. O `.sh` atual usa o `node` do `PATH`; os dois scripts passam a falhar se a versão divergir.
+
+### D4 — Camada 3: helper PowerShell persistente + UI Automation
+
+- **Passo 1 (F5):** um processo persistente lê o processo e o título da janela em primeiro plano (`GetForegroundWindow` + `GetWindowText`). O título limpo vai para avaliação.
+- **Passo 2 (F5, W11b):** UI Automation para a URL real e o redirecionamento.
+- Extensão forçada por política fica fora de escopo.
 
 ---
 
 ## 6. Requisitos por item
 
-Formato: **Problema → Mudança → Critérios de aceite (BDD) → Testes**. Os caminhos de arquivo valem para o commit `e4033cf`.
+Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos valem para o commit `e4033cf`.
 
 ### 🔴 Bloqueadores
 
-#### W1 — Detecção de privilégio no Windows (`src/daemon/entry.ts:280`)
+#### W1 — Detecção de privilégio (`src/daemon/entry.ts:280`)
 
-- **Problema:** `process.getuid` não existe no Windows. O daemon conclui que não tem privilégio e sai com `exit(1)`.
-- **Mudança:** criar `isPrivileged(platform, execFn)`:
-  - `darwin`/`linux`: `getuid() === 0`, como hoje;
-  - `win32`: `true` se `whoami /groups` contiver `S-1-16-16384` (nível de integridade System) ou `S-1-16-12288` (High, admin elevado).
-  - Usar o resultado em `main()`, `flushDns`, `checkBrowserProfile` e `onUninstalled`.
+- **Mudança:** criar `isPrivileged(platform = process.platform, execFn = execFileSync): boolean`, síncrona.
+  - `darwin`/`linux`: `getuid() === 0`.
+  - `win32`: `true` se a saída de `%SystemRoot%\System32\whoami.exe /groups` (caminho absoluto) contiver `S-1-16-16384` (System) ou `S-1-16-12288` (High). Qualquer erro → `false`.
+  - Usar em `main()`, `flushDns` e `onUninstalled`.
+  - **`checkBrowserProfile` continua só em `darwin`**: ele chama o `profiles` do macOS e no Windows acusaria drift falso.
 - **Aceite:**
-  - *Dado* o daemon rodando como SYSTEM no Windows, *quando* `main()` executa, *então* ele sobe sem `MONBLOCK_DEV_ROOT_DIR` e com `flushDns=true`.
-  - *Dado* um usuário comum sem a variável de dev, *então* o processo sai com código 1 e uma mensagem clara.
-- **Testes:** unitário de `isPrivileged` com `execFn` falso (saída de SYSTEM, admin elevado, usuário comum e erro do comando → `false`).
+  - *Dado* o daemon rodando como SYSTEM, *então* ele sobe sem `MONBLOCK_DEV_ROOT_DIR`, com `flushDns=true` e `checkBrowserProfile` indefinido.
+  - *Dado* um usuário comum sem a variável de dev, *então* sai com código 1.
+- **Testes:** unitário com `execFn` falso (System, High, Medium, erro); unitário garantindo que `checkBrowserProfile` só é passado em `darwin`.
 
-#### W2 — Daemon como serviço do Windows real (`scripts/windows/install-service.ps1`)
+#### W2 — Serviço real (`scripts/windows/install-service.ps1`)
 
-- **Problema:** o `sc.exe create` aponta para um `.exe` que não fala o protocolo do SCM.
-- **Mudança (D1-A):**
-  - `packaging/windows/monblockd-service.xml` (WinSW): `id=monblockd`, executável `monblockd.exe`, `onfailure restart 5 s` três vezes, `resetfailure 1 d`, `stoptimeout 10 s`, log com rotação em `%ProgramData%\monBlock\logs`.
-  - O `install-service.ps1` passa a usar `monblockd-service.exe install|start`. Remover o `sc.exe create`.
-  - O daemon trata o sinal de parada do WinSW (ele manda Ctrl+C → `SIGINT`), o que já existe em `main()`.
+- **Mudança (D1):**
+  - Criar `packaging/windows/monblockd-service.xml`:
+    - `id=monblockd`;
+    - `onfailure restart 5 sec` ×3 e `resetfailure 1 day`;
+    - `stoptimeout 10 sec` e `preshutdown`;
+    - log com rotação em `DATA_DIR\logs`.
+  - `install-service.ps1` passa a usar `monblockd-service.exe install|start`; o `sc.exe create` sai.
+  - **Pipe ocupado no boot** (`EADDRINUSE`, filho órfão ou impostor): o daemon registra o erro, **mantém as Camadas 1/2 aplicadas** (o `tick` roda antes do IPC, `entry.ts:209`), avisa o Ajudante e encerra com código ≠ 0. O WinSW reinicia, o que limita o número de tentativas.
 - **Aceite:**
-  - *Dado* o pacote instalado, *quando* o Windows reinicia, *então* `Get-Service monblockd` mostra `Running` em até 60 s.
-  - *Dado* o processo morto (`taskkill /f`), *então* ele volta em até 10 s.
-  - *Dado* `Stop-Service`, *então* o daemon grava o desligamento limpo e **não** dispara o aviso de inatividade no próximo boot.
-- **Testes:** E2E no `windows-latest` (W18).
+  - *Dado* um reboot, *então* `Get-Service monblockd` fica `Running` em ≤ 60 s.
+  - *Dado* `taskkill /f` no `monblockd.exe`, *então* ele volta em ≤ 10 s.
+  - *Dado* `Stop-Service` **ou um desligamento do Windows**, *então* o `cleanShutdown` é gravado e o próximo boot não avisa inatividade.
+- **Testes:** E2E (W18), incluindo um ciclo `Restart-Computer`, se o runner permitir; senão, `Stop-Service` + verificação da marca.
 
-#### W3 — Build do daemon e do app para Windows (`scripts/build-daemon-sea.sh`, `scripts/build-windows-setup.ps1`)
+#### W3 — Build (`scripts/build-daemon-sea.sh`, `scripts/build-windows-setup.ps1`)
 
-- **Problema:** o SEA é só macOS (`--macho-segment-name`) e o `.ps1` não gera nada instalável.
 - **Mudança (D3):**
-  - `scripts/build-daemon-sea.ps1`: esbuild (igual ao `.sh`) → `node --experimental-sea-config` → copiar `node.exe` → remover a assinatura (`signtool remove /s`, se existir) → `postject` sem `--macho-segment-name`.
-  - Fixar as versões de `postject` e Node (iguais ao `.sh`).
+  - `scripts/build-daemon-sea.ps1`: esbuild → `node --experimental-sea-config` → copiar `node.exe` → `signtool remove /s` (se existir) → `postject` sem `--macho-segment-name`, com a versão fixada como no `.sh`.
+  - Validar a versão do Node contra o `engines`.
   - `@electron/packager` para `win32-x64`.
-  - `packaging/windows/monblock.iss`: instala em `%ProgramFiles%\monBlock`, coloca daemon, WinSW e `design\`, executa `install-service.ps1`, cria o atalho com `AppUserModelID=com.ccat.monblock` e registra o desinstalador (W12).
-  - O `build-windows-setup.ps1` orquestra tudo e gera `monBlock-Setup-<versão>.exe` + `.sha256`.
+  - `packaging/windows/monblock.iss` com as opções da D3, instalando em `INSTALL_DIR`.
+  - Os SHA-256 de WinSW, `postject` e Inno são verificados no build.
+  - O build gera `monBlock-Setup-<versão>.exe` e o `.sha256`.
+- **Aceite:** *Dado* um runner Windows limpo, *então* saem o `.exe` e o `.sha256`, e o hash confere.
+
+#### W4 — IPC acessível (`src/daemon/ipc-server.ts`, `src/main/daemon-client.ts`)
+
+- **Mudança (D2, conforme o S0):**
+  - D2-A: no `win32`, `listen({ path, readableAll: true, writableAll: true })`. Nada muda no macOS/Linux.
+  - D2-B: handshake descrito na D2, com erros em `buildProblem` (RFC 9457) antes de fechar.
 - **Aceite:**
-  - *Dado* `pwsh scripts/build-windows-setup.ps1` num runner Windows limpo, *então* saem `monBlock-Setup-x.y.z.exe` e o `.sha256`, com o hash conferindo.
-- **Testes:** etapa de build no CI (W18).
-
-#### W4 — IPC acessível ao usuário, com controle de acesso (`src/daemon/ipc-server.ts`, `src/main/daemon-client.ts`)
-
-- **Problema:** o pipe nasce com o DACL padrão (Everyone só lê). O Electron sem elevação não consegue escrever.
-- **Mudança (D2):**
-  - **Spike primeiro (≤ 1 dia, em Windows real):** criar o pipe pelo `node:net`, aplicar `PipeSecurity` por um helper e validar com 10 conexões simultâneas de um usuário comum. Resultado registrado na ADR-0016.
-  - Se D2-A passar: aplicar a DACL logo após o `listen` e **reaplicar** a cada `tick` (o libuv recria instâncias). Fail-closed: se a DACL falhar, o pipe fecha.
-  - Se cair para D2-B: TCP loopback com handshake por token (rotacionado a cada boot e comparado em tempo constante, `crypto.timingSafeEqual`) e recusa de linhas HTTP. O `daemon-client` lê o token.
-- **Aceite:**
-  - *Dado* um usuário comum sem elevação, *quando* o app abre, *então* `GET_STATE` responde 200.
-  - *Dado* uma página web fazendo `fetch('http://127.0.0.1:<porta>', {method:'POST', body:…})`, *então* a conexão cai sem executar comando (só D2-B).
-  - *Dado* um processo sem acesso à ACL, *então* a conexão é negada.
-- **Testes:**
-  - unitários do handshake: token errado, token ausente, linha HTTP e linha longa demais;
-  - E2E Windows com usuário comum criado no runner (`net user`).
-
-#### W5 — Ligar o watcher no Windows (`src/main/main.ts:691`)
-
-- **Problema:** o loop do watcher só existe para `darwin`.
-- **Mudança:**
-  - Extrair o loop (`watchTick` com guarda de concorrência e backoff) para `startBrowserWatcherLoop(watcher, call)`.
-  - Criar o watcher por plataforma: `darwin` → `MacOSBrowserWatcher`, `win32` → `WindowsBrowserWatcher`.
-  - O Linux fica fora (achado lateral).
-- **Aceite:**
-  - *Dado* `process.platform === 'win32'`, *quando* o app inicia, *então* `WindowsBrowserWatcher.inspectOnce` é chamado periodicamente.
-  - *Dado* um grant `*` ativo, *então* `inspectOnce` não é chamado, como no macOS.
-- **Testes:** unitário de `startBrowserWatcherLoop` com timers falsos (concorrência, backoff acima de 800 ms, grant curinga).
-
-#### W6 — Bug do `$pid` no PowerShell (`src/enforcers/windows-watcher.ts:85-86`)
-
-- **Problema:** `$pid` é a variável automática `$PID`, somente leitura. O script acaba sempre consultando o próprio PowerShell.
-- **Mudança:** renomear para `$procId`.
-- **Aceite:** *Dado* o Chrome em primeiro plano, *então* `getActiveTab()` retorna `browser: 'chrome'`.
-- **Testes:**
-  - unitário garantindo que o script não usa nenhuma variável automática (`/\$pid\b/i`, `$host`, `$input`, `$args`) como destino de atribuição;
-  - verificação manual / E2E no Windows.
+  - *Dado* um usuário comum sem elevação, *então* `GET_STATE` responde 200.
+  - *Dado* um acesso pela rede, *então* é negado.
+  - (D2-B) *Dado* um `fetch` de uma página para a porta, *então* a conexão cai sem executar comando.
+- **Testes:** unitários do handshake (D2-B); E2E com usuário comum (W18).
 
 ### 🟠 Altos
 
-#### W7 — Avaliar pelo título quando não há URL (`windows-watcher.ts:242-245`)
+#### W9 — Registro: prefixo e valores antigos (`windows-platform-enforcer.ts:36-120`) — **crítico, entra na F1**
 
-- **Problema:** o watcher sai com `blocked:false` quando a "URL" (que na verdade é o título da janela) não é uma URL.
-- **Mudança (F1, D4 passo 1):**
-  - Remover o retorno antecipado. Quando não houver URL, chamar `evaluateUrlAndTitle({ url: '', title })`.
-  - Tirar do título o sufixo do navegador (` - Google Chrome`, ` — Mozilla Firefox`, ` - Microsoft Edge`, etc.) antes de avaliar.
-- **Mudança (F5, D4 passo 2):** ler a URL real por UI Automation. A avaliação por título continua como fallback.
-- **Aceite:**
-  - *Dado* o título "Pornhub - Google Chrome" com a categoria adulto ativa, *então* `blocked:true`.
-  - *Dado* o título "Notícias sobre pornografia infantil — combate" (frases legítimas), *então* não bloqueia. Reaproveitar `tests/domain/fixtures/frases-legitimas.tsv`.
-- **Testes:** unitário com adapter falso nos dois cenários + fixtures existentes.
-
-#### W8 — PowerShell persistente (`windows-watcher.ts:95`)
-
-- **Problema:** um `powershell` + `Add-Type` por ciclo custa centenas de ms de CPU.
+- **Problema 1:** as chaves usam `HKLM\`. Se o S0 confirmar que o `.reg` exige `HKEY_LOCAL_MACHINE\`, a Camada 2 inteira não funciona hoje.
+- **Problema 2:** o `reg import` só mescla, então valores antigos continuam valendo. Um `URLAllowlist` velho mantém um site liberado depois que o grant expira.
 - **Mudança:**
-  - Um único processo `powershell -NoProfile -NonInteractive -Command -`, iniciado sob demanda, com o `Add-Type` compilado uma vez.
-  - Protocolo por linha: comando `probe` → resposta JSON `{proc,title,url?}`.
-  - Timeout de 2 s por probe; se estourar, mata e recria o processo, com backoff exponencial e jitter (até 30 s).
-  - Encerrar junto com o `will-quit`.
+  - Gerar as chaves com `HKEY_LOCAL_MACHINE\` (constantes separadas para o `.reg` e para o `reg delete`/`reg query`, onde `HKLM` é válido).
+  - Antes de cada lista, emitir `[-HKEY_LOCAL_MACHINE\...\URLBlocklist]`, `[-...\URLAllowlist]` e `[-...\Firefox\WebsiteFilter]`.
+- **Riscos aceitos:**
+  - Durante o import há uma janela de milissegundos com a lista vazia; o hosts (Camada 1) cobre.
+  - Políticas corporativas que já existam nessas subchaves são sobrescritas.
+  - As duas coisas ficam documentadas na ADR-0016.
 - **Aceite:**
-  - *Dado* 100 ciclos, *então* só 1 processo PowerShell foi criado.
-  - *Dado* o processo travado, *então* ele é recriado e o watcher não fica preso.
-- **Testes:** unitário com `spawnFn` falso (reuso, timeout com recriação, backoff, encerramento).
+  - *Dado* o manifesto, *então* nenhuma linha de chave usa `HKLM\`.
+  - *Dada* uma allowlist que cai de 3 para 1 item, *então* só o valor `"1"` existe (`reg query`).
+- **Testes:** unitário (prefixo, ordem `[-…]` antes da recriação); E2E com `reg query`.
 
-#### W9 — Valores antigos no Registro (`windows-platform-enforcer.ts:67-120`)
+#### W10 — Falhas silenciosas e drift do Registro (`windows-platform-enforcer.ts:54-62, 189-195, 212-231`)
 
-- **Problema:** o `reg import` só mescla, então valores numerados antigos continuam valendo. Um `URLAllowlist` velho pode manter um site liberado depois que o grant expira.
-- **Mudança:** no manifesto, antes de cada subchave de lista, emitir uma linha de exclusão:
-  - `[-<root>\URLBlocklist]` e `[-<root>\URLAllowlist]` para cada chave Chromium;
-  - `[-HKLM\...\Firefox\WebsiteFilter]` para o Firefox.
-- **Risco aceito:** políticas corporativas que já existam nessas subchaves são sobrescritas. Isso já acontece hoje, só que de forma parcial. Documentar na ADR-0016.
-- **Aceite:**
-  - *Dado* uma allowlist com 3 itens que cai para 1, *quando* o manifesto é importado, *então* só o valor `"1"` existe na subchave.
-- **Testes:** unitário verificando que cada linha `[-…]` vem antes da recriação da chave; E2E com `reg query` no Windows.
-
-#### W10 — Falhas silenciosas na imposição (`windows-platform-enforcer.ts:54-62`)
-
-- **Problema:** o executor padrão engole todos os erros, e o `verifyApplied` só olha o arquivo `.reg` no disco.
 - **Mudança:**
-  - O executor padrão **lança** o erro quando `process.platform === 'win32'` (fora do Windows continua sem efeito, para dev e CI).
-  - `applyWebRules` guarda `lastApplyFailures: string[]` (por exemplo `registry:import`, `hosts:acl`).
-  - `verifyApplied` inclui essas falhas no drift.
-  - O watchdog do daemon já reaplica e avisa o Ajudante quando há drift.
+  - O executor padrão **lança** no `win32` (fora dele continua sem efeito).
+  - `applyWebRules` executa **todos** os passos mesmo se um falhar (hosts, ACL, flush, import) e acumula `lastApplyFailures` num campo **privado** do `WindowsPlatformEnforcer`. O contrato `PlatformEnforcer` das 3 plataformas não muda.
+  - `verifyApplied` (síncrono, como no contrato) inclui as falhas no drift e **lê o Registro**: `execFileSync('reg', ['query', key, '/s'], { timeout: 5000 })` para cada chave gerenciada. Os valores lidos são comparados com o esperado; chave ausente ou valor divergente vira drift `registry:<chave>`. O watchdog já reaplica e avisa o Ajudante.
 - **Aceite:**
-  - *Dado* um `reg import` com código ≠ 0, *então* o `tick` registra o erro e o `verifyApplied` devolve `registry:import`.
-- **Testes:** unitário com `commandExecutor` que falha.
+  - *Dado* um `reg import` com código ≠ 0, *então* o hosts ainda é aplicado e o drift contém `registry:import`.
+  - *Dado* um admin que apaga `...\Google\Chrome\URLBlocklist`, *então* o próximo `tick` acusa drift, reimporta e avisa o Ajudante.
+- **Testes:** unitário com `commandExecutor` e `execFileSync` falsos (falha parcial, chave ausente, valor divergente, timeout).
 
-#### W11 — Redirecionamento quebrado (`windows-watcher.ts:142`)
+#### W21 — Anti-impostura do servidor IPC (novo)
 
-- **W11a (F1):** a URL é corrompida quando tem `&`.
-  - **Mudança:** trocar `cmd.exe /c start` por `execFile('explorer.exe', [url])`, que não passa pelo parser do `cmd`.
-  - **Aceite:** *dada* uma URL com `&reason=…&rule=…`, *então* o argumento entregue é exatamente a URL, sem truncar.
-  - **Teste:** unitário do argv.
-- **W11b (F5):** abrir uma aba nova não redireciona a aba atual.
-  - **Mudança:** com UI Automation, escrever a URL bloqueada na barra de endereço da janela em primeiro plano e confirmar. O `explorer.exe` fica como fallback.
-  - **Aceite:** *dada* uma aba bloqueada, *então* a mesma aba passa a mostrar `127.0.0.1:49152/blocked` (E2E manual com checklist).
+- **Problema:** um usuário comum pode criar `\\.\pipe\monblockd` (ou ocupar a porta, na D2-B) enquanto o daemon está parado. A UI então entrega a **senha do Ajudante** ao impostor.
+- **Mudança:**
+  - Antes de enviar qualquer comando com segredo (`PAIR_PARTNER`, `SET_BOT_TOKEN`, `VERIFY_*`, desinstalação), o `daemon-client` verifica que o servidor é o serviço:
+    - D2-A: obtém o PID do servidor do pipe (`GetNamedPipeServerProcessId`, via o helper do S0) e confere que o dono do processo é `S-1-5-18`.
+    - D2-B: o servidor responde um desafio do cliente com HMAC por uma chave que só o SYSTEM lê. O cliente valida pela assinatura pública gravada pelo instalador (S0 escolhe).
+  - Falhou → o comando com segredo é recusado com aviso "Serviço do monBlock não verificado". Comandos sem segredo (`GET_STATE`) seguem.
+  - O serviço sobe no boot antes de qualquer logon, o que reduz a janela.
+- **Aceite:** *Dado* um processo de usuário comum servindo `\\.\pipe\monblockd`, *quando* a UI tenta parear, *então* nada é enviado e o usuário vê o aviso.
+- **Testes:** unitário do gate por tipo de comando; E2E com pipe impostor.
 
 ### 🟡 Médios e baixos
 
-#### W12 — Desinstalação no Windows (`src/daemon/entry.ts:296`)
+#### W12 — Desinstalação (`src/daemon/entry.ts:296`) — F4
 
-- **Problema:** `spawn('/bin/sh')` dá `ENOENT` sem listener de `error`, e a exceção derruba o daemon.
+- **Problema:** `spawn('/bin/sh')` dá `ENOENT` sem listener de `error`, e o daemon cai. Além disso, um script filho do serviço seria morto pelo WinSW ao parar o serviço.
 - **Mudança:**
-  - Criar `packaging/windows/uninstall.ps1`: para e remove o serviço via WinSW, restaura o hosts (o daemon já limpou), apaga as chaves do Registro e o `%ProgramData%\monBlock`, e chama o desinstalador do Inno em modo silencioso para o app.
-  - No `win32`: `spawn('powershell', ['-NoProfile','-ExecutionPolicy','Bypass','-File', uninstall.ps1], { detached: true, stdio: 'ignore' })`.
-  - Em todas as plataformas: adicionar `.on('error', log)`.
+  - Criar `INSTALL_DIR\uninstall.ps1`, que:
+    - para e remove o serviço (WinSW);
+    - remove **todas** as chaves e valores gerenciados: `URLBlocklist`, `URLAllowlist`, `DnsOverHttpsMode`, `IncognitoModeAvailability` e, no Firefox, `DisablePrivateBrowsing`, `DNSOverHTTPS` e `WebsiteFilter`. O `restoreSystemCleanState` também passa a remover esses valores;
+    - restaura a ACL padrão do hosts (`icacls hosts /reset`);
+    - apaga `DATA_DIR` e `INSTALL_DIR`, e o próprio script por último.
+  - No `win32`, o `onUninstalled` registra **uma tarefa agendada única** (`schtasks /create /ru SYSTEM /sc once …` + `/run`) que executa o script fora da árvore do serviço. A tarefa se apaga no fim.
+  - Em todas as plataformas: `.on('error', log)` no spawn.
+  - Se o script falhar no meio, ele é idempotente; a tarefa permanece e é reexecutada no próximo boot até concluir.
 - **Aceite:**
-  - *Dada* uma desinstalação autorizada pelo Ajudante, *então* em até 30 s não sobra serviço, chaves `monBlock` nem bloco no hosts, e o daemon não registra exceção não tratada.
-- **Testes:** unitário da escolha do comando por plataforma; E2E Windows.
+  - *Dada* uma desinstalação autorizada, *então* em ≤ 60 s `reg query` não mostra nenhum valor gerenciado, o hosts não tem o bloco nem ACL alterada, o serviço e as pastas não existem, e o daemon não registra exceção não tratada.
+- **Testes:** unitário da escolha do comando por plataforma; E2E de "máquina limpa".
 
-#### W13 — Ícone da bandeja invisível (`src/main/main.ts:682`)
+#### W13 — Ícone da bandeja (`src/main/main.ts:681-682`)
 
-- **Problema:** `nativeImage.createEmpty()` no Windows deixa um espaço vazio na bandeja.
-- **Mudança:** usar o mesmo PNG do escudo, sem `setTemplateImage`, redimensionado para 16×16 (e 32×32 em telas com DPI alto).
-- **Aceite:** *Dado* o Windows, *então* o ícone da bandeja não está vazio (`!trayIcon.isEmpty()`).
-- **Testes:** unitário da função de escolha do ícone por plataforma.
+- **Mudança:** o mesmo PNG do escudo, sem `setTemplateImage`, em 16×16 (32×32 com DPI alto).
+- **Aceite:** no Windows, `!trayIcon.isEmpty()`.
+- **Teste:** unitário da escolha do ícone.
 
-#### W14 — Notificações do Windows (`src/main/main.ts`)
+#### W14 — Notificações
 
-- **Mudança:** chamar `app.setAppUserModelId('com.ccat.monblock')` antes do `ready` quando for `win32`. O valor precisa ser igual ao do atalho do Inno (W3).
-- **Aceite:** *Dado* o app instalado, *quando* chega uma notificação de desbloqueio, *então* aparece um toast com o nome "monBlock".
-- **Testes:** unitário verificando a chamada no `win32`; validação manual no instalado.
+- **Mudança:** `app.setAppUserModelId('com.ccat.monblock')` antes do `ready` no `win32`, igual ao atalho do Inno.
+- **Aceite:** o toast aparece com o nome "monBlock" no app instalado.
+- **Testes:** unitário da chamada; validação manual.
 
-#### W15 — Caminhos fixos em `C:` (`src/daemon/entry.ts:43-53`)
+#### W15 — Caminhos relativos ao drive (`src/daemon/entry.ts:43-53`)
 
-- **Mudança:**
-  - No `win32` sem `rootDir`: usar `process.env.ProgramData` (padrão `C:\ProgramData`) e `process.env.SystemRoot` (padrão `C:\Windows`) com `path.win32.join`.
-  - Com `rootDir` (dev): manter o prefixo.
-- **Aceite:** *Dado* `ProgramData=D:\PD`, *então* o `appSupportDir` fica `D:\PD\monBlock`.
-- **Testes:** unitário de `resolveLayout` com `env` injetado.
+- **Problema:** `path.join('/', …)` gera `\ProgramData\…`, relativo ao drive atual, e ignora `SystemRoot`.
+- **Mudança:** no `win32` sem `rootDir`, usar `process.env.ProgramData` (padrão `C:\ProgramData`) e `process.env.SystemRoot` (padrão `C:\Windows`) com `path.win32`.
+- **Aceite:** com `ProgramData=D:\PD`, o `appSupportDir` fica `D:\PD\monBlock`.
+- **Teste:** unitário de `resolveLayout` com `env` injetado.
 
-#### W16 — Atualização no Windows (`src/main/updater.ts:177`)
+#### W16 — Atualização (`src/main/updater.ts:177`) — F4
 
 - **Mudança:**
-  - Escolher o asset por plataforma: `.pkg` no `darwin`, `monBlock-Setup-*.exe` no `win32`.
-  - Manter a verificação SHA-256 fail-closed (ADR-0012).
-  - Abrir o instalador com `shell.openPath`.
-  - Renomear os campos `pkgUrl`/`pkgPath` para `installerUrl`/`installerPath`, mantendo aliases por um ciclo, já que o renderer usa esses campos.
+  - Escolher o asset por plataforma (`.pkg` no `darwin`, `monBlock-Setup-*.exe` no `win32`), com SHA-256 fail-closed (ADR-0012), abrindo com `shell.openPath`.
+  - Renomear `pkgUrl`/`pkgPath` para `installerUrl`/`installerPath` **de uma vez**, no mesmo commit do renderer, sem aliases.
+  - O instalador para o serviço no upgrade (D3).
+- **Aceite:** no Windows, uma release com `.exe` e `.sha256` valida e abre; sem hash, recusa; um upgrade com o serviço rodando termina com o serviço `Running` na nova versão.
+- **Teste:** estender `tests/main/updater.test.ts` com `platform` injetado.
+
+#### W17 — Codificação do `.reg` — rebaixado, decidido no S0
+
+- **Fato:** os domínios já saem em punycode ASCII (`new URL` em `rule-engine.ts:78`), então IDN não é problema.
+- **Mudança:** só se o S0 mostrar que o `reg import` recusa UTF-8 com o cabeçalho `Version 5.00`. Nesse caso, gravar em UTF-16LE com BOM numa função local do enforcer Windows, sem mexer em `writeIfChanged`/`writeFileAtomically` (compartilhados).
+- **Aceite:** o arquivo gerado é aceito pelo `reg import` (`$LASTEXITCODE -eq 0`).
+
+#### W18 — CI no Windows (`.github/workflows/ci.yml`) — F4
+
+- **Mudança:** job `windows-package` em `windows-latest`:
+  - `npm ci`, `typecheck`, `test`, build (W3), instalação `/VERYSILENT`;
+  - E2E:
+    - serviço `Running`;
+    - `GET_STATE` como **usuário comum criado no runner** (`net user` + uma tarefa agendada com `/ru <usuário>` executando `tests/e2e/windows/ipc.mjs`);
+    - acesso remoto negado;
+    - bloco no hosts;
+    - `reg query`;
+    - `taskkill` e o serviço voltando;
+    - pipe impostor (W21);
+    - desinstalação de "máquina limpa" (W12);
+  - artifact com retenção de 7 dias.
+- **Aceite:** o job fica verde e obrigatório para merge na `main`.
+
+#### W19 — Autostart do app (novo) — F4
+
+- **Mudança:** o Inno cria um atalho em `{commonstartup}` com o AppUserModelID. O app não expõe opção de desligar o autostart; a Camada 3 depende dele.
+- **Aceite:** *Dado* um logon, *então* o app está na bandeja em ≤ 30 s.
+
+#### W20 — ACL do `DATA_DIR` verificada no boot (novo) — F2
+
+- **Problema:** o `umask` não vale no Windows. O `vault.key` e o `state.primary` dependem da ACL que o `install-service.ps1` aplica.
+- **Mudança:** no boot, se privilegiado no `win32`, `icacls DATA_DIR` é lido. Se houver ACE para Users, Everyone ou Authenticated Users, o daemon reaplica `/inheritance:r` com SYSTEM e Administradores apenas. Se não conseguir, **falha fechado** (não lê o cofre) e avisa.
+- **Aceite:** *Dado* um `icacls DATA_DIR /grant Users:F`, *quando* o daemon reinicia, *então* a ACE some antes da leitura do `vault.key`.
+- **Teste:** unitário com `execFn` falso.
+
+### 🔵 Camada 3 (F5, entregue junta)
+
+#### W5 — Ligar o watcher (`src/main/main.ts:691`)
+
+- **Mudança:** extrair `startBrowserWatcherLoop(watcher, call): () => void` (retorna a função de parada), com a guarda de concorrência, o backoff e o grant `*` atuais. Escolher o watcher por plataforma (`darwin` → macOS, `win32` → Windows). **Só é ligado no `win32` junto com o W8.**
+- **Aceite:** no Windows, `inspectOnce` é chamado periodicamente; com grant `*`, não é chamado.
+- **Teste:** unitário com timers falsos.
+
+#### W6 — Bug do `$pid` (`windows-watcher.ts:85-90`)
+
+- **Mudança:**
+  - Usar `[uint32]$procId = 0` e `[ref]$procId`.
+  - Ler o título com `GetWindowText(hwnd)`, não com `MainWindowTitle`, que pode ser de outra janela do mesmo processo.
+- **Aceite:** com o Chrome em primeiro plano, retorna `browser: 'chrome'` e o título daquela janela.
+- **Teste:** E2E no job Windows; sem teste por regex.
+
+#### W7 — Avaliação por título (`windows-watcher.ts:242-245`)
+
+- **Mudança:** quando não houver URL, tirar do título o sufixo do navegador (` - Google Chrome`, ` — Mozilla Firefox`, ` - Microsoft Edge`, ` - Brave`, ` - Vivaldi`, ` - Opera`) e chamar `evaluateUrlAndTitle({ url: tituloLimpo, title: tituloLimpo })`. O passo 1 do rule engine casa termos com domínios de categoria.
+  - **Grant:** sem domínio, só o grant `*` se aplica.
+  - **Redirecionamento:** `domain=` recebe o rótulo da regra (`ruleLabel`).
 - **Aceite:**
-  - *Dada* uma release com `.exe` e `.sha256`, *então* o download no Windows valida o hash e abre o instalador.
-  - *Dado* um hash ausente, *então* recusa.
-- **Testes:** estender `tests/main/updater.test.ts` com `platform` injetado.
+  - *Dado* "Pornhub - Google Chrome" com a categoria adulto ativa, *então* bloqueia.
+  - *Dadas* as frases de `tests/domain/fixtures/frases-legitimas.tsv`, *então* não bloqueia.
+- **Teste:** unitário com adapter falso + fixtures.
 
-#### W17 — Codificação do `.reg` (`windows-platform-enforcer.ts:199`)
+#### W8 — Helper persistente (`windows-watcher.ts:95`)
 
-- **Mudança:** gravar o manifesto em UTF-16LE com BOM (`'\ufeff' + text`, `Buffer.from(…, 'utf16le')`). O `verifyApplied` compara decodificando da mesma forma.
-- **Aceite:** *Dado* um domínio IDN (`exemplo-ç.com`), *então* o valor no Registro fica íntegro.
-- **Testes:** unitário dos bytes iniciais `FF FE` e do roundtrip.
+- **Mudança:**
+  - Um processo `powershell -NoProfile -NonInteractive -EncodedCommand <loop>` que compila o `Add-Type` uma vez e faz `while ($l = [Console]::In.ReadLine()) { … ; [Console]::Out.Flush() }`.
+  - Comandos fixos: `probe` → JSON `{proc,title}`.
+  - Timeout de 2 s por probe: se estourar, mata e **recria no próximo tick**, sem backoff.
+  - Encerrar no `will-quit`.
+  - Se o `Add-Type` falhar (Constrained Language Mode / AppLocker), a Camada 3 fica desligada, com aviso único na UI e no log.
+- **Aceite:**
+  - 100 ciclos criam 1 processo.
+  - Um processo travado é recriado.
+  - Com CLM ativo, o app não fica em loop.
+- **Teste:** unitário com `spawnFn` falso.
 
-#### W18 — CI no Windows (`.github/workflows/ci.yml`)
+#### W11a — Redirecionamento seguro (`windows-watcher.ts:142`)
 
-- **Mudança:** criar o job `windows-package` em `windows-latest`:
-  1. `npm ci`, `typecheck`, `npm test`;
-  2. `pwsh scripts/build-windows-setup.ps1`;
-  3. instalação silenciosa (`/VERYSILENT`);
-  4. E2E: serviço `Running`; `GET_STATE` como usuário comum; hosts com o bloco; `reg query` das políticas; matar o processo e ver o serviço voltar; desinstalação limpa;
-  5. upload do instalador como artifact (retenção de 7 dias).
-- **Aceite:** o job fica verde num PR e é obrigatório para merge na `main`.
+- **Mudança:** trocar `cmd.exe /c start` por `shell.openExternal(url)` do Electron (o watcher roda no main process), injetado no adapter.
+- **Aceite:** uma URL com `&reason=…&rule=…` chega inteira.
+- **Teste:** unitário do argumento passado.
+
+#### W11b — Redirecionar a mesma aba (depois do W11a)
+
+- **Mudança:** UI Automation (D4 passo 2) para ler a URL e escrever a página bloqueada na barra de endereço.
+- **Limites conhecidos:**
+  - o Enter exige `SendInput`, que só roda se a janela ainda estiver em primeiro plano; senão, usa o W11a;
+  - UIPI bloqueia navegador elevado;
+  - liga a árvore de acessibilidade do Chromium, com custo de CPU a medir.
+- **Aceite:** checklist manual por navegador; a mesma aba mostra `127.0.0.1:49152/blocked`.
 
 ---
 
 ## 7. Segurança (Zero-Trust)
 
-- O IPC (W4) continua não confiável: toda mutação passa pela credencial do Ajudante. O token da D2-B é só transporte.
-- Tokens são comparados com `crypto.timingSafeEqual` e nunca aparecem em log.
-- Erros de handshake/transporte do IPC (W4) respondem com o `buildProblem` que já existe (Problem Details, RFC 9457: `type`, `title`, `status`, `detail`, `instance`) antes de fechar a conexão, sem stack trace.
-- Binários de terceiros (WinSW, `postject`, Inno) ficam com versão fixa e SHA-256 verificado no build (supply chain).
-- O helper PowerShell (W8) recebe só comandos fixos (`probe`, `redirect <url>`). A URL de redirecionamento é validada contra `http://127.0.0.1:49152/blocked` antes de sair do Node, como já acontece hoje.
-- Zero PII: o título e a URL da janela não vão para log. Hoje só o domínio aparece no `console.log` do bloqueio, e isso continua assim.
+- Segredos do Ajudante só saem do app depois da verificação do servidor (W21).
+- O IPC não é confiável: toda mutação exige a credencial do Ajudante.
+- Tokens são comparados com `crypto.timingSafeEqual` e nunca vão para log.
+- Erros de handshake e transporte usam `buildProblem` (RFC 9457) sem stack trace.
+- Binários de terceiros (WinSW, `postject`, Inno) têm versão e SHA-256 fixados.
+- O helper do W8 aceita só comandos fixos. O redirecionamento valida o prefixo `http://127.0.0.1:49152/blocked` no Node, antes de sair.
+- Zero PII: título e URL não vão para log, só o domínio ou o rótulo da regra.
+- `DATA_DIR` fica restrito a SYSTEM e Administradores e é verificado no boot (W20).
 
 ## 8. Riscos e mitigação
 
 | Risco | Mitigação |
 |-------|-----------|
-| A DACL do pipe não vale para todas as instâncias do libuv (D2-A) | Spike antes; fallback para D2-B já desenhado |
-| Windows Defender marca a alteração do hosts como `HostsFileHijack` | Testar no CI com o Defender ativo; documentar exclusão; não bloquear domínios da Microsoft (somar à `CRITICAL_INFRA_ALLOWLIST` se aparecer) |
-| SmartScreen bloqueia o instalador sem assinatura | Fora do escopo; registrado como dívida, a ser tratado com certificado em outra spec |
-| UI Automation muda entre versões de navegador (F5) | Fallback para título + `explorer.exe`; testes manuais por navegador no checklist de release |
-| `rename` do hosts com `EPERM`/`EBUSY` (arquivo aberto por antivírus) | Já existe retry implícito pelo watchdog de 60 s; registrar em `lastApplyFailures` (W10) |
-| Admin local apaga o serviço ou as chaves | Mesmo modelo do macOS/Linux: o drift é detectado e o Ajudante é avisado; o produto não promete resistir a admin |
+| Premissa do S0 falha (D2-A, `.reg`, WinSW) | Cada uma tem fallback desenhado (D2-B, UTF-16LE, tarefa agendada); o S0 decide antes da F1 |
+| Admin local remove o produto à mão (serviço, chaves, hosts) | `Uninstallable=no` tira o caminho fácil; drift de Registro/hosts (W10) e inatividade sem `cleanShutdown` avisam o Ajudante. Limite assumido na ADR-0016 |
+| Pipe ou porta ocupados por impostor | W21 + serviço sobe no boot + Ajudante avisado no `EADDRINUSE` (W2) |
+| Defender marca o hosts como `HostsFileHijack` | Teste no CI com o Defender ativo; domínios da Microsoft vão para a `CRITICAL_INFRA_ALLOWLIST` se aparecerem |
+| AMSI / Defender marca o helper do W8/W11b | Comandos fixos, sem download; testar no CI; degradar com aviso |
+| SmartScreen sem assinatura | Fora do escopo; dívida registrada |
+| UIA muda entre versões de navegador | Fallback para título + `shell.openExternal` |
+| `rename` do hosts com `EPERM`/`EBUSY` | Watchdog de 60 s + `lastApplyFailures` (W10) |
+| Janela com blocklist vazia no reimport (W9) | Milissegundos; Camada 1 cobre; aceito |
 
 ## 9. Rollback
 
-- F1/F2: `git revert` dos commits da fase; nada persiste fora do repositório.
-- F3/F4: o instalador anterior não existe (o Windows nunca funcionou), então o rollback é desinstalar (`uninstall.ps1`) e voltar o pacote para a versão anterior. A desinstalação limpa é critério de aceite do W12/W18.
-- Registro e hosts: o `restoreSystemCleanState` + o backup `.monblock.bak` cobrem.
+- **S0:** não muda o repositório, só gera relatório.
+- **F1/F2/F5:** `git revert` dos commits da fase.
+- **F3/F4:** a desinstalação autorizada (W12) é o rollback da máquina e é idempotente. Se falhar no meio, a tarefa agendada é reexecutada no boot.
+  - O teste de "máquina limpa" (W18) verifica com `reg query`, hosts, `icacls hosts`, `Get-Service` e `Test-Path` que nada sobrou.
+- **Registro:** sem backup próprio. O monBlock sobrescreve as subchaves gerenciadas e as remove por completo na desinstalação; políticas corporativas prévias nessas subchaves não são restauradas (ADR-0016).
 
 ## 10. Definição de pronto
 
-- [ ] Todos os critérios de aceite W1–W18 verdes (unitários + E2E Windows no CI).
+- [ ] Relatório do S0 com todas as premissas PASSOU/FALHOU e a variante D2 escolhida.
+- [ ] Critérios de aceite W1–W21 verdes (unitários + E2E Windows no CI).
 - [ ] `npm run typecheck` e `npm test` verdes nas 3 plataformas.
-- [ ] ADR-0016 aprovada, corrigindo as premissas da ADR-0013/0015.
+- [ ] ADR-0016 aprovada, corrigindo a ADR-0013 e a ADR-0015.
 - [ ] `CHANGELOG.md` e `VERSION` → `0.10.0`.
 - [ ] `docs/domains/` atualizado onde o comportamento por plataforma mudou.
 - [ ] `graphify update .` executado.
+
+## 11. Histórico de revisão
+
+- **v1 (2026-11-25):** W1–W18; aprovada em 2026-11-26.
+- **v2 (2026-11-27):** auditoria cega do goldfish-critic (reprovou F3–F5) + sabatina.
+  - Novos: S0, W19 (autostart), W20 (ACL do `DATA_DIR`), W21 (anti-impostura).
+  - W9 sobe para crítico (prefixo `HKLM`).
+  - W5–W8 juntos na F5; W12 vai para a F4 com tarefa agendada; `Uninstallable=no`.
+  - `verifyApplied` passa a ler o Registro.
+  - Fora: reaplicação periódica da DACL, aliases do updater e backoff do helper (YAGNI).
+  - W17 rebaixado; correções no W1 (`checkBrowserProfile`), W6 (`GetWindowText`), W7 (título como termo), W11a (`shell.openExternal`).
