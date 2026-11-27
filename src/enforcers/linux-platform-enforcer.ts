@@ -56,14 +56,13 @@ export interface LinuxPlatformEnforcerOptions {
   commandExecutor?: (cmd: string, args: string[]) => Promise<void> | void;
 }
 
+// Sem root (modo dev/CI) não executa nada: escalar com `sudo -n` aplicava `chattr +i` em arquivos
+// de teste fora do sistema e deixava o diretório impossível de apagar (EPERM).
 export function defaultLinuxCommandExecutor(isRoot = false): (cmd: string, args: string[]) => Promise<void> {
   return async (cmd: string, args: string[]): Promise<void> => {
+    if (!isRoot) return;
     try {
-      if (isRoot) {
-        await execFileAsync(cmd, args);
-      } else {
-        await execFileAsync('sudo', ['-n', cmd, ...args]);
-      }
+      await execFileAsync(cmd, args);
     } catch {
       // Ignora falhas residuais em ambientes restritos/CI
     }

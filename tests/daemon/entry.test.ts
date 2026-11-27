@@ -61,9 +61,9 @@ describe('entry do monblockd (modo dev, sem root)', () => {
     await waitOnline(client);
     const res = await client.call({ type: 'GET_STATE' });
     const sameKey = fs.readFileSync(keyPath, 'utf8') === key;
+    const db = running.layout.dbDir;
     await running.close();
     running = null;
-    const db = path.join(root, 'var/db/monblock');
     fs.rmSync(db, { recursive: true });
     fs.symlinkSync(os.tmpdir(), db);
 
