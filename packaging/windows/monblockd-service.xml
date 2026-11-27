@@ -1,0 +1,21 @@
+<!-- WinSW v2.12.0 (ADR-0016, D1). Instalado como %ProgramFiles%\monBlock\monblockd-service.xml ao lado do WinSW renomeado. -->
+<service>
+  <id>monblockd</id>
+  <name>monBlock Protection Daemon</name>
+  <description>Aplica o bloqueio do monBlock (hosts e políticas dos navegadores) e atende o app pelo named pipe.</description>
+  <executable>%BASE%\monblockd.exe</executable>
+  <startmode>Automatic</startmode>
+  <!-- O WinSW envia Ctrl+C: o Node recebe SIGINT, grava o cleanShutdown e sai (S0, P6: 0,4 s). -->
+  <stoptimeout>10 sec</stoptimeout>
+  <preshutdown>true</preshutdown>
+  <preshutdownTimeout>15 sec</preshutdownTimeout>
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="5 sec" />
+  <resetfailure>1 day</resetfailure>
+  <logpath>%ProgramData%\monBlock\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>1024</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

@@ -18,6 +18,8 @@ import { createDefaultPersistentState } from '../storage/state-store.js';
 import { DaemonClient } from './daemon-client.js';
 import { migrateLegacyVaults, readUserVaultKey } from './legacy-migration.js';
 import { AppNotificationManager } from './notifications.js';
+import { pipeServerVerifier } from './pipe-server-check.js';
+import { applyWindowsAppIdentity, trayIconSpec } from './platform-shell.js';
 import { checkForAppUpdates, downloadAppUpdatePkg } from './updater.js';
 
 /** Socket do `monblockd` root por SO (ADR-0007, ADR-0013). Override só em build não empacotado (dev/CI). */
@@ -253,6 +255,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   const electron = await import('electron');
   const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, powerMonitor, safeStorage, shell } = electron;
   const notificationManager = new AppNotificationManager({ notificationClass: electron.Notification });
+  applyWindowsAppIdentity(app);
 
   const gotSingleLock = app.requestSingleInstanceLock();
   if (!gotSingleLock) {
@@ -273,7 +276,19 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   // Sem fallback para daemon em processo: parar o serviço não pode devolver o app ao modo userland.
   const socketPath =
     !app.isPackaged && process.env.MONBLOCK_SOCKET_PATH ? process.env.MONBLOCK_SOCKET_PATH : DAEMON_SOCKET_PATH;
-  const daemonClient = new DaemonClient({ socketPath });
+  // W21: no Windows, segredo só vai para o pipe servido pelo serviço. O script mora em %ProgramFiles%
+  // (só admin grava); um script em pasta do usuário anularia a checagem.
+  const skipPipeCheck = !app.isPackaged && process.env.MONBLOCK_DEV_SKIP_PIPE_CHECK === '1';
+  const daemonClient = new DaemonClient({
+    socketPath,
+    verifyServer:
+      process.platform === 'win32' && !skipPipeCheck
+        ? pipeServerVerifier(
+            path.win32.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'monBlock', 'pipe-server-check.ps1'),
+            socketPath
+          )
+        : undefined,
+  });
   const call = async (cmd: DaemonCommand): Promise<DaemonResponse> => {
     try {
       return await daemonClient.call(cmd);
@@ -671,16 +686,11 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   const trayShieldPngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAACQAAAAkCAYAAADhAJiYAAAAAXNSR0IArs4c6QAAAGxlWElmTU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAIdpAAQAAAABAAAATgAAAAAAAACQAAAAAQAAAJAAAAABAAKgAgAEAAAAAQAAACSgAwAEAAAAAQAAACQAAAAAQCQK+gAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAAw5JREFUWAntlluITVEYx4fcJ5GiKZdQM3IZU1MuJbxMFIUHjFLygocZanhAQ4rUCE2exIMnSmlKKIrSeHAp436JxDSYZCZGkfvl96uza3ecc/bZ58yZp/OvX/uy1vftb63vW2vtkpKiijOQ3wz0y8+8pAL7KqiGP3AL7sJr6BM5gFnQCHfgG/xN4jPPV6EepkBB5Azsg2fwC8JBdPNsAK3wIantB89tsB2mQl4aj/VOeAy/IRxEB8/HoAbKINA4bpbBSeiCsI0DcVa3QdiGx2htoMtPCDt8ynMTmLJSiNJIOiwCA++EsC9TXQtZ6z09dfAW9sJ0GAi5agiG8+AwBL6fx3EWjKYBo0FxDCP6GpgD1H9Pqr4DUr0MvbMoc9VQDK1Dg3iQcGIglkJa9U/bkl+DNbYK3JMuQtbLvxABuVfNgF1gutuhA7JSIQKayJfroBws4K3wFbJSVA1l5STUaSz3i2EteHwcBY+TrNWbAbktrAZXpjNyBQ5BLMVJ2Sg874f1MAaSVcOLNeAs3QePmowrivb/FCcgd91NcCJxHR3yNon7WpgNr+BI4solnuIEdAHX98AzqRGWw3AYDAazAtrhPJyBnJSuhvy3MVg3NZex8rdiHZyDSmiCLvDMMlX2PQ3N4AaYSvqyn/IbWcsP6dSiDBwExv5GtIIz5bL+BPZtgZmQScNoNOX2f5GpY3LbzYRRG1fTkqxqXtwGR6nzR7ASojSCDi9Bm0tRncPt1ohGYjpSnfQLeW/gjnQzeHZlkru2G2bgtz5T5+Q268J0OAM9MB/yOfVN+xJwf/JnrwNMXyy5434ER/QFtkApxJUp3w3fQV/W5wLISUux6oagVi5zXwUu9SiZwrlwHQxEH+/ADTQvuapuQDBCZ+s4VECqfcytpBJOgf9TBqPtNSiHXpFFbUF2QjBb1tgecMbcXwxuDhyAINX29ZDdCOn2PJpyVxmmzWBgjlxMQwucBdPrOwN5AwchfMTwWBhNxq3nVRBAEJxXZ85AJkCfaxpf3AFP4CE0QK/VCb6KKs5A7Bn4BzLTxEQuanheAAAAAElFTkSuQmCC';
 
-  let trayIcon: Electron.NativeImage;
-  if (process.platform === 'darwin') {
-    const rawImage = nativeImage.createFromBuffer(Buffer.from(trayShieldPngBase64, 'base64'), {
-      scaleFactor: 2.0,
-    });
-    trayIcon = rawImage.resize({ width: 18, height: 18, quality: 'best' });
-    trayIcon.setTemplateImage(true);
-  } else {
-    trayIcon = nativeImage.createEmpty();
-  }
+  const iconSpec = trayIconSpec(process.platform);
+  const trayIcon = nativeImage
+    .createFromBuffer(Buffer.from(trayShieldPngBase64, 'base64'), { scaleFactor: 2.0 })
+    .resize({ width: iconSpec.size, height: iconSpec.size, quality: 'best' });
+  if (iconSpec.template) trayIcon.setTemplateImage(true);
   tray = new Tray(trayIcon);
   tray.setToolTip('monBlock — Painel de proteção');
   await refreshTrayMenu();

@@ -95,14 +95,20 @@ A ADR-0015 declarou paridade das 3 camadas no Windows, mas o caminho nunca rodou
 - O manifesto `.reg` usa `HKEY_LOCAL_MACHINE\`, em UTF-8 **sem BOM** (S0, P2: com BOM o import falha).
 - Cada lista é precedida de `[-chave]`, para remover os valores antigos (S0, P3).
 - `verifyApplied` lê o Registro com `reg query` (o código de saída do `reg import` não é confiável).
-- **Pendente (S0-E2, P11):** confirmar que Chrome, Edge e Firefox aplicam as políticas.
+- **Validado (S0-E2/P11 e F1, 2026-11-27):** Chrome e Edge aplicam as políticas (`ERR_BLOCKED_BY_ADMINISTRATOR`). Firefox não testado.
+- O Edge usa `InPrivateModeAvailability`; `IncognitoModeAvailability` aparece como "Erro" no `edge://policy`.
+
+### D7 — Privilégio e DATA_DIR no Windows (F2)
+
+- Privilégio por SID de integridade no `whoami /groups` (caminho absoluto): System `S-1-16-16384` ou High `S-1-16-12288`. Erro → não privilegiado.
+- No boot, a ACL do `DATA_DIR` é lida por SID via .NET (`GetAccessRules` com `SecurityIdentifier`), não pelo `Get-Acl`: o módulo dele não carrega quando o `powershell.exe` herda o `PSModulePath` do PowerShell 7. ACE de Users, Everyone ou Authenticated Users é removida; se persistir, o daemon não lê o cofre.
 
 ### D6 — Camada 3
 
 - Helper PowerShell persistente (`GetForegroundWindow` + `GetWindowText`), ligado junto com o watcher.
 - Redirecionamento via `shell.openExternal`. **Validado no S0 (P7):** preserva `&` e `,`; o `explorer.exe` sai com código 1 sem abrir nada.
 - UI Automation para a URL real fica num passo posterior.
-- **Pendente (P8):** latência, CPU e CLM.
+- **P8 (E2):** p95 9,9 ms e ~0,4% de um núcleo. Em CLM o helper sai 0 sem imprimir: sucesso só com handshake explícito.
 
 ### Matriz de Avaliação de Alternativas
 

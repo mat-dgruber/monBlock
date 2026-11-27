@@ -61,9 +61,9 @@ describe('entry do monblockd (modo dev, sem root)', () => {
     await waitOnline(client);
     const res = await client.call({ type: 'GET_STATE' });
     const sameKey = fs.readFileSync(keyPath, 'utf8') === key;
+    const db = running.layout.dbDir;
     await running.close();
     running = null;
-    const db = path.join(root, 'var/db/monblock');
     fs.rmSync(db, { recursive: true });
     fs.symlinkSync(os.tmpdir(), db);
 
@@ -96,13 +96,34 @@ describe('resolveLayout por plataforma (ADR-0013)', () => {
     expect(layout.firefoxPlistPath).toBe('/etc/firefox/policies/policies.json');
   });
 
-  it('retorna layout Windows com Named Pipe e %ProgramData%', () => {
-    const layout = resolveLayout('/', 'win32');
-    expect(layout.appSupportDir).toBe('/ProgramData/monBlock');
-    expect(layout.dbDir).toBe('/ProgramData/monBlock/db');
-    expect(layout.runDir).toBe('/ProgramData/monBlock/run');
+  it('Windows sem rootDir usa %ProgramData% e %SystemRoot% absolutos (W15)', () => {
+    // Act
+    const layout = resolveLayout(undefined, 'win32', { ProgramData: 'D:\\PD', SystemRoot: 'E:\\Win' });
+
+    // Assert
+    expect(layout.appSupportDir).toBe('D:\\PD\\monBlock');
+    expect(layout.dbDir).toBe('D:\\PD\\monBlock\\db');
+    expect(layout.runDir).toBe('D:\\PD\\monBlock\\run');
     expect(layout.socketPath).toBe('\\\\.\\pipe\\monblockd');
-    expect(layout.hostsPath).toBe('/Windows/System32/drivers/etc/hosts');
+    expect(layout.hostsPath).toBe('E:\\Win\\System32\\drivers\\etc\\hosts');
+  });
+
+  it('Windows sem rootDir e sem variáveis cai nos padrões de C:\\', () => {
+    // Act
+    const layout = resolveLayout(undefined, 'win32', {});
+
+    // Assert
+    expect(layout.appSupportDir).toBe('C:\\ProgramData\\monBlock');
+    expect(layout.hostsPath).toBe('C:\\Windows\\System32\\drivers\\etc\\hosts');
+  });
+
+  it('Windows com rootDir (dev/CI) monta tudo sob a raiz de teste', () => {
+    // Act
+    const layout = resolveLayout('C:\\tmp\\root', 'win32', { ProgramData: 'D:\\PD' });
+
+    // Assert
+    expect(layout.appSupportDir).toBe('C:\\tmp\\root\\ProgramData\\monBlock');
+    expect(layout.hostsPath).toBe('C:\\tmp\\root\\Windows\\System32\\drivers\\etc\\hosts');
   });
 });
 
