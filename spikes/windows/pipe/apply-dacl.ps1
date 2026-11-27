@@ -20,14 +20,15 @@ $r = [ordered]@{ pipe = $PipeName; sddl = $Sddl }
 try {
   Add-Type -TypeDefinition $src
   # READ_CONTROL | WRITE_DAC | GENERIC_READ ; OPEN_EXISTING
-  $h = [Dacl]::CreateFile("\\.\pipe\$PipeName", 0x00020000 -bor 0x00040000 -bor 0x80000000, 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
+  [uint32]$access = [uint32]"0x80060000"
+  $h = [Dacl]::CreateFile("\\.\pipe\$PipeName", $access, 3, [IntPtr]::Zero, 3, 0, [IntPtr]::Zero)
   if ($h -eq [IntPtr]::new(-1)) { throw "CreateFile falhou: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
   $sd = [IntPtr]::Zero; $size = 0
   if (-not [Dacl]::ConvertStringSecurityDescriptorToSecurityDescriptor($Sddl, 1, [ref]$sd, [ref]$size)) { throw "SDDL inválida: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
   $present = $false; $dacl = [IntPtr]::Zero; $def = $false
   [void][Dacl]::GetSecurityDescriptorDacl($sd, [ref]$present, [ref]$dacl, [ref]$def)
   # SE_KERNEL_OBJECT = 6 ; DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION
-  $rc = [Dacl]::SetSecurityInfo($h, 6, [uint32]0x80000004, [IntPtr]::Zero, [IntPtr]::Zero, $dacl, [IntPtr]::Zero)
+  $rc = [Dacl]::SetSecurityInfo($h, 6, [uint32]"0x80000004", [IntPtr]::Zero, [IntPtr]::Zero, $dacl, [IntPtr]::Zero)
   [void][Dacl]::CloseHandle($h)
   $r.setSecurityInfo = $rc
   $r.ok = $rc -eq 0
