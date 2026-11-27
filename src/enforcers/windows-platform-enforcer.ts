@@ -235,11 +235,15 @@ export class WindowsPlatformEnforcer implements PlatformEnforcer {
 
   /** Roda um passo sem interromper os seguintes; a falha vira drift no próximo `verifyApplied`. */
   private async step(failures: string[], id: string, fn: () => unknown): Promise<void> {
+    const started = Date.now();
     try {
       await fn();
     } catch (err) {
       failures.push(id);
       console.error(`[monblockd] passo ${id} falhou:`, (err as Error).message);
+    } finally {
+      const ms = Date.now() - started;
+      if (ms > 500) console.error(`[monblockd] passo ${id} levou ${ms} ms`);
     }
   }
 
@@ -257,8 +261,21 @@ export class WindowsPlatformEnforcer implements PlatformEnforcer {
       await this.step(failures, 'hosts:acl', () =>
         this.commandExecutor('icacls', [this.hostsPath, '/grant:r', '*S-1-5-18:(F)', '*S-1-5-32-544:(F)', '*S-1-5-32-545:(R)'])
       );
+      // Só quando o hosts mudou, e sem esperar: com o hosts grande o cliente DNS leva ~25 s para recarregar e o
+      // `ipconfig /flushdns` fica preso esse tempo todo, travando a fila de comandos do daemon (visto como SYSTEM).
+      if (this.flushDns) {
+        const started = Date.now();
+        void Promise.resolve()
+          .then(() => this.commandExecutor('ipconfig', ['/flushdns']))
+          .then(
+            () => {
+              const ms = Date.now() - started;
+              if (ms > 500) console.error(`[monblockd] passo dns:flush levou ${ms} ms (em segundo plano)`);
+            },
+            (err: Error) => console.error('[monblockd] passo dns:flush falhou (em segundo plano):', err.message)
+          );
+      }
     }
-    if (this.flushDns) await this.step(failures, 'dns:flush', () => this.commandExecutor('ipconfig', ['/flushdns']));
 
     await this.step(failures, 'registry:import', async () => {
       writeIfChanged(this.regTarget, expected.registryExport);

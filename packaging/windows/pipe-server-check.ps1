@@ -20,7 +20,8 @@ function Get-Wmi([string]$query) {
   # System.Management direto: não depende do módulo CimCmdlets (PSModulePath do PowerShell 7 quebra o autoload).
   Add-Type -AssemblyName System.Management
   $s = [System.Management.ManagementObjectSearcher]::new($query)
-  try { return @($s.Get()) } finally { $s.Dispose() }
+  # Vírgula: sem ela o PowerShell desembrulha o array de 1 item e $r[0] indexa o ManagementObject (PID vira 0).
+  try { return , @($s.Get()) } finally { $s.Dispose() }
 }
 try {
   Add-Type -TypeDefinition $sig

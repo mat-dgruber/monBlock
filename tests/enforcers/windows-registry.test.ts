@@ -170,9 +170,10 @@ describe('W10 — falhas parciais e drift lido do Registro', () => {
     // Act
     await e2.applyWebRules(rules);
 
-    // Assert
-    expect(calls).toEqual(['icacls', 'ipconfig', 'reg']);
-    expect(e2.verifyApplied(rules)).toEqual(expect.arrayContaining(['hosts:acl', 'dns:flush']));
+    // Assert: o flushdns roda em segundo plano e não entra no drift (o cache DNS expira sozinho).
+    expect(calls).toEqual(expect.arrayContaining(['icacls', 'ipconfig', 'reg']));
+    expect(e2.verifyApplied(rules)).toContain('hosts:acl');
+    expect(e2.verifyApplied(rules)).not.toContain('dns:flush');
   });
 
   it('Registro igual ao esperado e hosts aplicado: sem drift', async () => {
@@ -289,6 +290,50 @@ describe('W10 — falhas parciais e drift lido do Registro', () => {
 
     // Assert
     expect(enforcer.verifyApplied(rules)).toEqual([]);
+  });
+});
+
+describe('flushdns: o cliente DNS do Windows demora com hosts grande (visto como SYSTEM: ~25 s)', () => {
+  const build = (executor: (cmd: string) => Promise<void> | void) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'win-flush-'));
+    const hostsPath = path.join(dir, 'hosts');
+    fs.writeFileSync(hostsPath, '127.0.0.1 localhost\n');
+    return new WindowsPlatformEnforcer({
+      hostsPath,
+      regFilePath: path.join(dir, 'p.reg'),
+      flushDns: true,
+      commandExecutor: (cmd) => executor(cmd),
+      registryReader: () => null,
+    });
+  };
+
+  it('não espera o flushdns terminar: o apply volta mesmo com o ipconfig travado', async () => {
+    // Arrange
+    const enforcer = build((cmd) => (cmd === 'ipconfig' ? new Promise<void>(() => {}) : undefined));
+
+    // Act
+    const result = await Promise.race([
+      enforcer.applyWebRules(rules).then(() => 'voltou'),
+      new Promise((r) => setTimeout(() => r('travou'), 300)),
+    ]);
+
+    // Assert
+    expect(result).toBe('voltou');
+  });
+
+  it('só roda o flushdns quando o hosts mudou (não a cada tick)', async () => {
+    // Arrange
+    const calls: string[] = [];
+    const enforcer = build((cmd) => {
+      calls.push(cmd);
+    });
+
+    // Act
+    await enforcer.applyWebRules(rules);
+    await enforcer.applyWebRules(rules);
+
+    // Assert
+    expect(calls.filter((c) => c === 'ipconfig')).toHaveLength(1);
   });
 });
 

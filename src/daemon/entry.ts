@@ -242,7 +242,8 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   ensureDir(layout.appSupportDir, 0o700, isRoot);
   ensureDir(layout.dbDir, 0o700, isRoot);
   const gid = isRoot ? lookupMonblockGid() : undefined;
-  if (isRoot && gid === undefined) {
+  // Grupo POSIX: no Windows o acesso ao pipe vem da DACL (W4), então não há o que avisar.
+  if (isRoot && gid === undefined && process.platform !== 'win32') {
     console.error('[monblockd] grupo monblock ausente: socket acessível só ao root até reinstalar.');
   }
   ensureDir(layout.runDir, gid === undefined && isRoot ? 0o700 : 0o750, isRoot, gid ?? 0);
@@ -298,7 +299,16 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   try {
     ipc = await createIpcServer({
       socketPath: layout.socketPath,
-      handle: (cmd) => daemon.handleCommand(cmd),
+      handle: async (cmd) => {
+        const started = Date.now();
+        try {
+          return await daemon.handleCommand(cmd);
+        } finally {
+          // O cliente desiste em 5 s: registrar o que passa de 1 s ajuda a achar o gargalo (visto na F3).
+          const ms = Date.now() - started;
+          if (ms > 1000) console.error(`[monblockd] comando ${cmd.type} levou ${ms} ms`);
+        }
+      },
       secureListen:
         process.platform === 'win32' && options.helpersDir
           ? pipeAclHook(path.join(options.helpersDir, 'pipe-acl.ps1'))

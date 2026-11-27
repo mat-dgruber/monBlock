@@ -24,6 +24,7 @@ import {
   HOSTS_FILE_MODE,
   applyAtomicHostsBlock,
   buildManagedHostsContent,
+  replaceFileFromTemp,
   rollbackHostsFromBackup,
 } from './hosts-enforcer.js';
 import {
@@ -64,7 +65,7 @@ export function writeFileAtomically(filePath: string, content: string): void {
   try {
     fs.writeFileSync(tmpPath, content, { encoding: 'utf8', mode: HOSTS_FILE_MODE });
     fs.chmodSync(tmpPath, HOSTS_FILE_MODE); // umask 077 do daemon: sem isso o arquivo sairia 0600
-    fs.renameSync(tmpPath, filePath);
+    replaceFileFromTemp(tmpPath, filePath);
   } finally {
     try {
       if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);

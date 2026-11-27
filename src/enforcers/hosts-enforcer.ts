@@ -43,6 +43,47 @@ const HOSTNAME_RE =
  */
 export const HOSTS_FILE_MODE = 0o644;
 
+const WINDOWS_REPLACE_LOCK_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+/**
+ * Troca `target` pelo conteúdo de `tmp`. Primeiro por `rename` (atômico). No Windows o `rename` por cima
+ * de um arquivo aberto por outro processo sem `FILE_SHARE_DELETE` dá EPERM — é o que acontece com o hosts
+ * (cliente DNS, antivírus), visto no teste real como SYSTEM. Aí o conteúdo é copiado por cima (`CopyFile`
+ * só precisa de escrita compartilhada). Não é atômico; o `.monblock.bak` e o drift do watchdog cobrem.
+ */
+export function replaceFileFromTemp(
+  tmp: string,
+  target: string,
+  platform: NodeJS.Platform = process.platform,
+  rename: (from: string, to: string) => void = fs.renameSync,
+  copy: (from: string, to: string) => void = fs.copyFileSync,
+  sleep: (ms: number) => void = sleepSync
+): void {
+  try {
+    rename(tmp, target);
+    return;
+  } catch (err) {
+    if (platform !== 'win32' || !WINDOWS_REPLACE_LOCK_CODES.has((err as NodeJS.ErrnoException).code ?? '')) throw err;
+  }
+  // A trava é intermitente (o antivírus inspeciona o hosts logo após cada escrita): até ~3 s de novas tentativas.
+  const delays = [0, 100, 200, 400, 800, 1500];
+  for (let i = 0; ; i++) {
+    sleep(delays[i]);
+    try {
+      copy(tmp, target);
+      fs.unlinkSync(tmp);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (!WINDOWS_REPLACE_LOCK_CODES.has(code) || i === delays.length - 1) throw err;
+    }
+  }
+}
+
+function sleepSync(ms: number): void {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 export function applyAtomicHostsBlock(
   hostsFilePath: string,
   blockedDomains: string[]
@@ -65,7 +106,7 @@ export function applyAtomicHostsBlock(
   try {
     fs.writeFileSync(tmpPath, nextContent, { encoding: 'utf8', mode: HOSTS_FILE_MODE });
     fs.chmodSync(tmpPath, HOSTS_FILE_MODE); // o umask 077 do daemon ignora o `mode` acima
-    fs.renameSync(tmpPath, hostsFilePath);
+    replaceFileFromTemp(tmpPath, hostsFilePath);
   } finally {
     try {
       if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
