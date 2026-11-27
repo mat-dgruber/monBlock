@@ -5,6 +5,9 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+### Adicionado
+- CI: job `windows-latest` com typecheck, testes, build e smoke do daemon (Named Pipe `\\.\pipe\monblockd` e hosts gerado em modo dev).
+
 ### Corrigido
 - Windows, Camada 2: o manifesto `.reg` usava a abreviação `HKLM\`, que o `reg import` ignora com código 0; nenhuma política de navegador era gravada. Agora usa `HKEY_LOCAL_MACHINE\`, apaga cada lista antes de recriá-la (sem allowlist antiga valendo) e grava sem BOM (W9).
 - Windows: falhas de `icacls`, `ipconfig`, `reg import` não são mais engolidas; todos os passos rodam e as falhas viram drift. O drift lê o Registro (`reg query`) e acusa chave apagada ou valor alterado (W10).
@@ -15,6 +18,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - Windows: o Edge trava a navegação InPrivate com `InPrivateModeAvailability` (o `IncognitoModeAvailability` dava "Erro").
 - Windows, modo dev: o daemon não roda mais `icacls`/`reg` no sistema real.
 - Linux: sem root, o enforcer não escala mais com `sudo -n` (travava arquivos de teste com `chattr +i`).
+- `resolveLayout` usa `path.posix` (darwin/linux) e `path.win32` (win32) pela plataforma alvo, e não pela do host.
+- `npm run build` funciona no Windows: a cópia de assets saiu do `cp` para `scripts/copy-assets.mjs`.
+- `.gitattributes` fixa EOL em LF; com o `core.autocrlf=true` do Git for Windows, o `gen-lists --check` falhava.
+- Os enforcers POSIX ignoram o modo do hosts no `win32`, que não tem modo POSIX; antes acusavam drift em todo tick.
+- A suíte roda no Windows: os testes de IPC usam Named Pipe e os testes de modo POSIX são pulados no `win32`.
 
 ## [0.9.1] - 2026-11-19
 ### Corrigido

@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master, develop, dev]
   pull_request:
-    branches: [main, master, develop]
+    branches: [main, master, develop, dev]
 
 permissions:
   contents: read
@@ -25,6 +25,44 @@ jobs:
       - run: npm test --if-present
       # Scripts do instalador rodam como root: qualquer aviso do shellcheck quebra o build.
       - run: shellcheck packaging/macos/scripts/preinstall packaging/macos/scripts/postinstall packaging/macos/uninstall.sh scripts/*.sh tests/e2e/root/run.sh
+
+  windows:
+    name: Windows — typecheck, testes, build e smoke do daemon
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Modo dev (MONBLOCK_DEV_ROOT_DIR): o daemon sobe no Named Pipe e grava o hosts dentro do root de teste.
+      - name: Smoke do daemon (pipe e hosts)
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'root'
+          $env:MONBLOCK_DEV_ROOT_DIR = $root
+          $log = Join-Path $env:RUNNER_TEMP 'monblockd.log'
+          $p = Start-Process node -ArgumentList 'dist/daemon/entry.js' -PassThru -NoNewWindow -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+          try {
+            $deadline = (Get-Date).AddSeconds(15)
+            while (-not ([IO.Directory]::GetFiles('\\.\pipe\') -contains '\\.\pipe\monblockd')) {
+              if ($p.HasExited) { throw "daemon saiu com código $($p.ExitCode)" }
+              if ((Get-Date) -gt $deadline) { throw 'pipe \\.\pipe\monblockd não apareceu em 15 s' }
+              Start-Sleep -Milliseconds 250
+            }
+            $hosts = Join-Path $root 'Windows\System32\drivers\etc\hosts'
+            if (-not (Select-String -Path $hosts -Pattern 'MONBLOCK START' -Quiet)) { throw "hosts sem o bloco do monBlock: $hosts" }
+            Write-Host "ok: pipe criado e hosts com $((Get-Item $hosts).Length) bytes"
+          } finally {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+            Get-Content $log, "$log.err" -ErrorAction SilentlyContinue | Select-Object -Last 50
+          }
 
   macos-package:
     name: macOS — .pkg do monblockd e E2E como root

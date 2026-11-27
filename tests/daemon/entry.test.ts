@@ -10,6 +10,7 @@ const base = os.tmpdir().length > 40 ? '/tmp' : os.tmpdir(); // sun_path ≤ 104
 let running: RunningDaemon | null = null;
 let client: DaemonClient | null = null;
 let root = '';
+const isWin = process.platform === 'win32';
 
 afterEach(async () => {
   client?.close();
@@ -40,10 +41,13 @@ describe('entry do monblockd (modo dev, sem root)', () => {
     // Assert
     expect(res.status).toBe(200);
     expect(fs.readFileSync(running.layout.hostsPath, 'utf8')).toContain('# >>> MONBLOCK START >>>');
-    expect(fs.statSync(running.layout.appSupportDir).mode & 0o777).toBe(0o700);
-    expect(fs.statSync(running.layout.dbDir).mode & 0o777).toBe(0o700);
-    expect(fs.statSync(running.layout.runDir).mode & 0o777).toBe(0o750);
-    expect(fs.statSync(path.join(running.layout.appSupportDir, 'vault.key')).mode & 0o777).toBe(0o600);
+    // Modo POSIX não existe no Windows: lá o DATA_DIR é protegido por ACL (W20).
+    if (!isWin) {
+      expect(fs.statSync(running.layout.appSupportDir).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(running.layout.dbDir).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(running.layout.runDir).mode & 0o777).toBe(0o750);
+      expect(fs.statSync(path.join(running.layout.appSupportDir, 'vault.key')).mode & 0o777).toBe(0o600);
+    }
     expect(fs.existsSync(path.join(running.layout.dbDir, 'state.mirror'))).toBe(true);
   });
 
@@ -65,7 +69,8 @@ describe('entry do monblockd (modo dev, sem root)', () => {
     await running.close();
     running = null;
     fs.rmSync(db, { recursive: true });
-    fs.symlinkSync(os.tmpdir(), db);
+    // No Windows, junction não exige o privilégio de criar link simbólico e o lstat a vê como link.
+    fs.symlinkSync(os.tmpdir(), db, isWin ? 'junction' : 'dir');
 
     // Assert
     expect(sameKey).toBe(true);

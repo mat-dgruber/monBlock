@@ -12,6 +12,7 @@ const base = os.tmpdir().length > 60 ? '/tmp' : os.tmpdir();
 
 let dir: string;
 let socketPath: string;
+const isWin = process.platform === 'win32';
 const servers: IpcServer[] = [];
 const clients: DaemonClient[] = [];
 
@@ -64,7 +65,8 @@ const waitFor = async (cond: () => boolean, ms = 2000) => {
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(base, 'mb-ipc-'));
-  socketPath = path.join(dir, 'd.sock');
+  // No Windows o servidor só escuta em Named Pipe; um caminho em %TEMP% dá EACCES.
+  socketPath = isWin ? `\\\\.\\pipe\\${path.basename(dir)}` : path.join(dir, 'd.sock');
 });
 
 afterEach(async () => {
@@ -135,7 +137,7 @@ describe('ipc-server (RN-DAEMON-04)', () => {
     first.destroy();
   });
 
-  it('remove socket velho antes de escutar e aplica modo 0660', async () => {
+  it.skipIf(isWin)('remove socket velho antes de escutar e aplica modo 0660', async () => {
     fs.writeFileSync(socketPath, '');
 
     await start();

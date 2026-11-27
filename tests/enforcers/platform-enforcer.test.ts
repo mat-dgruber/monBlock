@@ -383,7 +383,8 @@ describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
   });
 });
 
-describe('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', () => {
+// Modo POSIX (0644/0600) não existe no Windows.
+describe.skipIf(process.platform === 'win32')('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', () => {
   const rules = { enabledCategories: ['adult'], blockedDomains: [], allowlistDomains: [], keywords: [], lockIncognito: true };
   const mode = (p: string) => fs.statSync(p).mode & 0o777;
 
@@ -416,7 +417,7 @@ describe('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', 
 });
 
 describe('hosts: rollback e trava', () => {
-  it('rollback restaura em 0644 mesmo com backup 0600', () => {
+  it.skipIf(process.platform === 'win32')('rollback restaura em 0644 mesmo com backup 0600', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-rb-'));
     const hostsPath = path.join(dir, 'hosts');
     fs.writeFileSync(`${hostsPath}.monblock.bak`, '127.0.0.1 localhost\n', { mode: 0o600 });
