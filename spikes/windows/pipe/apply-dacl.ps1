@@ -18,3 +18,4 @@ try {
   $r.error = $_.Exception.Message
 }
 $r | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $OutFile
+if (-not $r.ok) { exit 1 }

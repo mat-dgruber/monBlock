@@ -36,16 +36,16 @@ app.whenReady().then(async () => {
   save();
 
   report.openExternal = { call: await shell.openExternal(`${base}/openExternal${QUERY}`).then(() => 'resolved', (e) => e.message) };
-  report.openExternal.received = await waitFor('openExternal', 25_000);
+  report.openExternal.received = await waitFor('openExternal', 15_000);
   save();
 
   report.explorer = { call: await run('explorer.exe', [`${base}/explorer${QUERY}`]) };
-  report.explorer.received = await waitFor('explorer', 25_000);
+  report.explorer.received = await waitFor('explorer', 15_000);
   save();
 
   const url = `${base}/cmdstart${QUERY}`;
   report.cmdStart = { call: await run('cmd.exe', ['/c', 'start', '""', `"${url}"`]) };
-  report.cmdStart.received = await waitFor('cmdstart', 25_000);
+  report.cmdStart.received = await waitFor('cmdstart', 15_000);
 
   for (const k of ['openExternal', 'explorer', 'cmdStart']) {
     report[k].intact = report[k].received ? report[k].received.endsWith(QUERY) : null;

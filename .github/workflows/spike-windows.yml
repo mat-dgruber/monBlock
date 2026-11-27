@@ -49,6 +49,7 @@ jobs:
         run: |
           Get-ChildItem spikes/windows/results/*.json | ForEach-Object { $j = Get-Content $_ -Raw | ConvertFrom-Json; "{0}: {1}" -f $j.id, $j.status }
           if (Test-Path C:\spike\events.log) { Copy-Item C:\spike\events.log spikes/windows/results/ }
+          if (Test-Path C:\spike\out) { Copy-Item C:\spike\out spikes/windows/results/out -Recurse -Exclude tmp }
           if (Test-Path C:\spike\logs) { Copy-Item C:\spike\logs spikes/windows/results/winsw-logs -Recurse }
       - uses: actions/upload-artifact@v4
         if: always()
