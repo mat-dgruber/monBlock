@@ -1,0 +1,58 @@
+# Spike S0 — só existe na branch spike/windows-s0. Não fazer merge.
+name: Spike S0 Windows
+
+on:
+  push:
+    branches: [spike/windows-s0]
+
+permissions:
+  contents: read
+
+jobs:
+  s0:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Ambiente
+        run: |
+          Get-ComputerInfo -Property OsName, OsVersion, OsBuildNumber | Format-List
+          node -v
+      - name: P1–P3 Registro
+        continue-on-error: true
+        run: ./spikes/windows/reg/p1-p3.ps1
+      - name: P10 Defender
+        continue-on-error: true
+        run: ./spikes/windows/defender/p10.ps1 -WaitSec 300
+      - name: P9 SEA + WinSW
+        continue-on-error: true
+        run: ./spikes/windows/service/p9-build-install.ps1
+      - name: P4–P5 Pipe
+        continue-on-error: true
+        run: ./spikes/windows/pipe/p4-p5.ps1
+      - name: P7 Redirecionamento
+        continue-on-error: true
+        run: ./spikes/windows/redirect/p7.ps1
+      - name: P6 Parada do serviço
+        continue-on-error: true
+        run: ./spikes/windows/service/p6-stop.ps1
+      - name: Resumo
+        if: always()
+        run: |
+          Get-ChildItem spikes/windows/results/*.json | ForEach-Object { $j = Get-Content $_ -Raw | ConvertFrom-Json; "{0}: {1}" -f $j.id, $j.status }
+          if (Test-Path C:\spike\events.log) { Copy-Item C:\spike\events.log spikes/windows/results/ }
+          if (Test-Path C:\spike\logs) { Copy-Item C:\spike\logs spikes/windows/results/winsw-logs -Recurse }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-s0-results
+          path: spikes/windows/results/
+          retention-days: 7

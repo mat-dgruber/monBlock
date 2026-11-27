@@ -1,0 +1,12 @@
+<service>
+  <id>monblockd-spike</id>
+  <name>monBlock Spike S0</name>
+  <description>Serviço descartável do spike S0 (validação de premissas).</description>
+  <executable>%BASE%\monblockd-spike.exe</executable>
+  <onfailure action="restart" delay="5 sec" />
+  <resetfailure>1 day</resetfailure>
+  <stoptimeout>10 sec</stoptimeout>
+  <preshutdown>true</preshutdown>
+  <logpath>C:\spike\logs</logpath>
+  <log mode="roll" />
+</service>
