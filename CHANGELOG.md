@@ -5,6 +5,15 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+### Adicionado
+- CI: job `windows-latest` com typecheck, testes, build e smoke do daemon (Named Pipe `\\.\pipe\monblockd` e hosts gerado em modo dev).
+
+### Corrigido
+- Windows (W15): `resolveLayout` usa `%ProgramData%` e `%SystemRoot%` com `path.win32`, em vez de caminhos relativos ao drive atual; darwin/linux usam `path.posix`.
+- `npm run build` funciona no Windows: a cópia de assets saiu do `cp` para `scripts/copy-assets.mjs`.
+- `.gitattributes` fixa EOL em LF; com o `core.autocrlf=true` do Git for Windows, o `gen-lists --check` falhava.
+- Os enforcers POSIX ignoram o modo do hosts no `win32`, que não tem modo POSIX; antes acusavam drift em todo tick.
+- A suíte roda no Windows: os testes de IPC usam Named Pipe e os testes de modo POSIX são pulados no `win32`.
 
 ## [0.9.1] - 2026-11-19
 ### Corrigido
