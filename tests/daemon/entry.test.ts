@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import crypto from 'node:crypto';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { lookupMonblockGid, resolveLayout, startDaemon, type RunningDaemon } from '../../src/daemon/entry.js';
 import { DaemonClient } from '../../src/main/daemon-client.js';
 
@@ -12,7 +13,13 @@ let client: DaemonClient | null = null;
 let root = '';
 const isWin = process.platform === 'win32';
 
+// Pipe próprio por teste: o serviço monblockd pode estar instalado na máquina de desenvolvimento.
+beforeEach(() => {
+  process.env.MONBLOCK_DEV_PIPE_NAME = `mbd-test-${crypto.randomBytes(4).toString('hex')}`;
+});
+
 afterEach(async () => {
+  delete process.env.MONBLOCK_DEV_PIPE_NAME;
   client?.close();
   await running?.close();
   running = null;
@@ -120,6 +127,12 @@ describe('resolveLayout por plataforma (ADR-0013)', () => {
     // Assert
     expect(layout.appSupportDir).toBe('C:\\ProgramData\\monBlock');
     expect(layout.hostsPath).toBe('C:\\Windows\\System32\\drivers\\etc\\hosts');
+  });
+
+  it('Windows em dev aceita MONBLOCK_DEV_PIPE_NAME só com rootDir e nome válido', () => {
+    expect(resolveLayout('C:\\r', 'win32', { MONBLOCK_DEV_PIPE_NAME: 'mb-x' }).socketPath).toBe('\\\\.\\pipe\\mb-x');
+    expect(resolveLayout(undefined, 'win32', { MONBLOCK_DEV_PIPE_NAME: 'mb-x' }).socketPath).toBe('\\\\.\\pipe\\monblockd');
+    expect(resolveLayout('C:\\r', 'win32', { MONBLOCK_DEV_PIPE_NAME: '..\\x' }).socketPath).toBe('\\\\.\\pipe\\monblockd');
   });
 
   it('Windows com rootDir (dev/CI) monta tudo sob a raiz de teste', () => {

@@ -51,11 +51,14 @@ export function resolveLayout(
       ? w.join(rootDir, 'ProgramData', 'monBlock')
       : w.join(env.ProgramData ?? 'C:\\ProgramData', 'monBlock');
     const systemRoot = rootDir ? w.join(rootDir, 'Windows') : (env.SystemRoot ?? 'C:\\Windows');
+    // Só em dev/CI (com rootDir): outro nome de pipe, para não colidir com o serviço instalado na máquina.
+    const devPipe = env.MONBLOCK_DEV_PIPE_NAME;
+    const pipeName = rootDir && devPipe && /^[A-Za-z0-9._-]{1,64}$/.test(devPipe) ? devPipe : 'monblockd';
     return {
       appSupportDir: dataDir,
       dbDir: w.join(dataDir, 'db'),
       runDir: w.join(dataDir, 'run'),
-      socketPath: '\\\\.\\pipe\\monblockd',
+      socketPath: `\\\\.\\pipe\\${pipeName}`,
       hostsPath: w.join(systemRoot, 'System32', 'drivers', 'etc', 'hosts'),
       chromiumPlistPaths: [],
       firefoxPlistPath: '',
