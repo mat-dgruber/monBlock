@@ -18,7 +18,7 @@ export interface UpdateCheckResult {
   currentVersion: string;
   latestVersion?: string;
   releaseNotes?: string;
-  pkgUrl?: string;
+  installerUrl?: string;
   sha256?: string;
   error?: string;
 }
@@ -28,10 +28,19 @@ export interface CheckForUpdatesOptions {
   repo?: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
+  /** Escolhe o instalador da release: `.pkg` no macOS, `monBlock-Setup-*.exe` no Windows (W16). */
+  platform?: NodeJS.Platform;
+}
+
+/** Asset do instalador de cada plataforma; outras plataformas não recebem arquivo. */
+export function isInstallerAssetFor(name: string, platform: NodeJS.Platform): boolean {
+  if (platform === 'darwin') return name.endsWith('.pkg');
+  if (platform === 'win32') return /^monBlock-Setup-[\w.-]+\.exe$/i.test(name);
+  return false;
 }
 
 export interface DownloadUpdateOptions {
-  pkgUrl: string;
+  installerUrl: string;
   expectedSha256?: string;
   allowUnverified?: boolean;
   targetDir?: string;
@@ -41,7 +50,7 @@ export interface DownloadUpdateOptions {
 
 export interface DownloadUpdateResult {
   success: boolean;
-  pkgPath?: string;
+  installerPath?: string;
   error?: string;
 }
 
@@ -134,7 +143,7 @@ export function compareSemver(v1: string, v2: string): number {
  * Consulta o endpoint público de releases do GitHub com timeout e proteção contra rate-limit.
  */
 export async function checkForAppUpdates(options: CheckForUpdatesOptions): Promise<UpdateCheckResult> {
-  const { currentVersion, repo = 'matheus-diniz/monBlock', fetchFn = fetch, timeoutMs = 10_000 } = options;
+  const { currentVersion, repo = 'mat-dgruber/monBlock', fetchFn = fetch, timeoutMs = 10_000 } = options;
 
   const url = `https://api.github.com/repos/${repo}/releases/latest`;
   const controller = new AbortController();
@@ -169,21 +178,21 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions): Promi
 
     const hasUpdate = Boolean(latestClean) && compareSemver(latestClean, currentClean) > 0;
 
-    let pkgUrl: string | undefined;
-    let pkgFilename: string | undefined;
+    let installerUrl: string | undefined;
+    let installerFilename: string | undefined;
     let sha256: string | undefined;
 
     if (Array.isArray(data.assets)) {
-      const pkgAsset = data.assets.find((a) => a.name.endsWith('.pkg'));
-      if (pkgAsset) {
-        pkgUrl = pkgAsset.browser_download_url;
-        pkgFilename = pkgAsset.name;
+      const installerAsset = data.assets.find((a) => isInstallerAssetFor(a.name, options.platform ?? process.platform));
+      if (installerAsset) {
+        installerUrl = installerAsset.browser_download_url;
+        installerFilename = installerAsset.name;
 
         // Procura asset de checksum dedicado
         const checksumAsset = data.assets.find((a) => {
           const lower = a.name.toLowerCase();
           return (
-            lower === `${pkgAsset.name.toLowerCase()}.sha256` ||
+            lower === `${installerAsset.name.toLowerCase()}.sha256` ||
             lower === 'checksums.txt' ||
             lower === 'sha256sums' ||
             lower === 'sha256sums.txt' ||
@@ -199,7 +208,7 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions): Promi
             });
             if (csRes.ok) {
               const csText = await csRes.text();
-              sha256 = extractSha256FromText(csText, pkgFilename);
+              sha256 = extractSha256FromText(csText, installerFilename);
             }
           } catch {
             // Falha tolerante na leitura do asset de checksum, prossegue para fallback
@@ -210,7 +219,7 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions): Promi
 
     // Fallback: tentar extrair do corpo da release se ainda não resolveu
     if (!sha256 && data.body) {
-      sha256 = extractSha256FromText(data.body, pkgFilename);
+      sha256 = extractSha256FromText(data.body, installerFilename);
     }
 
     return {
@@ -218,7 +227,7 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions): Promi
       currentVersion,
       latestVersion: latestClean || undefined,
       releaseNotes: data.body || undefined,
-      pkgUrl,
+      installerUrl,
       sha256,
     };
   } catch (err: unknown) {
@@ -236,9 +245,9 @@ export async function checkForAppUpdates(options: CheckForUpdatesOptions): Promi
 /**
  * Realiza o download assistido do arquivo `.pkg` oficial, validando o hash SHA-256.
  */
-export async function downloadAppUpdatePkg(options: DownloadUpdateOptions): Promise<DownloadUpdateResult> {
+export async function downloadAppUpdate(options: DownloadUpdateOptions): Promise<DownloadUpdateResult> {
   const {
-    pkgUrl,
+    installerUrl,
     expectedSha256,
     allowUnverified = false,
     targetDir = os.tmpdir(),
@@ -254,12 +263,12 @@ export async function downloadAppUpdatePkg(options: DownloadUpdateOptions): Prom
     };
   }
 
-  const filename = path.basename(pkgUrl.split('?')[0] || 'monblock-update.pkg');
+  const filename = path.basename(installerUrl.split('?')[0] || 'monblock-update.pkg');
   const tempPath = path.join(targetDir, `${filename}.${Date.now()}.download`);
   const finalPath = path.join(targetDir, filename);
 
   try {
-    const response = await fetchFn(pkgUrl, {
+    const response = await fetchFn(installerUrl, {
       headers: { 'User-Agent': 'monBlock-Updater' },
     });
 
@@ -295,7 +304,7 @@ export async function downloadAppUpdatePkg(options: DownloadUpdateOptions): Prom
 
     return {
       success: true,
-      pkgPath: finalPath,
+      installerPath: finalPath,
     };
   } catch (err: unknown) {
     if (fs.existsSync(tempPath)) {

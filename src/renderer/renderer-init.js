@@ -937,7 +937,7 @@ globalThis.monblockRenderer = { pickInitialView };
   closeUpdateDialogBtn?.addEventListener('click', () => updateDialog?.close());
 
   confirmUpdateBtn?.addEventListener('click', async () => {
-    if (!currentUpdateInfo?.pkgUrl || !bridge?.downloadUpdate) {
+    if (!currentUpdateInfo?.installerUrl || !bridge?.downloadUpdate) {
       if (updateFeedback) {
         updateFeedback.hidden = false;
         updateFeedback.textContent = 'Pacote de instalação indisponível nesta release.';
@@ -953,7 +953,7 @@ globalThis.monblockRenderer = { pickInitialView };
 
     try {
       const result = await bridge.downloadUpdate({
-        pkgUrl: currentUpdateInfo.pkgUrl,
+        installerUrl: currentUpdateInfo.installerUrl,
         expectedSha256: currentUpdateInfo.sha256,
       });
 

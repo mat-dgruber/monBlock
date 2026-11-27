@@ -23,7 +23,7 @@ import { AppNotificationManager } from './notifications.js';
 import { pipeServerVerifier } from './pipe-server-check.js';
 import { applyWindowsAppIdentity, trayIconSpec } from './platform-shell.js';
 import { startBrowserWatcherLoop, type WatcherLoopState } from './watcher-loop.js';
-import { checkForAppUpdates, downloadAppUpdatePkg } from './updater.js';
+import { checkForAppUpdates, downloadAppUpdate } from './updater.js';
 
 /** Socket do `monblockd` root por SO (ADR-0007, ADR-0013). Override só em build não empacotado (dev/CI). */
 export const DAEMON_SOCKET_PATH =
@@ -437,9 +437,13 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   });
 
   // Verificação e download assistido de atualizações (In-App Updater)
+  // Zero-Trust: o download usa só o que o próprio processo principal verificou. Antes, URL e hash vinham do
+  // renderer, e um renderer comprometido poderia mandar baixar e abrir qualquer executável.
+  let lastUpdateCheck: Awaited<ReturnType<typeof checkForAppUpdates>> | null = null;
   ipcMain.handle('monblock:check-updates', async () => {
     const currentVersion = app.getVersion();
     const result = await checkForAppUpdates({ currentVersion });
+    lastUpdateCheck = result;
     if (result.hasUpdate && result.latestVersion) {
       notificationManager.notify({
         id: 'update-available',
@@ -450,22 +454,22 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     return result;
   });
 
-  ipcMain.handle('monblock:download-update', async (_event, payload: { pkgUrl?: string; expectedSha256?: string }) => {
-    if (!payload || typeof payload.pkgUrl !== 'string' || !payload.pkgUrl.trim()) {
-      return { success: false, error: 'URL do pacote não fornecida.' };
+  ipcMain.handle('monblock:download-update', async () => {
+    if (!lastUpdateCheck?.hasUpdate || !lastUpdateCheck.installerUrl) {
+      return { success: false, error: 'Nenhuma atualização verificada para esta plataforma.' };
     }
-    const res = await downloadAppUpdatePkg({
-      pkgUrl: payload.pkgUrl.trim(),
-      expectedSha256: payload.expectedSha256,
+    const res = await downloadAppUpdate({
+      installerUrl: lastUpdateCheck.installerUrl,
+      expectedSha256: lastUpdateCheck.sha256,
     });
-    if (res.success && res.pkgPath) {
+    if (res.success && res.installerPath) {
       notificationManager.notify({
         id: 'update-downloaded',
         title: 'monBlock — Atualização pronta',
         body: 'O instalador foi aberto para conclusão da atualização.',
         force: true,
       });
-      await shell.openPath(res.pkgPath);
+      await shell.openPath(res.installerPath);
     }
     return res;
   });
