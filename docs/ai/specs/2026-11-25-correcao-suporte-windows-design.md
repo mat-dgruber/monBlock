@@ -1,11 +1,11 @@
-# Especificação de Design: Correção do Suporte ao Windows (W1–W21)
+# Especificação de Design: Correção do Suporte ao Windows (W1–W21, sem W17)
 
-**Data:** 2026-11-25 · **Revisão v2:** 2026-11-27
-**Status:** APROVADA v2 (2026-11-27). Incorpora a auditoria goldfish-critic (que reprovou a v1 para F3–F5) e as respostas da sabatina. Scanner `/plan-criticize`: 0/100. Próximo artefato: plano do S0 em `docs/ai/plans/`.
+**Data:** 2026-11-25 · **Revisão v2:** 2026-11-27 · **Revisão v3:** 2026-11-27
+**Status:** APROVADA (v3, 2026-11-27). A v3 incorpora o resultado do spike S0 no E1 ([relatório](../reports/2026-11-27-spike-s0-windows.md)).
 **Versão alvo:** `0.10.0` (MINOR: passa a suportar uma plataforma de verdade; sem quebra de contrato IPC no macOS/Linux)
 **Base:** [relatório de revisão](../reports/2026-11-25-revisao-funcionalidade-windows.md) (branch `dev`, commit `e4033cf`)
 **Artefatos:** esta spec fica em `docs/ai/specs/`. O plano de cada fase vai para `docs/ai/plans/`. O spike (S0) vai para `docs/ai/reports/`.
-**ADRs afetadas:** a ADR-0013 e a ADR-0015 têm premissas falsas. Esta spec pede a **ADR-0016** (seção 5).
+**ADRs afetadas:** a ADR-0013 e a ADR-0015 têm premissas falsas. Rascunho da **ADR-0016**: `docs/adrs/0016-servico-ipc-e-correcoes-do-suporte-windows.md`.
 
 ---
 
@@ -22,6 +22,7 @@
 - **`buildProblem`:** gerador de Problem Details (RFC 9457) do daemon.
 - **`INSTALL_DIR` (Windows):** `%ProgramFiles%\monBlock`. É o equivalente do `HELPER_DIR` do macOS e guarda `monblockd.exe`, WinSW, `design\` e `uninstall.ps1`.
 - **`DATA_DIR` (Windows):** `%ProgramData%\monBlock`.
+- **`pipe-acl` (helper):** script PowerShell executado pelo daemon (SYSTEM) uma vez por `listen`, que compila um P/Invoke de `SetSecurityInfo` e troca só a DACL do pipe. Validado no S0 (P4).
 
 ## 1. Contexto
 
@@ -32,12 +33,12 @@ A ADR-0015 diz que o Windows tem paridade com as 3 camadas, mas o caminho Window
 - não há build do daemon nem do app;
 - o named pipe nasce com o DACL padrão (Everyone só lê);
 - a Camada 3 não está ligada e o script dela tem um bug fatal com `$pid`;
-- **provavelmente a Camada 2 não importa nada**, porque o `.reg` usa a abreviação `HKLM\`, e o formato `.reg` exige `HKEY_LOCAL_MACHINE\` (a confirmar no S0).
+- **a Camada 2 não grava nada** (confirmado no S0, P1): o `.reg` usa a abreviação `HKLM\`, o `reg import` responde com código 0 e não cria nenhuma chave. O formato `.reg` exige `HKEY_LOCAL_MACHINE\`.
 
 Duas premissas da ADR-0015 / ADR-0013 são falsas e serão corrigidas pela ADR-0016:
 
 1. "O daemon roda como Serviço Windows nativo": um SEA do Node não implementa o protocolo do SCM.
-2. "Pipe com DACL restrita a Administradores e SYSTEM": nenhum código aplica DACL. O mais perto que o `node:net` oferece é `listen({ readableAll, writableAll })`, que abre o pipe para Everyone.
+2. "Pipe com DACL restrita a Administradores e SYSTEM": nenhum código aplica DACL. O `node:net` só oferece `listen({ readableAll, writableAll })`, que abre o pipe para Everyone (confirmado no S0, P4). A DACL restrita exige o helper `pipe-acl`.
 
 ## 2. Objetivos
 
@@ -60,22 +61,32 @@ Duas premissas da ADR-0015 / ADR-0013 são falsas e serão corrigidas pela ADR-0
 
 | Fase | Itens | Depende de | Precisa de Windows real? |
 |------|-------|-----------|------------------------|
-| **S0 — Spike** (≤ 2 dias) | Validar premissas: `.reg` com `HKLM` × `HKEY_LOCAL_MACHINE`; `listen({readableAll, writableAll})` + ACE; descritor do pipe por instância; WinSW e árvore de processos; `explorer.exe`/`shell.openExternal`; UTF-8 × UTF-16LE no `reg import`; verificação do dono do pipe pelo cliente (W21) | — | Sim |
-| F1 — Camadas 1/2 e correções locais | W9 (+ prefixo `HKEY_LOCAL_MACHINE`), W10, W13, W14, W15, W17 (conforme S0) | S0 | Não (mocks), com validação no S0 |
+| **S0 — Spike** | E1 concluído (P1–P7, P9). **E2 pendente:** P8, P10 com Defender ativo, P11, P4 com cliente remoto real | — | Sim |
+| F1 — Camadas 1/2 e correções locais | **W9 (bloqueador: a Camada 2 está quebrada)**, W10, W13, W14, W15 | S0-E1 ✅; **P11 (E2) antes de fechar a F1** | Não (mocks); P11 valida no navegador |
 | F2 — Entry multiplataforma | W1, W20 | F1 | Não |
 | F3 — Serviço + IPC (ADR-0016) | W2, W4, W21 | F2 + S0 | Sim |
-| F4 — Build, instalador, update, desinstalação, autostart, CI | W3, W12, W16, W18, W19 | F3 | Sim |
-| F5 — Camada 3 completa | W5 + W6 + W7 + W8 + W11a (juntos), depois W11b | F3 (o `GET_STATE` precisa do IPC) | Parcial |
+| F4 — Build, instalador, update, desinstalação, autostart, CI | W3, W12, W16, W18, W19 | F3; **P10 (E2) antes do release** | Sim |
+| F5 — Camada 3 completa | W5 + W6 + W7 + W8 + W11a (juntos), depois W11b | F3 (o `GET_STATE` precisa do IPC); **P8 (E2) antes de começar** | Parcial |
 
 Regra: **o W5 só liga o watcher junto com o W8** (helper persistente). Até lá a Camada 3 fica desligada no Windows, sem custo de CPU.
 
 Cada fase gera commits atômicos e uma entrada no `CHANGELOG.md`. F3–F5 só começam com a ADR-0016 aprovada.
 
-### Critério de saída do S0
+### Resultado do S0 (E1)
 
-O S0 sai com um relatório em `docs/ai/reports/`. Cada premissa recebe **PASSOU** ou **FALHOU**, com o comando e a saída como evidência.
+Ver o [relatório](../reports/2026-11-27-spike-s0-windows.md). Resumo:
 
-O critério binário do IPC é: com o pipe criado e um usuário comum sem elevação, 10 conexões simultâneas fazem `GET_STATE` com sucesso; um logon de rede (SMB / `\\host\pipe\monblockd`) é **negado**.
+- P1, P2, P3, P5, P6, P7 e P9 passaram.
+- P4 passou na parte local: 30/30 conexões de usuário comum com a DACL explícita, que vale para todas as instâncias. O acesso remoto ficou **inconclusivo**, porque o `\\localhost` reaproveita o token local via NTLM de loopback.
+
+Itens que continuam em aberto e onde bloqueiam:
+
+| Pendência (E2) | Bloqueia |
+|----------------|----------|
+| P11 — navegadores aplicam as políticas | Fechamento da F1 |
+| P4 remoto — logon de rede real negado (segunda máquina) | Fechamento da F3 |
+| P10 — Defender com proteção em tempo real | Release (F4) |
+| P8 — latência, CPU e CLM do helper persistente | Início da F5 |
 
 ## 5. Decisões (ADR-0016)
 
@@ -89,16 +100,22 @@ O critério binário do IPC é: com o pipe criado e um usuário comum sem eleva�
   - Tarefa agendada: não é serviço.
   - Addon N-API: compilação nativa.
 
-### D2 — IPC: named pipe; o S0 escolhe entre 2 variantes
+### D2 — IPC: named pipe com DACL explícita aplicada pelo daemon (D2-A, validada no S0)
 
-- **D2-A (preferida):** `server.listen({ path, readableAll: true, writableAll: true })`. O libuv aplica `uv_pipe_chmod` no descritor do pipe.
-  - Isso abre para Everyone, inclusive logons de rede. Então o S0 precisa provar que um acesso remoto é negado: `PIPE_REJECT_REMOTE_CLIENTS` é o padrão do libuv recente, e é isso que o S0 confirma.
-  - Se o descritor valer para todas as instâncias, **não há reaplicação periódica** (YAGNI).
-- **D2-B (fallback, se D2-A falhar no S0):** TCP `127.0.0.1` + handshake por token.
+- **D2-A (escolhida):**
+  1. `server.listen({ path })` **sem** `readableAll`/`writableAll`. O pipe nasce com o DACL padrão, em que o usuário comum só lê (fail-closed).
+  2. Logo depois do `listen`, o daemon executa o helper `pipe-acl` (SYSTEM, dono do pipe), que chama `SetSecurityInfo(handle, SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, …)` com a SDDL `D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(D;;GA;;;NU)`.
+  3. Se o helper falhar, o pipe continua fail-closed, o daemon registra drift `ipc:dacl` e o Ajudante é avisado. As Camadas 1/2 não dependem disso.
+  - **Não usar** `PipeSecurity.SetAccessControl` do .NET: ele falha mesmo como SYSTEM, porque tenta regravar owner/group (S0).
+  - A DACL vale para todas as instâncias, inclusive as criadas depois (S0: 30/30), então **não há reaplicação periódica**.
+  - A janela entre o `listen` e a DACL é de cerca de 3,5 s (compilação do `Add-Type`). Nesse intervalo a UI só não conecta ainda.
+  - **Risco:** WDAC/AppLocker/CLM bloqueia o `Add-Type` em máquinas corporativas. Nesse caso cai para a D2-B, com detecção automática (o helper sai com código ≠ 0 e o daemon troca de transporte no próximo boot) ou por configuração.
+- **D2-B (fallback):** TCP `127.0.0.1` + handshake por token.
   - Token em `DATA_DIR\run\ipc.token`, ACL `SY:F BA:F IU:R`, rotacionado a cada boot e comparado com `crypto.timingSafeEqual`.
-  - **O servidor se prova primeiro** (W21).
+  - O servidor se prova primeiro (W21).
   - Linhas que começam com verbo HTTP derrubam a conexão.
   - Limite assumido: o token não é controle de acesso; qualquer usuário interativo, inclusive outra conta com Fast User Switching, consegue lê-lo.
+- **Descartado:** `readableAll`/`writableAll`, que abre para Everyone, inclusive logons de rede (S0, P4).
 - **Em ambas as variantes:** o transporte é defesa em profundidade. A autorização real é a credencial do Ajudante validada no daemon. A anti-impostura do cliente fica no W21.
 
 ### D3 — Empacotamento: `@electron/packager` + Inno Setup 6
@@ -151,6 +168,7 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
   - *Dado* `taskkill /f` no `monblockd.exe`, *então* ele volta em ≤ 10 s.
   - *Dado* `Stop-Service` **ou um desligamento do Windows**, *então* o `cleanShutdown` é gravado e o próximo boot não avisa inatividade.
 - **Testes:** E2E (W18), incluindo um ciclo `Restart-Computer`, se o runner permitir; senão, `Stop-Service` + verificação da marca.
+- **S0:** `SIGINT` chega e a parada leva 0,4 s; `EADDRINUSE` é detectado com pipe ocupado (P6). O XML com `preshutdown` foi aceito pelo WinSW, mas **não foi testado com reboot**. O W18 cobre isso.
 
 #### W3 — Build (`scripts/build-daemon-sea.sh`, `scripts/build-windows-setup.ps1`)
 
@@ -165,14 +183,17 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
 
 #### W4 — IPC acessível (`src/daemon/ipc-server.ts`, `src/main/daemon-client.ts`)
 
-- **Mudança (D2, conforme o S0):**
-  - D2-A: no `win32`, `listen({ path, readableAll: true, writableAll: true })`. Nada muda no macOS/Linux.
-  - D2-B: handshake descrito na D2, com erros em `buildProblem` (RFC 9457) antes de fechar.
+- **Mudança (D2-A):**
+  - No `win32`, depois do `listen`, executar `pipe-acl` (`INSTALL_DIR\pipe-acl.ps1`, ou embutido no SEA e gravado em `DATA_DIR\run` com ACL `SY:F BA:F`) com timeout de 20 s. Nada muda no macOS/Linux.
+  - Falha → drift `ipc:dacl` (W10) e aviso ao Ajudante, com o pipe fail-closed.
+  - Fallback D2-B só se o S0-E2 ou o uso real mostrarem bloqueio do helper por política.
 - **Aceite:**
   - *Dado* um usuário comum sem elevação, *então* `GET_STATE` responde 200.
-  - *Dado* um acesso pela rede, *então* é negado.
+  - *Dado* o pipe recém-criado, antes do helper, *então* o usuário comum recebe `EPERM` (fail-closed).
+  - *Dado* o helper falhando, *então* o `verifyApplied` devolve `ipc:dacl`.
+  - *Dado* um acesso por logon de rede real (segunda máquina), *então* é negado (P4 remoto no E2).
   - (D2-B) *Dado* um `fetch` de uma página para a porta, *então* a conexão cai sem executar comando.
-- **Testes:** unitários do handshake (D2-B); E2E com usuário comum (W18).
+- **Testes:** unitário da escolha e do tratamento de falha do helper; E2E com usuário comum e 3 rodadas de 10 conexões (W18), como no S0.
 
 ### 🟠 Altos
 
@@ -188,7 +209,7 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
   - Políticas corporativas que já existam nessas subchaves são sobrescritas.
   - As duas coisas ficam documentadas na ADR-0016.
 - **Aceite:**
-  - *Dado* o manifesto, *então* nenhuma linha de chave usa `HKLM\`.
+  - *Dado* o manifesto, *então* nenhuma linha de chave usa `HKLM\` e o arquivo não começa com BOM UTF-8.
   - *Dada* uma allowlist que cai de 3 para 1 item, *então* só o valor `"1"` existe (`reg query`).
 - **Testes:** unitário (prefixo, ordem `[-…]` antes da recriação); E2E com `reg query`.
 
@@ -208,7 +229,9 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
 - **Problema:** um usuário comum pode criar `\\.\pipe\monblockd` (ou ocupar a porta, na D2-B) enquanto o daemon está parado. A UI então entrega a **senha do Ajudante** ao impostor.
 - **Mudança:**
   - Antes de enviar qualquer comando com segredo (`PAIR_PARTNER`, `SET_BOT_TOKEN`, `VERIFY_*`, desinstalação), o `daemon-client` verifica que o servidor é o serviço:
-    - D2-A: obtém o PID do servidor do pipe (`GetNamedPipeServerProcessId`, via o helper do S0) e confere que o dono do processo é `S-1-5-18`.
+    - D2-A: obtém o PID do servidor (`GetNamedPipeServerProcessId`) e confere que o **PPID dele é igual a `Win32_Service(monblockd).ProcessId`** (o processo do WinSW). Validado no S0 (P5).
+      - O usuário comum **não** consegue ler o dono nem o caminho de um processo SYSTEM, então a checagem por "dono S-1-5-18" foi descartada.
+      - A consulta roda no helper persistente do W8 (ou num helper pontual, se o W8 ainda não existir) e é refeita depois da conexão, para reduzir a janela de reuso de PID.
     - D2-B: o servidor responde um desafio do cliente com HMAC por uma chave que só o SYSTEM lê. O cliente valida pela assinatura pública gravada pelo instalador (S0 escolhe).
   - Falhou → o comando com segredo é recusado com aviso "Serviço do monBlock não verificado". Comandos sem segredo (`GET_STATE`) seguem.
   - O serviço sobe no boot antes de qualquer logon, o que reduz a janela.
@@ -226,7 +249,7 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
     - remove **todas** as chaves e valores gerenciados: `URLBlocklist`, `URLAllowlist`, `DnsOverHttpsMode`, `IncognitoModeAvailability` e, no Firefox, `DisablePrivateBrowsing`, `DNSOverHTTPS` e `WebsiteFilter`. O `restoreSystemCleanState` também passa a remover esses valores;
     - restaura a ACL padrão do hosts (`icacls hosts /reset`);
     - apaga `DATA_DIR` e `INSTALL_DIR`, e o próprio script por último.
-  - No `win32`, o `onUninstalled` registra **uma tarefa agendada única** (`schtasks /create /ru SYSTEM /sc once …` + `/run`) que executa o script fora da árvore do serviço. A tarefa se apaga no fim.
+  - No `win32`, o `onUninstalled` registra **uma tarefa agendada única** (S0, P6: a tarefa sobrevive à parada do serviço; um spawn `detached` é morto pelo WinSW) (`schtasks /create /ru SYSTEM /sc once …` + `/run`) que executa o script fora da árvore do serviço. A tarefa se apaga no fim.
   - Em todas as plataformas: `.on('error', log)` no spawn.
   - Se o script falhar no meio, ele é idempotente; a tarefa permanece e é reexecutada no próximo boot até concluir.
 - **Aceite:**
@@ -261,11 +284,9 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
 - **Aceite:** no Windows, uma release com `.exe` e `.sha256` valida e abre; sem hash, recusa; um upgrade com o serviço rodando termina com o serviço `Running` na nova versão.
 - **Teste:** estender `tests/main/updater.test.ts` com `platform` injetado.
 
-#### W17 — Codificação do `.reg` — rebaixado, decidido no S0
+#### W17 — Removido (S0, P2)
 
-- **Fato:** os domínios já saem em punycode ASCII (`new URL` em `rule-engine.ts:78`), então IDN não é problema.
-- **Mudança:** só se o S0 mostrar que o `reg import` recusa UTF-8 com o cabeçalho `Version 5.00`. Nesse caso, gravar em UTF-16LE com BOM numa função local do enforcer Windows, sem mexer em `writeIfChanged`/`writeFileAtomically` (compartilhados).
-- **Aceite:** o arquivo gerado é aceito pelo `reg import` (`$LASTEXITCODE -eq 0`).
+O `reg import` aceita o UTF-8 sem BOM que o código já grava. **UTF-8 com BOM falha.** No lugar do item, a F1 inclui no W9 um teste unitário garantindo que o manifesto não começa com `EF BB BF`.
 
 #### W18 — CI no Windows (`.github/workflows/ci.yml`) — F4
 
@@ -367,7 +388,9 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
 
 | Risco | Mitigação |
 |-------|-----------|
-| Premissa do S0 falha (D2-A, `.reg`, WinSW) | Cada uma tem fallback desenhado (D2-B, UTF-16LE, tarefa agendada); o S0 decide antes da F1 |
+| Camada 2 falha em silêncio (`reg import` sai com 0 sem gravar, S0-P1) | O W9 corrige o prefixo; o W10 lê o Registro com `reg query` em todo `verifyApplied` |
+| Helper `pipe-acl` bloqueado por WDAC/CLM | Pipe fica fail-closed + drift `ipc:dacl`; fallback D2-B |
+| Pendências do E2 (P4 remoto, P8, P10, P11) revelam problema | Cada uma bloqueia o fim de uma fase específica (§4); a spec volta para revisão se precisar |
 | Admin local remove o produto à mão (serviço, chaves, hosts) | `Uninstallable=no` tira o caminho fácil; drift de Registro/hosts (W10) e inatividade sem `cleanShutdown` avisam o Ajudante. Limite assumido na ADR-0016 |
 | Pipe ou porta ocupados por impostor | W21 + serviço sobe no boot + Ajudante avisado no `EADDRINUSE` (W2) |
 | Defender marca o hosts como `HostsFileHijack` | Teste no CI com o Defender ativo; domínios da Microsoft vão para a `CRITICAL_INFRA_ALLOWLIST` se aparecerem |
@@ -398,6 +421,13 @@ Formato: **Problema → Mudança → Aceite (BDD) → Testes**. Os caminhos vale
 ## 11. Histórico de revisão
 
 - **v1 (2026-11-25):** W1–W18; aprovada em 2026-11-26.
+- **v3 (2026-11-27):** resultado do S0 (E1).
+  - W9 vira bloqueador da F1.
+  - W17 removido.
+  - D2-A passa a usar DACL padrão + `SetSecurityInfo` pelo daemon (`readableAll` descartado).
+  - W21 verifica o PPID contra o PID do serviço.
+  - W12 e W2 confirmados; o preshutdown fica sem teste de reboot.
+  - Pendências do E2 viram gates por fase.
 - **v2 (2026-11-27):** auditoria cega do goldfish-critic (reprovou F3–F5) + sabatina.
   - Novos: S0, W19 (autostart), W20 (ACL do `DATA_DIR`), W21 (anti-impostura).
   - W9 sobe para crítico (prefixo `HKLM`).

@@ -12,11 +12,11 @@ Data       | Autor          | Descrição
 
 | Metadado | Detalhe |
 | :--- | :--- |
-| **Status** | **Aprovada** (2026-11-18) |
+| **Status** | **Aprovada** (2026-11-18); §2.2–2.4 **corrigidas pela ADR-0016** (2026-11-27) |
 | **Decisores** | Matheus Diniz, Ambrósio |
 | **Tags** | `architecture`, `windows`, `enforcer`, `registry`, `icacls`, `browser-policies`, `watcher`, `windows-service` |
 | **Impacto Sistêmico** | Alto (`windows-platform-enforcer.ts`, `windows-watcher.ts`, `platform-enforcer.ts`, `main.ts`) |
-| **ADRs Relacionadas** | Complementa ADR-0007, ADR-0013 e ADR-0014 |
+| **ADRs Relacionadas** | Complementa ADR-0007, ADR-0013 e ADR-0014; corrigida por [ADR-0016](0016-servico-ipc-e-correcoes-do-suporte-windows.md) |
 
 ---
 

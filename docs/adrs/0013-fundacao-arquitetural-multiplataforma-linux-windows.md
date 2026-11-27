@@ -12,11 +12,11 @@ Data       | Autor          | Descrição
 
 | Metadado | Detalhe |
 | :--- | :--- |
-| **Status** | **Aprovada** (2026-11-18) |
+| **Status** | **Aprovada** (2026-11-18); IPC no Windows **corrigido pela ADR-0016** (2026-11-27) |
 | **Decisores** | Matheus Diniz, Ambrósio |
 | **Tags** | `architecture`, `multiplatform`, `linux`, `windows`, `daemon`, `ipc`, `enforcer` |
 | **Impacto Sistêmico** | Alto (`platform-enforcer.ts`, `entry.ts`, `ipc-server.ts`, `main.ts`, `daemon-client.ts`) |
-| **ADRs Relacionadas** | Extende ADR-0001, ADR-0002 e ADR-0007 para Linux e Windows |
+| **ADRs Relacionadas** | Extende ADR-0001, ADR-0002 e ADR-0007 para Linux e Windows; corrigida por [ADR-0016](0016-servico-ipc-e-correcoes-do-suporte-windows.md) |
 
 ---
 
