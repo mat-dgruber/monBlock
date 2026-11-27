@@ -9,7 +9,24 @@
 
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
-import type { DaemonCommand, DaemonResponse } from '../daemon/monblockd.js';
+import { buildProblem, type DaemonCommand, type DaemonResponse } from '../daemon/monblockd.js';
+
+/** Comandos que carregam segredo do Ajudante ou o estado legado com credenciais (W21). */
+const SECRET_COMMANDS: ReadonlySet<string> = new Set([
+  'PAIR_PARTNER',
+  'SET_BOT_TOKEN',
+  'VERIFY_OFFLINE_TOKEN',
+  'VERIFY_RECOVERY_CODE',
+  'UNINSTALL_AUTHORIZED',
+  'MIGRATE_LEGACY_STATE',
+]);
+const SECRET_FIELDS = ['password', 'currentPartnerPassword', 'token', 'code', 'botToken'];
+
+export function carriesSecret(cmd: DaemonCommand): boolean {
+  if (SECRET_COMMANDS.has(cmd.type)) return true;
+  const c = cmd as unknown as Record<string, unknown>;
+  return SECRET_FIELDS.some((k) => typeof c[k] === 'string' && (c[k] as string).length > 0);
+}
 
 export type DaemonClientStatus = 'online' | 'offline';
 
@@ -18,6 +35,11 @@ export interface DaemonClientOptions {
   timeoutMs?: number;
   minBackoffMs?: number;
   maxBackoffMs?: number;
+  /**
+   * Windows (W21): prova que o servidor do pipe é o serviço. Roda uma vez por conexão, já conectado,
+   * antes do primeiro comando com segredo. `false`/erro → o segredo não sai (503).
+   */
+  verifyServer?: () => Promise<boolean>;
 }
 
 interface Pending {
@@ -38,6 +60,9 @@ export class DaemonClient extends EventEmitter {
   private retryTimer: NodeJS.Timeout | null = null;
   private closed = false;
   public status: DaemonClientStatus = 'offline';
+  private readonly verifyServer?: () => Promise<boolean>;
+  /** Resultado da verificação para a conexão atual; zera a cada reconexão. */
+  private serverVerified: Promise<boolean> | null = null;
 
   constructor(options: DaemonClientOptions) {
     super();
@@ -45,10 +70,30 @@ export class DaemonClient extends EventEmitter {
     this.timeoutMs = options.timeoutMs ?? 5_000;
     this.minBackoffMs = options.minBackoffMs ?? 250;
     this.maxBackoffMs = options.maxBackoffMs ?? 30_000;
+    this.verifyServer = options.verifyServer;
     this.connect();
   }
 
-  public call(cmd: DaemonCommand): Promise<DaemonResponse> {
+  public async call(cmd: DaemonCommand): Promise<DaemonResponse> {
+    if (this.verifyServer && carriesSecret(cmd) && !(await this.isServerVerified())) {
+      return buildProblem(
+        503,
+        'Serviço do monBlock não verificado',
+        'O processo que atende o app não é o serviço monblockd. Nada foi enviado.',
+        '/ipc/monblockd'
+      );
+    }
+    return this.send(cmd);
+  }
+
+  private isServerVerified(): Promise<boolean> {
+    if (!this.serverVerified) {
+      this.serverVerified = this.verifyServer!().catch(() => false);
+    }
+    return this.serverVerified;
+  }
+
+  private send(cmd: DaemonCommand): Promise<DaemonResponse> {
     const socket = this.socket;
     if (this.status !== 'online' || !socket) {
       return Promise.reject(new Error('monblockd offline'));
@@ -76,6 +121,7 @@ export class DaemonClient extends EventEmitter {
     let buf = '';
     socket.on('connect', () => {
       this.socket = socket;
+      this.serverVerified = null;
       this.attempt = 0;
       this.setStatus('online');
     });

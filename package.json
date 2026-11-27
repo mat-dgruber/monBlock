@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "build:daemon": "sh scripts/build-daemon-sea.sh",
     "build:pkg": "sh scripts/build-pkg.sh",
-    "build:app": "sh scripts/build-app.sh"
+    "build:app": "sh scripts/build-app.sh",
+    "build:daemon:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-daemon-sea.ps1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

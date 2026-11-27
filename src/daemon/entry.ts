@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createIpcServer, type IpcServer } from './ipc-server.js';
+import { pipeAclHook } from './pipe-acl.js';
 import { MonBlockDaemon } from './monblockd.js';
 import { TrustedClock } from './trusted-clock.js';
 import {
@@ -36,28 +37,32 @@ export interface DaemonLayout {
 
 /**
  * Layout de diretórios e arquivos por SO (ADR-0007 / ADR-0013). `rootDir` só em desenvolvimento/CI.
- * Usa `path.posix`/`path.win32` pela plataforma alvo, não pela do host, para o resultado não depender de onde roda.
+ * No Windows sem `rootDir`, os caminhos vêm de %ProgramData% e %SystemRoot% (W15): `path.join("/", …)`
+ * gerava `\ProgramData\…`, relativo ao drive corrente. darwin/linux usam `path.posix` explícito.
  */
 export function resolveLayout(
-  rootDir = '/',
-  platform: NodeJS.Platform = process.platform
+  rootDir?: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
 ): DaemonLayout {
   if (platform === 'win32') {
-    const w = (p: string) => path.win32.join(rootDir, p);
-    const runDir = w('ProgramData/monBlock/run');
+    const w = path.win32;
+    const dataDir = rootDir
+      ? w.join(rootDir, 'ProgramData', 'monBlock')
+      : w.join(env.ProgramData ?? 'C:\\ProgramData', 'monBlock');
+    const systemRoot = rootDir ? w.join(rootDir, 'Windows') : (env.SystemRoot ?? 'C:\\Windows');
     return {
-      appSupportDir: w('ProgramData/monBlock'),
-      dbDir: w('ProgramData/monBlock/db'),
-      runDir,
+      appSupportDir: dataDir,
+      dbDir: w.join(dataDir, 'db'),
+      runDir: w.join(dataDir, 'run'),
       socketPath: '\\\\.\\pipe\\monblockd',
-      hostsPath: w('Windows/System32/drivers/etc/hosts'),
+      hostsPath: w.join(systemRoot, 'System32', 'drivers', 'etc', 'hosts'),
       chromiumPlistPaths: [],
       firefoxPlistPath: '',
     };
   }
 
-  const r = (p: string) => path.posix.join(rootDir, p);
-
+  const r = (p: string) => path.posix.join(rootDir ?? '/', p);
   if (platform === 'linux') {
     const runDir = r('run/monblock');
     return {
@@ -87,6 +92,70 @@ export function resolveLayout(
     chromiumPlistPaths: CHROMIUM_BUNDLE_IDS.map((id) => r(`Library/Managed Preferences/${id}.plist`)),
     firefoxPlistPath: r('Library/Preferences/org.mozilla.firefox.plist'),
   };
+}
+
+type ExecFn = (file: string, args: string[], options: { encoding: 'utf8'; timeout?: number; windowsHide?: boolean }) => string;
+
+/**
+ * O processo pode mexer no sistema? POSIX: uid 0. Windows: SID de integridade System (S-1-16-16384,
+ * o serviço) ou High (S-1-16-12288, admin elevado), lido do `whoami /groups` por caminho absoluto (W1).
+ * Qualquer erro → `false` (fail-closed).
+ */
+export function isPrivileged(
+  platform: NodeJS.Platform = process.platform,
+  execFn: ExecFn = execFileSync as unknown as ExecFn,
+  env: NodeJS.ProcessEnv = process.env,
+  getuid: (() => number) | undefined = process.getuid
+): boolean {
+  if (platform !== 'win32') return getuid?.() === 0;
+  try {
+    const whoami = path.win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'whoami.exe');
+    const out = execFn(whoami, ['/groups'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+    return /S-1-16-(16384|12288)\b/.test(out);
+  } catch {
+    return false;
+  }
+}
+
+/** O `profiles` só existe no macOS; em outro SO acusaria "perfil ausente" o tempo todo. */
+export function shouldCheckBrowserProfile(platform: NodeJS.Platform, privileged: boolean): boolean {
+  return platform === 'darwin' && privileged;
+}
+
+/** Users, Everyone e Authenticated Users: nenhum pode ter ACE no DATA_DIR (cofre e estado). */
+const FORBIDDEN_DATA_DIR_SIDS = ['S-1-5-32-545', 'S-1-1-0', 'S-1-5-11'];
+
+/**
+ * W20: o `umask` não vale no Windows, então a ACL do DATA_DIR é conferida no boot. Lê por SID
+ * (a saída do `icacls` é localizada), corrige com `icacls` e relê. `failed` = não abrir o cofre.
+ */
+export function ensureDataDirAcl(dir: string, execFn: ExecFn = execFileSync as unknown as ExecFn): 'ok' | 'fixed' | 'failed' {
+  const readSids = (): string[] => {
+    const literal = dir.replace(/'/g, "''");
+    // .NET direto e não `Get-Acl`: o módulo Microsoft.PowerShell.Security não carrega quando o
+    // powershell.exe herda o PSModulePath do PowerShell 7 (visto na validação da F2).
+    const script =
+      `[IO.DirectoryInfo]::new('${literal}').GetAccessControl().GetAccessRules($true, $true, ` +
+      `[Security.Principal.SecurityIdentifier]) | ForEach-Object { $_.IdentityReference.Value }`;
+    const out = execFn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    return out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  };
+  const insecure = (sids: string[]) => sids.some((s) => FORBIDDEN_DATA_DIR_SIDS.includes(s));
+  try {
+    if (!insecure(readSids())) return 'ok';
+    execFn(
+      'icacls',
+      [dir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)(F)', '*S-1-5-32-544:(OI)(CI)(F)', '/remove:g', ...FORBIDDEN_DATA_DIR_SIDS.map((s) => `*${s}`)],
+      { encoding: 'utf8', timeout: 10_000, windowsHide: true }
+    );
+    return insecure(readSids()) ? 'failed' : 'fixed';
+  } catch {
+    return 'failed';
+  }
 }
 
 /** Cria/corrige dono e modo; recusa link simbólico (alguém tentando redirecionar a escrita do root). */
@@ -155,6 +224,8 @@ export interface StartDaemonOptions {
   blockServerPort?: number | null;
   /** Pasta com `blocked-page.html`/`tokens.css`; no SEA fica em `HELPER_DIR/design`. */
   designDir?: string;
+  /** Pasta com `pipe-acl.ps1` (Windows, W4): `INSTALL_DIR` no SEA, `packaging/windows` em dev. */
+  helpersDir?: string;
   onUninstalled?: () => void;
 }
 
@@ -176,6 +247,12 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   }
   ensureDir(layout.runDir, gid === undefined && isRoot ? 0o700 : 0o750, isRoot, gid ?? 0);
   fs.mkdirSync(path.dirname(layout.hostsPath), { recursive: true });
+  // W20: sem ACL segura o cofre não é lido (fail-closed); o WinSW reinicia e o log registra.
+  if (isRoot && process.platform === 'win32') {
+    const acl = ensureDataDirAcl(layout.appSupportDir);
+    if (acl === 'failed') throw new Error(`DATA_DIR com ACL insegura e não corrigível: ${layout.appSupportDir}`);
+    if (acl === 'fixed') console.error('[monblockd] ACL do DATA_DIR estava aberta e foi restringida.');
+  }
 
   const config = loadConfig(path.join(layout.appSupportDir, 'config.json'));
   if (config.telegramBotToken) process.env.MONBLOCK_TELEGRAM_BOT_TOKEN = config.telegramBotToken;
@@ -194,14 +271,19 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
     chromiumPlistPaths: layout.chromiumPlistPaths,
     firefoxPlistPath: layout.firefoxPlistPath,
     flushDns: isRoot,
+    // Modo dev no Windows: nada de icacls/reg no sistema real; só o hosts sob o rootDir.
+    ...(process.platform === 'win32' && !isRoot ? { commandExecutor: () => {}, registryReader: () => null } : {}),
   });
+  // Criado depois do daemon; o watchdog só lê o status da DACL (W4).
+  let ipc: IpcServer | undefined;
   const daemon = new MonBlockDaemon({
     store,
     enforcer,
     clock: new TrustedClock(),
     onUninstalled: options.onUninstalled,
+    extraDrift: () => (ipc?.aclStatus() === 'failed' ? ['ipc:dacl'] : []),
     // Sem root o `profiles` não vê perfis de sistema e acusaria "ausente" por engano.
-    checkBrowserProfile: isRoot ? () => checkBrowserProfileInstalled() : undefined,
+    checkBrowserProfile: shouldCheckBrowserProfile(process.platform, isRoot) ? () => checkBrowserProfileInstalled() : undefined,
   });
 
   const tick = async (): Promise<void> => {
@@ -213,9 +295,15 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
   };
   await tick(); // regras aplicadas antes de aceitar conexões
 
-  let ipc: IpcServer;
   try {
-    ipc = await createIpcServer({ socketPath: layout.socketPath, handle: (cmd) => daemon.handleCommand(cmd) });
+    ipc = await createIpcServer({
+      socketPath: layout.socketPath,
+      handle: (cmd) => daemon.handleCommand(cmd),
+      secureListen:
+        process.platform === 'win32' && options.helpersDir
+          ? pipeAclHook(path.join(options.helpersDir, 'pipe-acl.ps1'))
+          : undefined,
+    });
   } catch (err) {
     throw new Error(`Falha ao abrir o socket ${layout.socketPath}: ${(err as Error).message}`);
   }
@@ -282,10 +370,12 @@ export async function startDaemon(options: StartDaemonOptions): Promise<RunningD
 }
 
 export async function main(): Promise<void> {
-  const isRoot = process.getuid?.() === 0;
+  const isRoot = isPrivileged();
   const rootDir = process.env.MONBLOCK_DEV_ROOT_DIR;
   if (!isRoot && !rootDir) {
-    console.error('[monblockd] precisa rodar como root (launchd) ou com MONBLOCK_DEV_ROOT_DIR em desenvolvimento.');
+    console.error(
+      '[monblockd] precisa rodar privilegiado (launchd/systemd como root, serviço do Windows como SYSTEM) ou com MONBLOCK_DEV_ROOT_DIR em desenvolvimento.'
+    );
     process.exit(1);
   }
   process.umask(0o077);
@@ -294,14 +384,23 @@ export async function main(): Promise<void> {
     rootDir,
     isRoot,
     designDir: isSea() ? path.join(path.dirname(process.execPath), 'design') : undefined,
+    helpersDir: isSea()
+      ? path.dirname(process.execPath)
+      : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../packaging/windows'),
     // Desacoplado e fora do grupo de processos: o `bootout` do job não pode matar o desinstalador.
     onUninstalled: () => {
       if (!isRoot || rootDir) return console.error('[monblockd] desinstalação autorizada (modo dev: nada removido).');
+      // Windows: a remoção por tarefa agendada é o W12 (F4). Até lá, só registra; o /bin/sh daria ENOENT.
+      if (process.platform === 'win32') {
+        return console.error('[monblockd] desinstalação autorizada: remoção manual pendente (W12).');
+      }
       // 2 s de folga para a resposta 200 sair pelo socket antes do `bootout` derrubar o daemon.
       spawn('/bin/sh', ['-c', 'sleep 2; exec /bin/sh "$0"', path.join(HELPER_DIR, 'uninstall.sh')], {
         detached: true,
         stdio: 'ignore',
-      }).unref();
+      })
+        .on('error', (err) => console.error('[monblockd] falha ao iniciar o desinstalador:', err.message))
+        .unref();
     },
   });
   const stop = () => {
