@@ -16,3 +16,6 @@
 | [0010](0010-telegram-broker-unico-cofre-do-token.md) | **Broker único do Telegram e token do bot no cofre do daemon** | `Aprovada` | 2026-11-06 |
 | [0011](0011-resiliencia-sessao-aqua-launchagent-e-comandos-remotos-telegram.md) | **Resiliência de Monitoramento em Sessão Aqua via LaunchAgent e Comandos Remotos no Telegram** | `Implementada` | 2026-11-09 |
 | [0012](0012-criterios-senha-forte-e-integridade-sha256-atualizacoes.md) | **Critérios de Senha Forte (NIST SP 800-63B) para o Ajudante e Integridade SHA-256 de Atualizações In-App** | `Implementada` | 2026-11-10 |
+| [0013](0013-fundacao-arquitetural-multiplataforma-linux-windows.md) | **Fundação Arquitetural Multiplataforma (Linux & Windows) com Fábrica Abstrata de Imposição e Layout de Sistema** | `Aprovada` | 2026-11-18 |
+| [0014](0014-politicas-corporativas-e-imposicao-no-linux.md) | **Políticas Corporativas de Navegadores e Imposição de Sistema no Linux (systemd, chattr e Drop-in JSON)** | `Aprovada` | 2026-11-18 |
+| [0015](0015-politicas-corporativas-e-imposicao-no-windows.md) | **Políticas Corporativas de Navegadores e Imposição de Sistema no Windows (Registro HKLM, icacls e Windows Service)** | `Aprovada` | 2026-11-18 |

@@ -18,10 +18,17 @@ import { createDefaultPersistentState } from '../storage/state-store.js';
 import { DaemonClient } from './daemon-client.js';
 import { migrateLegacyVaults, readUserVaultKey } from './legacy-migration.js';
 import { AppNotificationManager } from './notifications.js';
+import { pipeServerVerifier } from './pipe-server-check.js';
+import { applyWindowsAppIdentity, trayIconSpec } from './platform-shell.js';
 import { checkForAppUpdates, downloadAppUpdatePkg } from './updater.js';
 
-/** Socket do `monblockd` root (ADR-0007). Override só em build não empacotado (dev/CI). */
-export const DAEMON_SOCKET_PATH = '/var/run/monblock/monblockd.sock';
+/** Socket do `monblockd` root por SO (ADR-0007, ADR-0013). Override só em build não empacotado (dev/CI). */
+export const DAEMON_SOCKET_PATH =
+  process.platform === 'win32'
+    ? '\\\\.\\pipe\\monblockd'
+    : process.platform === 'linux'
+      ? '/run/monblock/monblockd.sock'
+      : '/var/run/monblock/monblockd.sock';
 /** Perfil gerado pelo `build-pkg.sh` e instalado pelo `.pkg` (`HELPER_DIR` do daemon). */
 const BROWSER_PROFILE_PATH = '/Library/PrivilegedHelperTools/com.ccat.monblockd/monblock-browsers.mobileconfig';
 /** Ajustes > Geral > Gerenciamento de Dispositivos (spike 2026-11-06, macOS 27). */
@@ -248,6 +255,7 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   const electron = await import('electron');
   const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, powerMonitor, safeStorage, shell } = electron;
   const notificationManager = new AppNotificationManager({ notificationClass: electron.Notification });
+  applyWindowsAppIdentity(app);
 
   const gotSingleLock = app.requestSingleInstanceLock();
   if (!gotSingleLock) {
@@ -268,7 +276,19 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   // Sem fallback para daemon em processo: parar o serviço não pode devolver o app ao modo userland.
   const socketPath =
     !app.isPackaged && process.env.MONBLOCK_SOCKET_PATH ? process.env.MONBLOCK_SOCKET_PATH : DAEMON_SOCKET_PATH;
-  const daemonClient = new DaemonClient({ socketPath });
+  // W21: no Windows, segredo só vai para o pipe servido pelo serviço. O script mora em %ProgramFiles%
+  // (só admin grava); um script em pasta do usuário anularia a checagem.
+  const skipPipeCheck = !app.isPackaged && process.env.MONBLOCK_DEV_SKIP_PIPE_CHECK === '1';
+  const daemonClient = new DaemonClient({
+    socketPath,
+    verifyServer:
+      process.platform === 'win32' && !skipPipeCheck
+        ? pipeServerVerifier(
+            path.win32.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'monBlock', 'pipe-server-check.ps1'),
+            socketPath
+          )
+        : undefined,
+  });
   const call = async (cmd: DaemonCommand): Promise<DaemonResponse> => {
     try {
       return await daemonClient.call(cmd);
@@ -308,63 +328,71 @@ export async function bootstrapElectronRuntime(): Promise<void> {
     mainWindow.webContents.send('monblock:tray-navigate', viewId);
   };
 
+  let isRefreshingTray = false;
   const refreshTrayMenu = async (): Promise<void> => {
-    if (!tray) return;
-    const stateRes = await call({ type: 'GET_STATE' });
-    const pubState = 'state' in stateRes ? (stateRes.state as any) : null;
-    const hasMenuSymbol = typeof (nativeImage as any).createMenuSymbol === 'function';
+    if (!tray || isRefreshingTray) return;
+    isRefreshingTray = true;
+    try {
+      const stateRes = await call({ type: 'GET_STATE' });
+      const pubState = 'state' in stateRes ? (stateRes.state as any) : null;
+      const hasMenuSymbol = typeof (nativeImage as any).createMenuSymbol === 'function';
 
-    let temporaryUnlockRemainingFormatted: string | null = null;
-    if (pubState?.temporaryGrants && Array.isArray(pubState.temporaryGrants) && pubState.temporaryGrants.length > 0) {
-      const now = Date.now();
-      const activeGrants = pubState.temporaryGrants.filter((g: any) => g.expiresAtMs > now);
-      if (activeGrants.length > 0) {
-        const maxExpiry = Math.max(...activeGrants.map((g: any) => g.expiresAtMs));
-        const remainingSeconds = Math.max(0, Math.ceil((maxExpiry - now) / 1000));
-        const mins = Math.floor(remainingSeconds / 60);
-        const secs = remainingSeconds % 60;
-        temporaryUnlockRemainingFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      let temporaryUnlockRemainingFormatted: string | null = null;
+      if (pubState?.temporaryGrants && Array.isArray(pubState.temporaryGrants) && pubState.temporaryGrants.length > 0) {
+        const now = Date.now();
+        const activeGrants = pubState.temporaryGrants.filter((g: any) => g.expiresAtMs > now);
+        if (activeGrants.length > 0) {
+          const maxExpiry = Math.max(...activeGrants.map((g: any) => g.expiresAtMs));
+          const remainingSeconds = Math.max(0, Math.ceil((maxExpiry - now) / 1000));
+          const mins = Math.floor(remainingSeconds / 60);
+          const secs = remainingSeconds % 60;
+          temporaryUnlockRemainingFormatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
       }
+
+      let cooldownRemainingFormatted: string | null = null;
+      if (pubState?.cooldown?.active && typeof pubState.cooldown.startedAtMs === 'number') {
+        const now = Date.now();
+        const remainingMs = Math.max(0, 72 * 3600_000 - Math.max(0, now - pubState.cooldown.startedAtMs));
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        const hours = Math.floor(remainingSeconds / 3600);
+        const mins = Math.floor((remainingSeconds % 3600) / 60);
+        const secs = remainingSeconds % 60;
+        cooldownRemainingFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+
+      const partnerName = pubState?.partner?.paired
+        ? (pubState?.bot?.username ? `@${pubState.bot.username}` : 'Pareado')
+        : null;
+
+      const menuItems = buildTrayMenuTemplate(
+        {
+          active: Boolean(pubState),
+          partnerName,
+          temporaryUnlockRemainingFormatted,
+          cooldownRemainingFormatted,
+        },
+        {
+          onQuickAdd: () => navigateMainWindow('rules'),
+          onRequestUnblock: () => navigateMainWindow('partner'),
+          onEnterToken: () => navigateMainWindow('partner'),
+          onOpenDashboard: () => navigateMainWindow('categories'),
+          onQuit: () => app.quit(),
+        },
+        process.platform === 'darwin' && hasMenuSymbol ? {
+          'quick-add': (nativeImage as any).createMenuSymbol('plus.circle'),
+          'request-unblock': (nativeImage as any).createMenuSymbol('person.crop.circle.badge.questionmark'),
+          'enter-token': (nativeImage as any).createMenuSymbol('key'),
+          'open-dashboard': (nativeImage as any).createMenuSymbol('square.grid.2x2'),
+        } : undefined
+      );
+      tray.setContextMenu(Menu.buildFromTemplate(menuItems));
+      if (process.platform === 'darwin') tray.setTitle(trayTitleFor(pubState));
+    } catch (err) {
+      console.error('[monBlock] Falha ao atualizar menu da tray:', err);
+    } finally {
+      isRefreshingTray = false;
     }
-
-    let cooldownRemainingFormatted: string | null = null;
-    if (pubState?.cooldown?.active && typeof pubState.cooldown.startedAtMs === 'number') {
-      const now = Date.now();
-      const remainingMs = Math.max(0, 72 * 3600_000 - Math.max(0, now - pubState.cooldown.startedAtMs));
-      const remainingSeconds = Math.ceil(remainingMs / 1000);
-      const hours = Math.floor(remainingSeconds / 3600);
-      const mins = Math.floor((remainingSeconds % 3600) / 60);
-      const secs = remainingSeconds % 60;
-      cooldownRemainingFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-
-    const partnerName = pubState?.partner?.paired
-      ? (pubState?.bot?.username ? `@${pubState.bot.username}` : 'Pareado')
-      : null;
-
-    const menuItems = buildTrayMenuTemplate(
-      {
-        active: Boolean(pubState),
-        partnerName,
-        temporaryUnlockRemainingFormatted,
-        cooldownRemainingFormatted,
-      },
-      {
-        onQuickAdd: () => navigateMainWindow('rules'),
-        onRequestUnblock: () => navigateMainWindow('partner'),
-        onEnterToken: () => navigateMainWindow('partner'),
-        onOpenDashboard: () => navigateMainWindow('categories'),
-        onQuit: () => app.quit(),
-      },
-      process.platform === 'darwin' && hasMenuSymbol ? {
-        'quick-add': (nativeImage as any).createMenuSymbol('plus.circle'),
-        'request-unblock': (nativeImage as any).createMenuSymbol('person.crop.circle.badge.questionmark'),
-        'enter-token': (nativeImage as any).createMenuSymbol('key'),
-        'open-dashboard': (nativeImage as any).createMenuSymbol('square.grid.2x2'),
-      } : undefined
-    );
-    tray.setContextMenu(Menu.buildFromTemplate(menuItems));
-    if (process.platform === 'darwin') tray.setTitle(trayTitleFor(pubState));
   };
 
   // Registro dos canais IPC conectados ao MonBlockDaemon
@@ -658,27 +686,28 @@ export async function bootstrapElectronRuntime(): Promise<void> {
   const trayShieldPngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAACQAAAAkCAYAAADhAJiYAAAAAXNSR0IArs4c6QAAAGxlWElmTU0AKgAAAAgABAEaAAUAAAABAAAAPgEbAAUAAAABAAAARgEoAAMAAAABAAIAAIdpAAQAAAABAAAATgAAAAAAAACQAAAAAQAAAJAAAAABAAKgAgAEAAAAAQAAACSgAwAEAAAAAQAAACQAAAAAQCQK+gAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAAw5JREFUWAntlluITVEYx4fcJ5GiKZdQM3IZU1MuJbxMFIUHjFLygocZanhAQ4rUCE2exIMnSmlKKIrSeHAp436JxDSYZCZGkfvl96uza3ecc/bZ58yZp/OvX/uy1vftb63vW2vtkpKiijOQ3wz0y8+8pAL7KqiGP3AL7sJr6BM5gFnQCHfgG/xN4jPPV6EepkBB5Azsg2fwC8JBdPNsAK3wIantB89tsB2mQl4aj/VOeAy/IRxEB8/HoAbKINA4bpbBSeiCsI0DcVa3QdiGx2htoMtPCDt8ynMTmLJSiNJIOiwCA++EsC9TXQtZ6z09dfAW9sJ0GAi5agiG8+AwBL6fx3EWjKYBo0FxDCP6GpgD1H9Pqr4DUr0MvbMoc9VQDK1Dg3iQcGIglkJa9U/bkl+DNbYK3JMuQtbLvxABuVfNgF1gutuhA7JSIQKayJfroBws4K3wFbJSVA1l5STUaSz3i2EteHwcBY+TrNWbAbktrAZXpjNyBQ5BLMVJ2Sg874f1MAaSVcOLNeAs3QePmowrivb/FCcgd91NcCJxHR3yNon7WpgNr+BI4solnuIEdAHX98AzqRGWw3AYDAazAtrhPJyBnJSuhvy3MVg3NZex8rdiHZyDSmiCLvDMMlX2PQ3N4AaYSvqyn/IbWcsP6dSiDBwExv5GtIIz5bL+BPZtgZmQScNoNOX2f5GpY3LbzYRRG1fTkqxqXtwGR6nzR7ASojSCDi9Bm0tRncPt1ohGYjpSnfQLeW/gjnQzeHZlkru2G2bgtz5T5+Q268J0OAM9MB/yOfVN+xJwf/JnrwNMXyy5434ER/QFtkApxJUp3w3fQV/W5wLISUux6oagVi5zXwUu9SiZwrlwHQxEH+/ADTQvuapuQDBCZ+s4VECqfcytpBJOgf9TBqPtNSiHXpFFbUF2QjBb1tgecMbcXwxuDhyAINX29ZDdCOn2PJpyVxmmzWBgjlxMQwucBdPrOwN5AwchfMTwWBhNxq3nVRBAEJxXZ85AJkCfaxpf3AFP4CE0QK/VCb6KKs5A7Bn4BzLTxEQuanheAAAAAElFTkSuQmCC';
 
-  let trayIcon: Electron.NativeImage;
-  if (process.platform === 'darwin') {
-    const rawImage = nativeImage.createFromBuffer(Buffer.from(trayShieldPngBase64, 'base64'), {
-      scaleFactor: 2.0,
-    });
-    trayIcon = rawImage.resize({ width: 18, height: 18, quality: 'best' });
-    trayIcon.setTemplateImage(true);
-  } else {
-    trayIcon = nativeImage.createEmpty();
-  }
+  const iconSpec = trayIconSpec(process.platform);
+  const trayIcon = nativeImage
+    .createFromBuffer(Buffer.from(trayShieldPngBase64, 'base64'), { scaleFactor: 2.0 })
+    .resize({ width: iconSpec.size, height: iconSpec.size, quality: 'best' });
+  if (iconSpec.template) trayIcon.setTemplateImage(true);
   tray = new Tray(trayIcon);
   tray.setToolTip('monBlock — Painel de proteção');
   await refreshTrayMenu();
-  setInterval(() => void refreshTrayMenu(), 10_000);
+  // Atualização periódica a cada 30s (ou reativa a mutações IPC) para não sobrecarregar o RunLoop do AppKit
+  setInterval(() => void refreshTrayMenu(), 30_000);
 
-  // Camada 3 (ADR-0002): Watcher de abas. O tick consulta o daemon (que também expira concessões vencidas)
-  // e avalia a aba em foco; se o estado falhar, mantém as últimas regras conhecidas (Fail-Closed).
+  // Camada 3 (ADR-0002): Watcher de abas com proteção contra sobreposição e backoff dinâmico sob carga (ex: Spotlight)
   if (process.platform === 'darwin') {
     let watcherRules = createDefaultPersistentState().rules;
     const watcher = new MacOSBrowserWatcher({ getRules: () => watcherRules });
+    let isInspecting = false;
+    let nextDelayMs = 1500;
+
     const watchTick = async (): Promise<void> => {
+      if (isInspecting) return;
+      isInspecting = true;
+      const startTime = Date.now();
       try {
         const now = Date.now();
         let wildcardGrant = false;
@@ -699,10 +728,20 @@ export async function bootstrapElectronRuntime(): Promise<void> {
             );
           }
         }
+        // Resiliência contra contenção do AppKit/System Events: se a inspeção demorou mais de 800ms,
+        // aplica backoff para dar folga ao subsistema de eventos do macOS
+        const duration = Date.now() - startTime;
+        if (duration > 800) {
+          nextDelayMs = Math.min(5000, nextDelayMs + 1000);
+        } else {
+          nextDelayMs = 1500;
+        }
       } catch (err) {
         console.error('[monBlock] Falha no ciclo do watcher:', err);
+        nextDelayMs = 5000;
       } finally {
-        setTimeout(() => void watchTick(), 1500);
+        isInspecting = false;
+        setTimeout(() => void watchTick(), nextDelayMs);
       }
     };
     void watchTick();

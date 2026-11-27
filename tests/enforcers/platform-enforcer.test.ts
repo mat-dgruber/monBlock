@@ -10,8 +10,11 @@ import { buildBrowserPolicies } from '../../src/enforcers/browser-policy-enforce
 import { execFileSync } from 'node:child_process';
 import {
   CHROMIUM_BUNDLE_IDS,
+  LinuxPlatformEnforcer,
   MacOSPlatformEnforcer,
+  WindowsPlatformEnforcer,
   checkBrowserProfileInstalled,
+  createPlatformEnforcer,
   defaultCommandExecutor,
   generateBrowserMobileconfig,
   generateChromiumAndSafariPlist,
@@ -380,7 +383,8 @@ describe('checkBrowserProfileInstalled (perfil dos navegadores)', () => {
   });
 });
 
-describe('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', () => {
+// Modo POSIX (0644/0600) não existe no Windows.
+describe.skipIf(process.platform === 'win32')('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', () => {
   const rules = { enabledCategories: ['adult'], blockedDomains: [], allowlistDomains: [], keywords: [], lockIncognito: true };
   const mode = (p: string) => fs.statSync(p).mode & 0o777;
 
@@ -413,7 +417,7 @@ describe('MacOSPlatformEnforcer: /etc/hosts legível (mDNSResponder sem root)', 
 });
 
 describe('hosts: rollback e trava', () => {
-  it('rollback restaura em 0644 mesmo com backup 0600', () => {
+  it.skipIf(process.platform === 'win32')('rollback restaura em 0644 mesmo com backup 0600', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'monblock-rb-'));
     const hostsPath = path.join(dir, 'hosts');
     fs.writeFileSync(`${hostsPath}.monblock.bak`, '127.0.0.1 localhost\n', { mode: 0o600 });
@@ -439,5 +443,24 @@ describe('hosts: rollback e trava', () => {
     await enforcer.applyWebRules(rules).catch(() => undefined);
     await enforcer.applyWebRules(rules).catch(() => undefined);
     expect(cmds).toContain('chflags uchg');
+  });
+});
+
+describe('createPlatformEnforcer: Fábrica agnóstica de SO (ADR-0013)', () => {
+  it('instancia MacOSPlatformEnforcer para plataforma darwin', () => {
+    const enforcer = createPlatformEnforcer('darwin', { hostsPath: '/tmp/test-hosts' });
+    expect(enforcer).toBeInstanceOf(MacOSPlatformEnforcer);
+  });
+
+  it('instancia implementação padrão compatível para linux e win32', () => {
+    const linuxEnforcer = createPlatformEnforcer('linux', { hostsPath: '/tmp/test-hosts' });
+    expect(linuxEnforcer).toBeInstanceOf(LinuxPlatformEnforcer);
+    expect(typeof linuxEnforcer.applyWebRules).toBe('function');
+    expect(typeof linuxEnforcer.verifyApplied).toBe('function');
+
+    const winEnforcer = createPlatformEnforcer('win32', { hostsPath: '/tmp/test-hosts' });
+    expect(winEnforcer).toBeInstanceOf(WindowsPlatformEnforcer);
+    expect(typeof winEnforcer.applyWebRules).toBe('function');
+    expect(typeof winEnforcer.verifyApplied).toBe('function');
   });
 });

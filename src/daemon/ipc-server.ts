@@ -24,11 +24,19 @@ export interface IpcServerOptions {
   idleMs?: number;
   maxConnections?: number;
   socketMode?: number;
+  /**
+   * Windows (W4): aplica a DACL explícita no pipe já criado. `false`/exceção → o pipe segue no DACL
+   * padrão (fail-closed) e `aclStatus()` vira `failed`. Sem o gancho (macOS/Linux): `not-applicable`.
+   */
+  secureListen?: (socketPath: string) => Promise<boolean>;
 }
+
+export type IpcAclStatus = 'ok' | 'failed' | 'not-applicable';
 
 export interface IpcServer {
   close(): Promise<void>;
   connections(): number;
+  aclStatus(): IpcAclStatus;
 }
 
 const KNOWN_TYPES: ReadonlySet<string> = new Set(DAEMON_COMMAND_TYPES);
@@ -51,6 +59,11 @@ function parseRequest(line: string): { id: unknown; cmd?: DaemonCommand; problem
   return { id, cmd: cmd as DaemonCommand };
 }
 
+/** Identifica se o caminho do socket é um Named Pipe do Windows. */
+export function isWindowsNamedPipe(socketPath: string): boolean {
+  return socketPath.startsWith('\\\\.\\pipe\\');
+}
+
 /** Remove um socket velho (de um daemon que morreu) sem apagar outro tipo de arquivo por engano. */
 function removeStaleSocket(socketPath: string): void {
   try {
@@ -65,6 +78,7 @@ export async function createIpcServer(options: IpcServerOptions): Promise<IpcSer
   const maxLineBytes = options.maxLineBytes ?? 64 * 1024;
   const idleMs = options.idleMs ?? 5_000;
   const sockets = new Set<net.Socket>();
+  const isNamedPipe = isWindowsNamedPipe(options.socketPath);
 
   const server = net.createServer((socket) => {
     sockets.add(socket);
@@ -100,7 +114,9 @@ export async function createIpcServer(options: IpcServerOptions): Promise<IpcSer
   });
   server.maxConnections = options.maxConnections ?? 8;
 
-  removeStaleSocket(options.socketPath);
+  if (!isNamedPipe) {
+    removeStaleSocket(options.socketPath);
+  }
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(options.socketPath, () => {
@@ -108,9 +124,22 @@ export async function createIpcServer(options: IpcServerOptions): Promise<IpcSer
       resolve();
     });
   });
-  fs.chmodSync(options.socketPath, options.socketMode ?? 0o660);
+  if (!isNamedPipe) {
+    fs.chmodSync(options.socketPath, options.socketMode ?? 0o660);
+  }
+
+  let acl: IpcAclStatus = 'not-applicable';
+  if (options.secureListen) {
+    try {
+      acl = (await options.secureListen(options.socketPath)) ? 'ok' : 'failed';
+    } catch {
+      acl = 'failed';
+    }
+    if (acl === 'failed') console.error('[monblockd] DACL do pipe não aplicada: usuário comum só lê (fail-closed).');
+  }
 
   return {
+    aclStatus: () => acl,
     connections: () => sockets.size,
     close: () =>
       new Promise<void>((resolve) => {

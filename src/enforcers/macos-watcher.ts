@@ -28,6 +28,7 @@ export const SUPPORTED_MACOS_BROWSERS = [
   'Arc',
   'Microsoft Edge',
   'Dia',
+  'Facet',
   'Vivaldi',
   'Opera',
   'Chromium',
@@ -98,6 +99,25 @@ on run argv
       set tabTitle to title of active tab of front window
       return frontApp & "\\n" & tabUrl & "\\n" & tabTitle
     end tell
+  else if frontApp is "Facet" then
+    tell application "System Events"
+      tell process "Facet"
+        if (count of windows) is 0 then return ""
+        set tabTitle to name of front window
+        set tabUrl to ""
+        repeat with g in (every UI element of front window whose role is "AXGroup")
+          try
+            set tf to (first UI element of g whose role is "AXTextField")
+            set tabUrl to value of tf
+            if tabUrl is not missing value and tabUrl is not "" then exit repeat
+          end try
+        end repeat
+        if tabUrl is missing value or tabUrl is "" then
+          set tabUrl to "https://facet.active.tab"
+        end if
+        return frontApp & "\\n" & tabUrl & "\\n" & tabTitle
+      end tell
+    end tell
   else if frontApp is "Firefox" then
     tell application "System Events"
       tell process "Firefox"
@@ -134,6 +154,8 @@ on run argv
         set URL of active tab of front window to safeRedirectUrl
       end if
     end tell
+  else if browserName is "Facet" then
+    do shell script "/usr/bin/open -b app.panes.browser " & quoted form of safeRedirectUrl
   else if browserName is "Firefox" then
     open location safeRedirectUrl
   end if
@@ -154,6 +176,7 @@ export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
   private readonly timeoutMs: number;
   private readonly execFn: ExecFileExecutor;
   private lastWarningAtMs = 0;
+  private isExecuting = false;
 
   constructor(
     timeoutOrExecFn: number | ExecFileExecutor = execFileAsync,
@@ -169,6 +192,12 @@ export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
   }
 
   async getActiveTab(): Promise<ActiveTabSnapshot | null> {
+    // Guarda de concorrência: se uma inspeção AppleScript anterior ainda estiver em execução,
+    // descarta chamadas sobrepostas para prevenir enfileiramento e contenção no AppKit/System Events.
+    if (this.isExecuting) {
+      return null;
+    }
+    this.isExecuting = true;
     try {
       const { stdout } = await this.execFn('osascript', ['-e', INSPECT_FRONT_BROWSER_SCRIPT], {
         timeout: this.timeoutMs,
@@ -195,6 +224,8 @@ export class OsascriptBrowserTabAdapter implements BrowserTabAdapter {
         );
       }
       return null;
+    } finally {
+      this.isExecuting = false;
     }
   }
 
@@ -238,6 +269,7 @@ export class MacOSBrowserWatcher {
   private readonly activeGrants = new Map<string, number>();
   private lastCheckedKey = '';
   private lastCheckedAtMs = -Infinity;
+  private isInspecting = false;
 
   constructor(options: MacOSBrowserWatcherOptions) {
     this.adapter = options.adapter ?? new OsascriptBrowserTabAdapter();
@@ -312,70 +344,78 @@ export class MacOSBrowserWatcher {
   }
 
   /**
-   * Executa um ciclo único de inspeção da aba em foco.
+   * Executa um ciclo único de inspeção da aba em foco com guarda de concorrência.
    */
   async inspectOnce(nowMs: number = Date.now()): Promise<WatcherInterceptionResult> {
-    const tab = await this.adapter.getActiveTab();
-    if (!tab || !SUPPORTED_MACOS_BROWSERS.includes(tab.browser as SupportedMacOSBrowser)) {
-      return { blocked: false };
+    if (this.isInspecting) {
+      return { blocked: false, debounced: true };
     }
+    this.isInspecting = true;
+    try {
+      const tab = await this.adapter.getActiveTab();
+      if (!tab || !SUPPORTED_MACOS_BROWSERS.includes(tab.browser as SupportedMacOSBrowser)) {
+        return { blocked: false };
+      }
 
-    const normalized = sanitizeAndNormalizeUrl(tab.url);
-    if (!normalized) {
-      return { blocked: false, browser: tab.browser };
-    }
+      const normalized = sanitizeAndNormalizeUrl(tab.url);
+      if (!normalized) {
+        return { blocked: false, browser: tab.browser };
+      }
 
-    const cacheKey = `${tab.browser}|${normalized.cleanUrl}|${tab.title}`;
-    if (cacheKey === this.lastCheckedKey && nowMs - this.lastCheckedAtMs < this.debounceMs) {
-      return { blocked: false, debounced: true, browser: tab.browser };
-    }
+      const cacheKey = `${tab.browser}|${normalized.cleanUrl}|${tab.title}`;
+      if (cacheKey === this.lastCheckedKey && nowMs - this.lastCheckedAtMs < this.debounceMs) {
+        return { blocked: false, debounced: true, browser: tab.browser };
+      }
 
-    this.lastCheckedKey = cacheKey;
-    this.lastCheckedAtMs = nowMs;
+      this.lastCheckedKey = cacheKey;
+      this.lastCheckedAtMs = nowMs;
 
-    if (this.hasActiveGrant(normalized.domain, nowMs)) {
+      if (this.hasActiveGrant(normalized.domain, nowMs)) {
+        return {
+          blocked: false,
+          grantedTemporary: true,
+          browser: tab.browser,
+          domain: normalized.domain,
+          cleanUrl: normalized.cleanUrl,
+        };
+      }
+
+      const decision = evaluateUrlAndTitle({
+        url: tab.url,
+        title: tab.title,
+        state: this.getRules(),
+      });
+
+      if (!decision.blocked) {
+        return {
+          blocked: false,
+          browser: tab.browser,
+          domain: normalized.domain,
+          cleanUrl: normalized.cleanUrl,
+        };
+      }
+
+      const reason = decision.reason ?? 'CUSTOM_DOMAIN';
+      const ruleLabel = decision.ruleLabel ?? normalized.domain;
+      const redirectUrl =
+        `http://127.0.0.1:49152/blocked` +
+        `?domain=${encodeURIComponent(normalized.domain)}` +
+        `&reason=${encodeURIComponent(reason)}` +
+        `&rule=${encodeURIComponent(ruleLabel)}`;
+
+      await this.adapter.redirectActiveTab(tab.browser, redirectUrl);
+
       return {
-        blocked: false,
-        grantedTemporary: true,
+        blocked: true,
         browser: tab.browser,
         domain: normalized.domain,
         cleanUrl: normalized.cleanUrl,
+        redirectUrl,
+        reason,
+        ruleLabel,
       };
+    } finally {
+      this.isInspecting = false;
     }
-
-    const decision = evaluateUrlAndTitle({
-      url: tab.url,
-      title: tab.title,
-      state: this.getRules(),
-    });
-
-    if (!decision.blocked) {
-      return {
-        blocked: false,
-        browser: tab.browser,
-        domain: normalized.domain,
-        cleanUrl: normalized.cleanUrl,
-      };
-    }
-
-    const reason = decision.reason ?? 'CUSTOM_DOMAIN';
-    const ruleLabel = decision.ruleLabel ?? normalized.domain;
-    const redirectUrl =
-      `http://127.0.0.1:49152/blocked` +
-      `?domain=${encodeURIComponent(normalized.domain)}` +
-      `&reason=${encodeURIComponent(reason)}` +
-      `&rule=${encodeURIComponent(ruleLabel)}`;
-
-    await this.adapter.redirectActiveTab(tab.browser, redirectUrl);
-
-    return {
-      blocked: true,
-      browser: tab.browser,
-      domain: normalized.domain,
-      cleanUrl: normalized.cleanUrl,
-      redirectUrl,
-      reason,
-      ruleLabel,
-    };
   }
 }

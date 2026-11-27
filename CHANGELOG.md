@@ -5,6 +5,48 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+### Adicionado
+- CI: job `windows-latest` com typecheck, testes, build e smoke do daemon (Named Pipe `\\.\pipe\monblockd` e hosts gerado em modo dev).
+
+### Corrigido
+- Windows, Camada 2: o manifesto `.reg` usava a abreviação `HKLM\`, que o `reg import` ignora com código 0; nenhuma política de navegador era gravada. Agora usa `HKEY_LOCAL_MACHINE\`, apaga cada lista antes de recriá-la (sem allowlist antiga valendo) e grava sem BOM (W9).
+- Windows: falhas de `icacls`, `ipconfig`, `reg import` não são mais engolidas; todos os passos rodam e as falhas viram drift. O drift lê o Registro (`reg query`) e acusa chave apagada ou valor alterado (W10).
+- Windows: caminhos do daemon vêm de `%ProgramData%` e `%SystemRoot%`, não mais relativos ao drive corrente (W15).
+- Windows: ícone da bandeja visível (era vazio) e notificações com o AppUserModelID `com.ccat.monblock` (W13, W14).
+- Windows: o daemon reconhece que roda como SYSTEM/administrador pelo SID de integridade (`whoami /groups`) e sobe sem `MONBLOCK_DEV_ROOT_DIR`; antes saía no boot porque `process.getuid` não existe (W1).
+- Windows: no boot, a ACL de `%ProgramData%\monBlock` é conferida por SID e restringida a SYSTEM e Administradores; se não der, o cofre não é aberto (W20).
+- Windows: o Edge trava a navegação InPrivate com `InPrivateModeAvailability` (o `IncognitoModeAvailability` dava "Erro").
+- Windows, modo dev: o daemon não roda mais `icacls`/`reg` no sistema real.
+- Linux: sem root, o enforcer não escala mais com `sudo -n` (travava arquivos de teste com `chattr +i`).
+- `resolveLayout` usa `path.posix` (darwin/linux) e `path.win32` (win32) pela plataforma alvo, e não pela do host.
+- `npm run build` funciona no Windows: a cópia de assets saiu do `cp` para `scripts/copy-assets.mjs`.
+- `.gitattributes` fixa EOL em LF; com o `core.autocrlf=true` do Git for Windows, o `gen-lists --check` falhava.
+- Os enforcers POSIX ignoram o modo do hosts no `win32`, que não tem modo POSIX; antes acusavam drift em todo tick.
+- A suíte roda no Windows: os testes de IPC usam Named Pipe e os testes de modo POSIX são pulados no `win32`.
+
+## [0.9.1] - 2026-11-19
+### Corrigido
+- Resiliência do Watcher macOS contra travamento de interface (hang):
+  - Prevenção de concorrência: adicionada trava explícita (`isInspecting` e `isExecuting`) no ciclo de inspeção e no adaptador AppleScript (`OsascriptBrowserTabAdapter`), descartando chamadas sobrepostas e prevenindo contenção de eventos AppKit/AppleEvents.
+  - Backoff dinâmico sob carga do sistema: o loop do vigia agora eleva automaticamente o intervalo de 1500 ms para até 5000 ms quando uma inspeção exceder 800 ms ou encontrar falhas, aliviando a contenção de I/O (ex.: sob indexação do Spotlight).
+  - Redução de contenção do AppKit na Tray: a reconstrução periódica do menu `NSMenu` da bandeja do sistema foi espaçada de 10 s para 30 s com trava contra chamadas concorrentes, mantendo atualização imediata reativa a mutações IPC.
+  - Otimização do motor de regras: adicionado fast-path nativo O(N) e cache em memória de termos de palavras-chave (`getParsedKeywordTerms`), acelerando a avaliação de abas em 18x (de ~1,4 s para ~78 ms por milhar).
+
+## [0.9.0] - 2026-11-18
+### Adicionado
+- Fundação Arquitetural Multiplataforma ([ADR-0013](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0013-fundacao-arquitetural-multiplataforma-linux-windows.md)): fábrica abstrata `createPlatformEnforcer(platform, options)` desacoplando o daemon de particularidades de SO, layout de caminhos de sistema agnóstico (`resolveLayout` para `darwin`, `linux` e `win32`), e suporte a canais IPC via Unix Domain Socket (`0750`, grupo `monblock`) e Windows Named Pipe (`\\.\pipe\monblockd`).
+- Imposição Nativa de Sistema e Políticas no Linux ([ADR-0014](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0014-politicas-corporativas-e-imposicao-no-linux.md)):
+  - Camada 1: `/etc/hosts` atômico com atributo imutável `chattr +i` e descarga de cache DNS via `resolvectl flush-caches` / `systemd-resolve`.
+  - Camada 2: Políticas corporativas multi-navegador em manifestos JSON gerenciados em `/etc/opt/chrome/policies/managed/`, `/etc/chromium/policies/managed/`, `/etc/brave/policies/managed/`, `/etc/opt/edge/policies/managed/`, `/etc/vivaldi/policies/managed/` e `/etc/firefox/policies/policies.json`.
+  - Camada 3: `LinuxBrowserWatcher` com adaptador `X11BrowserTabAdapter` inspecionando janelas via `xdotool` / `xprop WM_CLASS` e redirecionando para `127.0.0.1:49152/blocked` via `xdg-open`.
+  - Empacotamento e Sandboxing: unidade `scripts/linux/monblockd.service` com `ProtectSystem=strict`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE CAP_LINUX_IMMUTABLE` e script gerador de pacote `.deb` (`scripts/build-linux-pkg.sh`).
+- Imposição Nativa de Sistema e Políticas no Windows ([ADR-0015](file:///Users/matheus.diniz_1/Documents/GitHub/monBlock/docs/adrs/0015-politicas-corporativas-e-imposicao-no-windows.md)):
+  - Camada 1: `%SystemRoot%\System32\drivers\etc\hosts` com descritor de segurança NTFS (`icacls`) restringindo usuários comuns a leitura e garantindo controle total apenas a SYSTEM e Administradores; descarga de DNS via `ipconfig /flushdns`.
+  - Camada 2: Geração e importação de manifestos `.reg` sob `HKLM\SOFTWARE\Policies` para Chrome, Edge, Brave, Chromium, Vivaldi e Firefox (`URLBlocklist`, `URLAllowlist`, `WebsiteFilter`, bloqueio de DoH e Incógnito).
+  - Camada 3: `WindowsBrowserWatcher` com adaptador `WindowsBrowserTabAdapter` consultando janela em primeiro plano via Win32/PowerShell (`GetForegroundWindow`) e redirecionamento seguro via `cmd.exe /c start`.
+  - Serviço do Windows: script de provisionamento `scripts/windows/install-service.ps1` criando serviço Windows automático sob `NT AUTHORITY\SYSTEM` com reinício em falha em 5s e proteção de `%ProgramData%\monBlock`.
+- Suporte ao navegador Facet (`app.panes.browser`): monitoramento de abas ativas e detecção de palavras-chave/URLs via System Events e redirecionamento direcionado para a página de bloqueio via `/usr/bin/open -b app.panes.browser`.
+
 ## [0.8.1] - 2026-11-07
 ### Corrigido
 - App preso em "Conferindo proteção...": o botão "Bloquear de novo" (0.8.0) usava uma variável fora de escopo e o script da interface falhava ao iniciar. Novo teste executa o script do renderer e falha se ele lançar erro na inicialização.

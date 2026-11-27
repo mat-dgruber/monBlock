@@ -31,3 +31,20 @@ describe('watcher: Dia', () => {
     expect(calls.map((c) => c[1]).join('\n')).toContain('tell application "Dia"');
   });
 });
+
+describe('watcher: Facet', () => {
+  it('lê e redireciona a aba do Facet (System Events e open -b app.panes.browser)', async () => {
+    const { SUPPORTED_MACOS_BROWSERS, OsascriptBrowserTabAdapter } = await import('../../src/enforcers/macos-watcher.js');
+    expect(SUPPORTED_MACOS_BROWSERS).toContain('Facet');
+    const calls: string[][] = [];
+    const adapter = new OsascriptBrowserTabAdapter(async (_cmd, args) => {
+      calls.push(args as string[]);
+      return { stdout: 'Facet\nhttps://exemplo.com/\nTitulo\n', stderr: '' };
+    });
+    expect(await adapter.getActiveTab()).toEqual({ browser: 'Facet', url: 'https://exemplo.com/', title: 'Titulo' });
+    expect(await adapter.redirectActiveTab('Facet', 'http://127.0.0.1:49152/blocked?domain=x.com')).toBe(true);
+    const all = calls.map((c) => c[1]).join('\n');
+    expect(all).toContain('tell process "Facet"');
+    expect(all).toContain('open -b app.panes.browser');
+  });
+});

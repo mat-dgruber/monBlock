@@ -921,7 +921,7 @@ globalThis.monblockRenderer = { pickInitialView };
 
   function openUpdateModal() {
     if (!currentUpdateInfo) return;
-    if (updateCurrentVersion) updateCurrentVersion.textContent = `v${currentUpdateInfo.currentVersion || '0.8.1'}`;
+    if (updateCurrentVersion) updateCurrentVersion.textContent = `v${currentUpdateInfo.currentVersion || '0.9.1'}`;
     if (updateTargetVersion) updateTargetVersion.textContent = `v${currentUpdateInfo.latestVersion}`;
     if (updateNotesContent) {
       updateNotesContent.textContent = currentUpdateInfo.releaseNotes || 'Melhorias de estabilidade, desempenho e segurança do monBlock.';

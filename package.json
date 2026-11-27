@@ -1,12 +1,12 @@
 {
   "name": "monblock",
-  "version": "0.8.1",
+  "version": "0.9.1",
   "license": "UNLICENSED",
   "author": "Matheus Diniz",
   "type": "module",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && cp src/renderer/index.html dist/renderer/index.html && cp src/renderer/renderer.css dist/renderer/renderer.css && cp src/renderer/renderer-init.js dist/renderer/renderer-init.js && cp src/preload/preload-bridge.cjs dist/preload/preload-bridge.cjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
     "electron": "npm run build && electron .",
     "start": "npm run electron",
     "test": "vitest run --dir tests",
@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "build:daemon": "sh scripts/build-daemon-sea.sh",
     "build:pkg": "sh scripts/build-pkg.sh",
-    "build:app": "sh scripts/build-app.sh"
+    "build:app": "sh scripts/build-app.sh",
+    "build:daemon:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-daemon-sea.ps1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
