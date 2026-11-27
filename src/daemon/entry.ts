@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createIpcServer, type IpcServer } from './ipc-server.js';
 import { pipeAclHook } from './pipe-acl.js';
+import { scheduleWindowsUninstall } from './windows-uninstall.js';
 import { MonBlockDaemon } from './monblockd.js';
 import { TrustedClock } from './trusted-clock.js';
 import {
@@ -403,9 +404,12 @@ export async function main(): Promise<void> {
     // Desacoplado e fora do grupo de processos: o `bootout` do job não pode matar o desinstalador.
     onUninstalled: () => {
       if (!isRoot || rootDir) return console.error('[monblockd] desinstalação autorizada (modo dev: nada removido).');
-      // Windows: a remoção por tarefa agendada é o W12 (F4). Até lá, só registra; o /bin/sh daria ENOENT.
+      // Windows (W12): tarefa agendada SYSTEM fora da árvore do serviço; o WinSW mataria um filho.
       if (process.platform === 'win32') {
-        return console.error('[monblockd] desinstalação autorizada: remoção manual pendente (W12).');
+        if (scheduleWindowsUninstall(path.dirname(process.execPath))) {
+          console.error('[monblockd] desinstalação autorizada: tarefa agendada disparada.');
+        }
+        return;
       }
       // 2 s de folga para a resposta 200 sair pelo socket antes do `bootout` derrubar o daemon.
       spawn('/bin/sh', ['-c', 'sleep 2; exec /bin/sh "$0"', path.join(HELPER_DIR, 'uninstall.sh')], {

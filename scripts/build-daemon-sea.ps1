@@ -43,7 +43,7 @@ try {
   if ($got -ne $WinSWSha256) { Remove-Item $winsw -Force; throw "SHA-256 do WinSW divergente: $got" }
 
   # 4. XML, helpers PowerShell e pagina de bloqueio.
-  Copy-Item packaging\windows\monblockd-service.xml, packaging\windows\pipe-acl.ps1, packaging\windows\pipe-server-check.ps1 $out
+  Copy-Item packaging\windows\monblockd-service.xml, packaging\windows\pipe-acl.ps1, packaging\windows\pipe-server-check.ps1, packaging\windows\uninstall.ps1, scripts\windows\install-service.ps1 $out
   Copy-Item docs\design\blocked-page.html, docs\design\tokens.css (Join-Path $out 'design')
 
   # 5. Smoke: sem privilegio e sem MONBLOCK_DEV_ROOT_DIR o daemon tem de recusar subir (prova que o bundle roda).
