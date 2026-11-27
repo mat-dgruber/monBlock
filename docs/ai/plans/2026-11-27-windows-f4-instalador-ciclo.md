@@ -1,7 +1,7 @@
 # Plano: F4 do Windows — instalador, atualização, desinstalação, autostart e CI
 
 - **Data:** 2026-11-27
-- **Status:** RASCUNHO, aguardando `/plan-criticize` e aprovação
+- **Status:** APROVADO (2026-11-27). `/plan-criticize`: 0/100.
 - **Spec:** `docs/ai/specs/2026-11-25-correcao-suporte-windows-design.md` (v3) — itens **W3 (resto), W12, W16, W18, W19**
 - **ADR:** 0016 (aprovada), D1, D3 e D4 (desinstalação por tarefa agendada)
 - **Depende de:** F3 (mergeada) e PR #22 (correções do teste real como SYSTEM)

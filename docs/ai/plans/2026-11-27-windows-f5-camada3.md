@@ -1,7 +1,7 @@
 # Plano: F5 do Windows — Camada 3 (vigia de abas)
 
 - **Data:** 2026-11-27
-- **Status:** RASCUNHO, aguardando `/plan-criticize` e aprovação
+- **Status:** APROVADO (2026-11-27). `/plan-criticize`: 0/100.
 - **Spec:** `docs/ai/specs/2026-11-25-correcao-suporte-windows-design.md` (v3) — **W5, W6, W7, W8, W11a** juntos; depois **W11b**
 - **ADR:** 0016 (D4 / D6)
 - **Pré-condição (spec):** P8 ✅ (E2: p95 9,9 ms; ~0,4% de um núcleo). Achado do P8: em CLM o helper sai com 0 sem imprimir nada, então sucesso só com handshake.
