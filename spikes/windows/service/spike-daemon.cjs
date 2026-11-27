@@ -2,7 +2,7 @@
 // Roda como SYSTEM sob WinSW. Registra eventos em C:\spike\events.log.
 const fs = require('node:fs');
 const net = require('node:net');
-const { execFileSync, spawn } = require('node:child_process');
+const { execFile, execFileSync, spawn } = require('node:child_process');
 
 const ROOT = 'C:\\spike';
 const log = (msg) => fs.appendFileSync(`${ROOT}\\events.log`, `${new Date().toISOString()} ${msg}\n`);
@@ -42,7 +42,15 @@ function serve(name, opts) {
     });
   });
   server.on('error', (err) => log(`listen error ${name} ${err.code ?? err.message}`));
-  server.listen({ path: `\\\\.\\pipe\\${name}`, ...opts }, () => log(`listening ${name}`));
+  server.listen({ path: `\\\\.\\pipe\\${name}`, ...opts }, () => {
+    log(`listening ${name}`);
+    // P4b: o próprio dono (SYSTEM) troca a DACL — o dono tem WRITE_DAC implícito.
+    if (name === 'monblockd-spike-acl') {
+      execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', `${ROOT}\\apply-dacl.ps1`, name,
+        'D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(D;;GA;;;NU)', `${ROOT}\\out\\p4-dacl.json`], { timeout: 20_000 },
+        (err) => log(err ? `dacl error ${err.message}` : 'dacl applied'));
+    }
+  });
   servers.push(server);
 }
 serve('monblockd-spike', { readableAll: true, writableAll: true });

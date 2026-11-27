@@ -5,7 +5,8 @@ const http = require('node:http');
 const { execFile } = require('node:child_process');
 const { app, shell } = require('electron');
 
-const outFile = process.argv[process.argv.length - 1];
+const outFile = process.argv.find((a) => a.endsWith('.json'));
+process.on('uncaughtException', (e) => fs.appendFileSync(`${outFile}.err`, `${e.stack}\n`));
 const QUERY = '?domain=a.com&reason=CATEGORY&rule=Categoria%3A%20Adulto,x';
 const received = {};
 const server = http.createServer((req, res) => {
@@ -31,12 +32,16 @@ app.whenReady().then(async () => {
   await new Promise((r) => server.listen(49999, '127.0.0.1', r));
   const base = 'http://127.0.0.1:49999/m';
   const report = { expectedQuery: QUERY };
+  const save = () => fs.writeFileSync(outFile, JSON.stringify(report, null, 2));
+  save();
 
   report.openExternal = { call: await shell.openExternal(`${base}/openExternal${QUERY}`).then(() => 'resolved', (e) => e.message) };
   report.openExternal.received = await waitFor('openExternal', 25_000);
+  save();
 
   report.explorer = { call: await run('explorer.exe', [`${base}/explorer${QUERY}`]) };
   report.explorer.received = await waitFor('explorer', 25_000);
+  save();
 
   const url = `${base}/cmdstart${QUERY}`;
   report.cmdStart = { call: await run('cmd.exe', ['/c', 'start', '""', `"${url}"`]) };

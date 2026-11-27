@@ -24,7 +24,8 @@ try {
   $ev.winswSha256 = (Get-FileHash $winsw -Algorithm SHA256).Hash.ToLower()
   if ($WinSWSha256 -and $ev.winswSha256 -ne $WinSWSha256.ToLower()) { throw "SHA-256 do WinSW divergente: $($ev.winswSha256)" }
   Copy-Item (Join-Path $PSScriptRoot 'monblockd-spike-service.xml') $svcDir -Force
-  Copy-Item (Join-Path $PSScriptRoot 'task.ps1'), (Join-Path $PSScriptRoot 'detached.ps1') $SpikeRoot -Force
+  Copy-Item (Join-Path $PSScriptRoot 'task.ps1'), (Join-Path $PSScriptRoot 'detached.ps1'), (Join-Path $PSScriptRoot '..\pipe\apply-dacl.ps1') $SpikeRoot -Force
+  New-Item -ItemType Directory -Force (Join-Path $SpikeRoot 'out') | Out-Null
 
   $ev.install = Invoke-Native $winsw @('install')
   $ev.start = Invoke-Native $winsw @('start')

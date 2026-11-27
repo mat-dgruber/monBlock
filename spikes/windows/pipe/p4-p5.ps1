@@ -11,7 +11,6 @@ $node = (Get-Command node).Source
 $ev = [ordered]@{ lanmanServer = (Get-Service LanmanServer -ErrorAction SilentlyContinue).Status; nodeAcl = (icacls $node | Out-String).Trim() }
 
 try {
-  $ev.applyDaclRun = Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$PSScriptRoot\apply-dacl.ps1", 'monblockd-spike-acl', 'D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(D;;GA;;;NU)', "$outDir\p4-dacl.json")
   $ev.applyDacl = Get-Content "$outDir\p4-dacl.json" -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
   $ev.runClient = Invoke-AsSpike $node @("$pipeDir\client.mjs", "$outDir\p4-client.json", '10')
   $c = Get-Content "$outDir\p4-client.json" -Raw -ErrorAction Stop | ConvertFrom-Json
