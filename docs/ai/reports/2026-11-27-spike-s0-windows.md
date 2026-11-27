@@ -5,7 +5,7 @@
 - **Spec:** `docs/ai/specs/2026-11-25-correcao-suporte-windows-design.md` (v2)
 - **Código do spike:** branch `spike/windows-s0`, em `spikes/windows/`. Ela fica viva até o E2 terminar e não vai para `dev`.
 - **E1:** GitHub Actions `windows-latest` (Windows Server 2025 Datacenter, Node 22.23.5), 6 rodadas. A última é a [46004091361](https://github.com/mat-dgruber/monBlock/actions/runs/46004091361); as rodadas 1–5 corrigiram o próprio spike.
-- **E2:** máquina gráfica ainda não definida. Por isso P8, P10 (com Defender ativo) e P11 estão pendentes.
+- **E2:** Windows 11 Pro x64 (10.0.26300) físico, sessão gráfica, usuário comum + UAC, Node 24.19.0, Chrome e Edge (sem Firefox). Antivírus ativo: **Malwarebytes**; Defender em modo passivo (`RealTimeProtectionEnabled=false`). Rodado em 2026-11-27, ver [§ E2](#e2--windows-11-físico-2026-11-27).
 
 ## Resultado
 
@@ -18,10 +18,10 @@
 | P5 | O cliente sem privilégio distingue o daemon real de um impostor | ✅ PASSOU | Como `spike`: `GetNamedPipeServerProcessId` ok. Legítimo: PPID = PID do serviço. Impostor: PPID ≠ PID do serviço, dono `spike`. `GetOwner`/`ExecutablePath` de processo SYSTEM são **negados** ao usuário comum | O W21 verifica **PPID == `Win32_Service.ProcessId`**. A checagem de "dono S-1-5-18" da spec v2 não é viável |
 | P6 | WinSW: sinal, árvore de processos, tarefa agendada | ✅ PASSOU | `SIGINT` recebido, parada em 0,4 s, `clean exit`. O filho `powershell` foi **morto**. O spawn `detached` também foi **morto**. A tarefa `schtasks /ru SYSTEM` **sobreviveu** e concluiu. Com o pipe ocupado por `spike`, o serviço registrou `listen error … EADDRINUSE` | Confirma o W12 (tarefa agendada) e o achado do goldfish. O W2 (`EADDRINUSE` → avisar e sair) se confirma |
 | P7 | `shell.openExternal` preserva `&` e `,`; `explorer.exe` falha | ✅ PASSOU | `openExternal`: query recebida intacta (`?domain=a.com&reason=CATEGORY&rule=Categoria%3A%20Adulto,x`). `explorer.exe`: **código 1** e nada chegou em 15 s. `cmd /c start` não foi medido (timeout do teste) | O W11a usa `shell.openExternal`, como especificado. Os resultados JSON marcam FALHOU por um bug de timeout do script; a evidência é a acima |
-| P8 | Helper PowerShell persistente: latência, CPU e CLM | ⏸️ NÃO TESTADO | Precisa de sessão gráfica (E2). Scripts prontos: `helper/probe-loop.ps1`, `helper/p8-bench.mjs` | Risco permanece na F5 |
+| P8 | Helper PowerShell persistente: latência, CPU e CLM | ⚠️ **PARCIAL** (E2) | 200 probes a cada 1,5 s: **p50 6,8 ms, p95 9,9 ms**, máx. 510 ms (1 pico), 200/200 respostas. CPU do helper: 1,27 s em 285 s = **0,44 % de um núcleo** (0,04 % da máquina, 12 núcleos). **CLM: o `Add-Type` falha, mas o próprio `catch` usa `[Console]::Out.WriteLine`, que o CLM também bloqueia; o script segue, o `ReadLine` falha e sai com código 0 sem imprimir nada** | Desempenho ok para o W8. A detecção de CLM do spike **não funciona**: o W8 tem de tratar "sem handshake em N s / saída sem linha" como helper indisponível, e não confiar no código 3 nem no JSON de erro |
 | P9 | SEA em PE roda como SYSTEM sob WinSW | ✅ PASSOU | `postject@1.0.0-alpha.6` sem `--macho-segment-name`: ok. `--selftest` ok. Serviço `Running` (auto). `whoami /groups` contém **S-1-16-16384** | O W1 (`isPrivileged` por SID de integridade) e o W3 funcionam |
-| P10 | Defender não reage ao hosts com as listas | ⏸️ NÃO TESTADO | O runner tem `RealTimeProtectionEnabled=false`. Mesmo assim: 7.989 domínios (15.980 linhas) ficaram no hosts por 5 min, sem detecção | Repetir no E2 com proteção em tempo real |
-| P11 | Navegadores aplicam as políticas | ⏸️ NÃO TESTADO | Precisa de E2. Script pronto: `manual/p11-manifest.ps1` | Risco permanece na F1 (validar antes de fechar a fase) |
+| P10 | Defender não reage ao hosts com as listas | ⏸️ NÃO TESTADO (Defender) · ✅ Malwarebytes (E2) | E1: runner com `RealTimeProtectionEnabled=false`; 7.989 domínios (15.980 linhas) por 5 min, sem detecção. **E2: mesmo bloco por 5 min com o Malwarebytes ativo: o hosts ficou intacto e não houve detecção.** O Defender do E2 está passivo, então o teste com ele segue pendente. No E2, a restauração do backup no `finally` do `p10.ps1` travou o processo elevado (> 1 min, sem erro); foi preciso restaurar com um segundo processo elevado | Repetir com o Defender ativo antes do release. A desinstalação/rollback do hosts (W18) precisa de timeout e de verificação por hash, não só do `Copy-Item` |
+| P11 | Navegadores aplicam as políticas | ✅ **PASSOU** (Chrome, Edge) · Firefox NÃO TESTADO | `manual/p11-manifest.ps1` (prefixo `HKEY_LOCAL_MACHINE`, UTF-8 sem BOM): `reg import` código 0 e `reg query` lista os valores. Chrome e Edge headless com perfil novo, via CDP: `example.com` e `www.example.com/x` → `net::ERR_BLOCKED_BY_ADMINISTRATOR`; `example.org` abre. `edge://policy`: `URLBlocklist ["example.com"]`, Plataforma/Dispositivo/Obrigatório/OK. Limpeza com `-Cleanup` | Confirma o formato do W9 para Chromium. Firefox fica para o checklist de release |
 
 ## Detalhes do P4 (IPC)
 
@@ -62,10 +62,24 @@
 6. **W2:** confirmado o tratamento de `EADDRINUSE`. O preshutdown foi aceito pelo WinSW (o XML instalou), mas **não foi testado com reboot**; isso fica no W18.
 7. **§8 (riscos):** acrescentar "a Camada 2 falha em silêncio (`reg import` com código 0)", com mitigação pelo W10.
 
-## Pendências do E2
+## E2 — Windows 11 físico (2026-11-27)
 
-- P8 (helper: latência, CPU e CLM).
-- P10 com proteção em tempo real.
-- P11 (`chrome://policy`, `edge://policy`, `about:policies`).
+Além de P8, P10 e P11, a branch `dev` (`d054c37`) rodou pela primeira vez num Windows de verdade. Achados que **não estão** na spec v3:
+
+| # | Achado | Evidência | Proposta |
+|---|--------|-----------|----------|
+| E2-1 | **Checkout com CRLF quebra o repositório.** O Git for Windows vem com `core.autocrlf=true` e o `.gitattributes` não fixa EOL | `lists/*.txt` e `lists.generated.ts` saem em CRLF; `gen-lists.mjs --check` falha ("desatualizado") | `.gitattributes` com `* text=auto eol=lf` (e `*.ps1 eol=crlf`). Com LF o teste das listas passa |
+| E2-2 | **`npm run build` falha no Windows** | O script usa `cp`; o npm roda no `cmd.exe`: "'cp' não é reconhecido…" | Copiar com um `scripts/copy-assets.mjs` (Node) em vez de `cp` |
+| E2-3 | **Suíte não é portátil: 23/336 falham num host Windows** (com LF) | 10 de `ipc.test.ts` (socket Unix em `%TEMP%` → `EACCES`), 6 de modo POSIX (`0o644`/`0o700` vira `0o666`), 4 de drift/`verifyApplied` do macOS/Linux (dependem do modo), 3 de `resolveLayout` (`path.join` nativo; o caso `win32` é o W20) | Testes de socket usam `\\.\pipe\…` no `win32`; testes de modo POSIX e enforcers macOS/Linux com `it.skipIf(win32)`; `resolveLayout` com `path.posix`/`path.win32` explícito. Entra no job Windows do W18 |
+| E2-4 | **`npm ci` não baixa o Electron** | npm 11 (`allow-scripts`): `node_modules/electron/dist` ausente; foi preciso `node node_modules/electron/install.js` | Documentar no README/CI ou aprovar o script no `package.json` |
+| E2-5 | Smoke do app e do daemon em modo dev funcionam | `MONBLOCK_DEV_ROOT_DIR` + `node dist/daemon/entry.js`: pipe `\\.\pipe\monblockd` criado, estado e hosts de 328 KB gravados no root de teste. Electron conecta pelo pipe e mostra "Proteção ativa" | — |
+| E2-6 | Confirmado em máquina real: o daemon ainda gera o `.reg` com `[HKLM\…]` | `hosts.monblock.reg` gerado pelo daemon dev (sem BOM, ok) | Já coberto pelo W9 |
+| E2-7 | A Camada 3 no `win32` ainda instancia o `MacOSBrowserWatcher` | `src/main/main.ts:693` | Já coberto pelo W5 |
+
+## Pendências
+
+- P10 com o Defender como antivírus ativo (no E2 o ativo é o Malwarebytes).
+- P11 no Firefox.
 - P4 com cliente realmente remoto (segunda máquina).
-- Depois do E2: apagar a branch `spike/windows-s0`, o usuário `spike` e as chaves de teste.
+- Levar E2-1 a E2-4 para a spec (v4) ou para a F1/F4.
+- Apagar a branch `spike/windows-s0`. No E2, as chaves do P11 já foram removidas e o hosts foi restaurado (hash igual ao backup); falta apagar `C:\spike` (admin). O usuário `spike` não foi criado no E2.
