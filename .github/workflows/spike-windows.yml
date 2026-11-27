@@ -29,15 +29,15 @@ jobs:
       - name: P1–P3 Registro
         continue-on-error: true
         run: ./spikes/windows/reg/p1-p3.ps1
-      - name: P10 Defender
-        continue-on-error: true
-        run: ./spikes/windows/defender/p10.ps1 -WaitSec 300
+      # P10 rodou na 1ª execução: proteção em tempo real desligada no runner (NAO_TESTADO) → vai para o E2.
       - name: P9 SEA + WinSW
         continue-on-error: true
         run: ./spikes/windows/service/p9-build-install.ps1
       - name: P4–P5 Pipe
         continue-on-error: true
         run: ./spikes/windows/pipe/p4-p5.ps1
+      - name: Binário do Electron
+        run: node node_modules/electron/install.js
       - name: P7 Redirecionamento
         continue-on-error: true
         run: ./spikes/windows/redirect/p7.ps1

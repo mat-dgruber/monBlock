@@ -11,14 +11,19 @@ $node = (Get-Command node).Source
 $ev = [ordered]@{ lanmanServer = (Get-Service LanmanServer -ErrorAction SilentlyContinue).Status; nodeAcl = (icacls $node | Out-String).Trim() }
 
 try {
+  $ev.applyDaclRun = Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$PSScriptRoot\apply-dacl.ps1", 'monblockd-spike-acl', 'D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)(D;;GA;;;NU)', "$outDir\p4-dacl.json")
+  $ev.applyDacl = Get-Content "$outDir\p4-dacl.json" -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
   $ev.runClient = Invoke-AsSpike $node @("$pipeDir\client.mjs", "$outDir\p4-client.json", '10')
   $c = Get-Content "$outDir\p4-client.json" -Raw -ErrorAction Stop | ConvertFrom-Json
   $ev.client = $c
   $writeAllOk = $c.readableWritableAll.okCount -eq 10
   $defaultBlocked = $c.defaultDacl.okCount -eq 0
   $remoteDenied = ($c.remoteLocalhost.okCount -eq 0) -and ($c.remoteComputerName.okCount -eq 0)
-  $ev.summary = @{ writeAllOk = $writeAllOk; defaultBlocked = $defaultBlocked; remoteDenied = $remoteDenied }
-  $p4 = if ($writeAllOk -and $remoteDenied) { 'PASSOU' } else { 'FALHOU' }
+  $aclLocalOk = @($c.aclRounds | Where-Object { $_.okCount -eq 10 }).Count -eq 3
+  $aclRemoteDenied = $c.aclRemote.okCount -eq 0
+  $ev.summary = @{ whoami = $c.whoami; writeAllOk = $writeAllOk; defaultBlocked = $defaultBlocked; writeAllRemoteDenied = $remoteDenied; aclLocalOk = $aclLocalOk; aclRemoteDenied = $aclRemoteDenied }
+  # Critério do S0: escrita local do usuário comum em todas as instâncias E rede negada, com alguma das variantes.
+  $p4 = if (($writeAllOk -and $remoteDenied) -or ($aclLocalOk -and $aclRemoteDenied)) { 'PASSOU' } else { 'FALHOU' }
   Save-Result 'P4' $p4 $ev
 } catch {
   $ev.error = $_.Exception.Message

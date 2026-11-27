@@ -47,6 +47,8 @@ function serve(name, opts) {
 }
 serve('monblockd-spike', { readableAll: true, writableAll: true });
 serve('monblockd-spike-default', {});
+// P4b: DACL padrão (fail-closed) e substituída depois do listen por um helper com WRITE_DAC.
+serve('monblockd-spike-acl', {});
 
 // P6: no stop, dispara (a) tarefa agendada como SYSTEM e (b) spawn desacoplado — qual sobrevive?
 let stopping = false;

@@ -46,6 +46,12 @@ function Get-SpikeCredential {
 function Invoke-AsSpike {
   param([string]$File, [string[]]$Arguments, [int]$TimeoutSec = 60)
   $cred = Get-SpikeCredential
+  # Start-Process -Credential herda o ambiente do chamador: TEMP precisa ser gravável pelo `spike`.
+  $tmp = Join-Path $SpikeRoot 'out\tmp'
+  New-Item -ItemType Directory -Force $tmp | Out-Null
+  icacls $tmp /grant '*S-1-5-32-545:(OI)(CI)(M)' | Out-Null
+  $oldTemp, $oldTmp = $env:TEMP, $env:TMP
+  $env:TEMP = $tmp; $env:TMP = $tmp
   try {
     $p = Start-Process -FilePath $File -ArgumentList $Arguments -Credential $cred -WorkingDirectory $SpikeRoot `
       -WindowStyle Hidden -PassThru -ErrorAction Stop
@@ -53,5 +59,7 @@ function Invoke-AsSpike {
     return @{ ok = $true; exit = $p.ExitCode }
   } catch {
     return @{ ok = $false; error = $_.Exception.Message }
+  } finally {
+    $env:TEMP = $oldTemp; $env:TMP = $oldTmp
   }
 }
