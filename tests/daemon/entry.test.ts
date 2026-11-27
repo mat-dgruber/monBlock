@@ -10,6 +10,7 @@ const base = os.tmpdir().length > 40 ? '/tmp' : os.tmpdir(); // sun_path ≤ 104
 let running: RunningDaemon | null = null;
 let client: DaemonClient | null = null;
 let root = '';
+const isWin = process.platform === 'win32';
 
 afterEach(async () => {
   client?.close();
@@ -40,10 +41,13 @@ describe('entry do monblockd (modo dev, sem root)', () => {
     // Assert
     expect(res.status).toBe(200);
     expect(fs.readFileSync(running.layout.hostsPath, 'utf8')).toContain('# >>> MONBLOCK START >>>');
-    expect(fs.statSync(running.layout.appSupportDir).mode & 0o777).toBe(0o700);
-    expect(fs.statSync(running.layout.dbDir).mode & 0o777).toBe(0o700);
-    expect(fs.statSync(running.layout.runDir).mode & 0o777).toBe(0o750);
-    expect(fs.statSync(path.join(running.layout.appSupportDir, 'vault.key')).mode & 0o777).toBe(0o600);
+    // Modo POSIX não existe no Windows: lá o DATA_DIR é protegido por ACL (W20).
+    if (!isWin) {
+      expect(fs.statSync(running.layout.appSupportDir).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(running.layout.dbDir).mode & 0o777).toBe(0o700);
+      expect(fs.statSync(running.layout.runDir).mode & 0o777).toBe(0o750);
+      expect(fs.statSync(path.join(running.layout.appSupportDir, 'vault.key')).mode & 0o777).toBe(0o600);
+    }
     expect(fs.existsSync(path.join(running.layout.dbDir, 'state.mirror'))).toBe(true);
   });
 
@@ -61,11 +65,12 @@ describe('entry do monblockd (modo dev, sem root)', () => {
     await waitOnline(client);
     const res = await client.call({ type: 'GET_STATE' });
     const sameKey = fs.readFileSync(keyPath, 'utf8') === key;
+    const db = running.layout.dbDir;
     await running.close();
     running = null;
-    const db = path.join(root, 'var/db/monblock');
     fs.rmSync(db, { recursive: true });
-    fs.symlinkSync(os.tmpdir(), db);
+    // No Windows, junction não exige o privilégio de criar link simbólico e o lstat a vê como link.
+    fs.symlinkSync(os.tmpdir(), db, isWin ? 'junction' : 'dir');
 
     // Assert
     expect(sameKey).toBe(true);
@@ -97,12 +102,30 @@ describe('resolveLayout por plataforma (ADR-0013)', () => {
   });
 
   it('retorna layout Windows com Named Pipe e %ProgramData%', () => {
-    const layout = resolveLayout('/', 'win32');
-    expect(layout.appSupportDir).toBe('/ProgramData/monBlock');
-    expect(layout.dbDir).toBe('/ProgramData/monBlock/db');
-    expect(layout.runDir).toBe('/ProgramData/monBlock/run');
+    const layout = resolveLayout(undefined, 'win32', { ProgramData: 'C:\\ProgramData', SystemRoot: 'C:\\Windows' });
+    expect(layout.appSupportDir).toBe('C:\\ProgramData\\monBlock');
+    expect(layout.dbDir).toBe('C:\\ProgramData\\monBlock\\db');
+    expect(layout.runDir).toBe('C:\\ProgramData\\monBlock\\run');
     expect(layout.socketPath).toBe('\\\\.\\pipe\\monblockd');
-    expect(layout.hostsPath).toBe('/Windows/System32/drivers/etc/hosts');
+    expect(layout.hostsPath).toBe('C:\\Windows\\System32\\drivers\\etc\\hosts');
+  });
+
+  it('W15: no Windows sem rootDir usa %ProgramData% e %SystemRoot%, e não o drive atual', () => {
+    const layout = resolveLayout(undefined, 'win32', { ProgramData: 'D:\\PD', SystemRoot: 'E:\\Win' });
+    expect(layout.appSupportDir).toBe('D:\\PD\\monBlock');
+    expect(layout.hostsPath).toBe('E:\\Win\\System32\\drivers\\etc\\hosts');
+  });
+
+  it('W15: no Windows sem as variáveis usa C:\\ProgramData e C:\\Windows', () => {
+    const layout = resolveLayout(undefined, 'win32', {});
+    expect(layout.appSupportDir).toBe('C:\\ProgramData\\monBlock');
+    expect(layout.hostsPath).toBe('C:\\Windows\\System32\\drivers\\etc\\hosts');
+  });
+
+  it('com rootDir (dev/CI) o layout Windows fica dentro dele', () => {
+    const layout = resolveLayout('C:\\tmp\\root', 'win32', {});
+    expect(layout.appSupportDir).toBe('C:\\tmp\\root\\ProgramData\\monBlock');
+    expect(layout.hostsPath).toBe('C:\\tmp\\root\\Windows\\System32\\drivers\\etc\\hosts');
   });
 });
 

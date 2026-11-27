@@ -34,24 +34,32 @@ export interface DaemonLayout {
   firefoxPlistPath: string;
 }
 
-/** Layout de diretórios e arquivos por SO (ADR-0007 / ADR-0013). `rootDir` só em desenvolvimento/CI. */
+/**
+ * Layout de diretórios e arquivos por SO (ADR-0007 / ADR-0013). `rootDir` só em desenvolvimento/CI.
+ * Usa `path.posix`/`path.win32` pela plataforma alvo, não pela do host (W15).
+ */
 export function resolveLayout(
-  rootDir = '/',
-  platform: NodeJS.Platform = process.platform
+  rootDir?: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
 ): DaemonLayout {
-  const r = (p: string) => path.join(rootDir, p);
   if (platform === 'win32') {
-    const runDir = r('ProgramData/monBlock/run');
+    // W15: sem rootDir, caminhos absolutos de %ProgramData% e %SystemRoot%, e não relativos ao drive atual.
+    const programData = rootDir ? path.win32.join(rootDir, 'ProgramData') : env.ProgramData || 'C:\\ProgramData';
+    const systemRoot = rootDir ? path.win32.join(rootDir, 'Windows') : env.SystemRoot || 'C:\\Windows';
+    const dataDir = path.win32.join(programData, 'monBlock');
     return {
-      appSupportDir: r('ProgramData/monBlock'),
-      dbDir: r('ProgramData/monBlock/db'),
-      runDir,
+      appSupportDir: dataDir,
+      dbDir: path.win32.join(dataDir, 'db'),
+      runDir: path.win32.join(dataDir, 'run'),
       socketPath: '\\\\.\\pipe\\monblockd',
-      hostsPath: r('Windows/System32/drivers/etc/hosts'),
+      hostsPath: path.win32.join(systemRoot, 'System32', 'drivers', 'etc', 'hosts'),
       chromiumPlistPaths: [],
       firefoxPlistPath: '',
     };
   }
+
+  const r = (p: string) => path.posix.join(rootDir ?? '/', p);
 
   if (platform === 'linux') {
     const runDir = r('run/monblock');
@@ -59,7 +67,7 @@ export function resolveLayout(
       appSupportDir: r('etc/monblock'),
       dbDir: r('var/lib/monblock'),
       runDir,
-      socketPath: path.join(runDir, 'monblockd.sock'),
+      socketPath: path.posix.join(runDir, 'monblockd.sock'),
       hostsPath: r('etc/hosts'),
       chromiumPlistPaths: [
         r('etc/opt/chrome/policies/managed/monblock.json'),
@@ -77,7 +85,7 @@ export function resolveLayout(
     appSupportDir: r('Library/Application Support/monBlock'),
     dbDir: r('var/db/monblock'),
     runDir,
-    socketPath: path.join(runDir, 'monblockd.sock'),
+    socketPath: path.posix.join(runDir, 'monblockd.sock'),
     hostsPath: r('etc/hosts'),
     chromiumPlistPaths: CHROMIUM_BUNDLE_IDS.map((id) => r(`Library/Managed Preferences/${id}.plist`)),
     firefoxPlistPath: r('Library/Preferences/org.mozilla.firefox.plist'),
