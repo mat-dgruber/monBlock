@@ -12,7 +12,8 @@ export type NotificationEventId =
   | 'unblock-rejected'
   | 'cooldown-started'
   | 'cooldown-finished'
-  | 'profile-alert';
+  | 'profile-alert'
+  | 'layer3-unavailable';
 
 export interface AppNotificationPayload {
   id: NotificationEventId;

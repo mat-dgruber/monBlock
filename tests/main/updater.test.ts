@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   compareSemver,
   checkForAppUpdates,
-  downloadAppUpdatePkg,
+  downloadAppUpdate,
   extractSha256FromText,
 } from '../../src/main/updater.js';
 
@@ -94,12 +94,13 @@ describe('AppUpdater (src/main/updater.ts)', () => {
         currentVersion: '0.8.1',
         repo: 'test/repo',
         fetchFn: mockFetch as unknown as typeof fetch,
+        platform: 'darwin',
       });
 
       // Assert
       expect(result.hasUpdate).toBe(true);
       expect(result.latestVersion).toBe('0.9.0');
-      expect(result.pkgUrl).toBe('https://github.com/org/repo/releases/download/v0.9.0/monblockd.pkg');
+      expect(result.installerUrl).toBe('https://github.com/org/repo/releases/download/v0.9.0/monblockd.pkg');
       expect(result.sha256).toBe(HASH);
       expect(result.releaseNotes).toBe('Novidades da versão 0.9.0');
     });
@@ -120,6 +121,7 @@ describe('AppUpdater (src/main/updater.ts)', () => {
         currentVersion: '0.8.1',
         repo: 'test/repo',
         fetchFn: mockFetch as unknown as typeof fetch,
+        platform: 'darwin',
       });
 
       // Assert
@@ -148,6 +150,7 @@ describe('AppUpdater (src/main/updater.ts)', () => {
         currentVersion: '0.8.1',
         repo: 'test/repo',
         fetchFn: mockFetch as unknown as typeof fetch,
+        platform: 'darwin',
       });
 
       expect(result.hasUpdate).toBe(true);
@@ -174,7 +177,66 @@ describe('AppUpdater (src/main/updater.ts)', () => {
     });
   });
 
-  describe('downloadAppUpdatePkg', () => {
+  describe('checkForAppUpdates por plataforma (W16)', () => {
+    const HASH = 'a'.repeat(64);
+    const release = (assets: string[]) =>
+      vi.fn(async (url: string) =>
+        url.endsWith('.sha256')
+          ? ({ ok: true, status: 200, text: async () => `${HASH}  monBlock-Setup-0.10.0.exe
+` } as any)
+          : ({
+              ok: true,
+              status: 200,
+              json: async () => ({
+                tag_name: 'v0.10.0',
+                assets: assets.map((name) => ({ name, browser_download_url: `https://github.com/test/repo/releases/download/v0.10.0/${name}` })),
+              }),
+            } as any)
+      );
+
+    it('no Windows escolhe o monBlock-Setup-*.exe e o hash do .sha256 dele', async () => {
+      // Act
+      const r = await checkForAppUpdates({
+        currentVersion: '0.9.1',
+        repo: 'test/repo',
+        platform: 'win32',
+        fetchFn: release(['monblockd.pkg', 'monBlock-Setup-0.10.0.exe', 'monBlock-Setup-0.10.0.exe.sha256']) as unknown as typeof fetch,
+      });
+
+      // Assert
+      expect(r.installerUrl).toBe('https://github.com/test/repo/releases/download/v0.10.0/monBlock-Setup-0.10.0.exe');
+      expect(r.sha256).toBe(HASH);
+    });
+
+    it('no macOS continua escolhendo o .pkg', async () => {
+      // Act
+      const r = await checkForAppUpdates({
+        currentVersion: '0.9.1',
+        repo: 'test/repo',
+        platform: 'darwin',
+        fetchFn: release(['monBlock-Setup-0.10.0.exe', 'monblockd.pkg']) as unknown as typeof fetch,
+      });
+
+      // Assert
+      expect(r.installerUrl).toMatch(/monblockd.pkg$/);
+    });
+
+    it('release sem instalador da plataforma não oferece arquivo', async () => {
+      // Act
+      const r = await checkForAppUpdates({
+        currentVersion: '0.9.1',
+        repo: 'test/repo',
+        platform: 'win32',
+        fetchFn: release(['monblockd.pkg']) as unknown as typeof fetch,
+      });
+
+      // Assert
+      expect(r.hasUpdate).toBe(true);
+      expect(r.installerUrl).toBeUndefined();
+    });
+  });
+
+  describe('downloadAppUpdate', () => {
     it('deve baixar o pacote, validar hash SHA-256 e salvar no arquivo final', async () => {
       // Arrange
       const payloadContent = Buffer.from('conteudo-do-pacote-pkg-monblock');
@@ -194,8 +256,8 @@ describe('AppUpdater (src/main/updater.ts)', () => {
       const progressSpy = vi.fn();
 
       // Act
-      const result = await downloadAppUpdatePkg({
-        pkgUrl: 'https://example.com/monblockd.pkg',
+      const result = await downloadAppUpdate({
+        installerUrl: 'https://example.com/monblockd.pkg',
         expectedSha256,
         targetDir: tempDir,
         fetchFn: mockFetch as unknown as typeof fetch,
@@ -204,9 +266,9 @@ describe('AppUpdater (src/main/updater.ts)', () => {
 
       // Assert
       expect(result.success).toBe(true);
-      expect(result.pkgPath).toBeDefined();
-      expect(fs.existsSync(result.pkgPath!)).toBe(true);
-      expect(fs.readFileSync(result.pkgPath!)).toEqual(payloadContent);
+      expect(result.installerPath).toBeDefined();
+      expect(fs.existsSync(result.installerPath!)).toBe(true);
+      expect(fs.readFileSync(result.installerPath!)).toEqual(payloadContent);
       expect(progressSpy).toHaveBeenCalledWith(100);
     });
 
@@ -223,8 +285,8 @@ describe('AppUpdater (src/main/updater.ts)', () => {
       });
 
       // Act
-      const result = await downloadAppUpdatePkg({
-        pkgUrl: 'https://example.com/monblockd.pkg',
+      const result = await downloadAppUpdate({
+        installerUrl: 'https://example.com/monblockd.pkg',
         expectedSha256: fakeExpectedSha256,
         targetDir: tempDir,
         fetchFn: mockFetch as unknown as typeof fetch,
@@ -238,8 +300,8 @@ describe('AppUpdater (src/main/updater.ts)', () => {
     });
 
     it('deve recusar download de pacote sem expectedSha256 por padrão (Fail-Closed Zero-Trust)', async () => {
-      const result = await downloadAppUpdatePkg({
-        pkgUrl: 'https://example.com/monblockd.pkg',
+      const result = await downloadAppUpdate({
+        installerUrl: 'https://example.com/monblockd.pkg',
         targetDir: tempDir,
       });
 
@@ -256,15 +318,15 @@ describe('AppUpdater (src/main/updater.ts)', () => {
         arrayBuffer: async () => payloadContent.buffer,
       });
 
-      const result = await downloadAppUpdatePkg({
-        pkgUrl: 'https://example.com/monblockd.pkg',
+      const result = await downloadAppUpdate({
+        installerUrl: 'https://example.com/monblockd.pkg',
         allowUnverified: true,
         targetDir: tempDir,
         fetchFn: mockFetch as unknown as typeof fetch,
       });
 
       expect(result.success).toBe(true);
-      expect(result.pkgPath).toBeDefined();
+      expect(result.installerPath).toBeDefined();
     });
   });
 });

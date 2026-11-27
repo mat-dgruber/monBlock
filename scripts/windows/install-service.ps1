@@ -31,7 +31,9 @@ if (Get-Service monblockd -ErrorAction SilentlyContinue) {
 
 # 2. Binarios e helpers. %ProgramFiles% herda ACL de admin: o usuario comum nao altera os .ps1 (W21 depende disso).
 New-Item -ItemType Directory -Force $installDir | Out-Null
-Copy-Item (Join-Path $SourceDir '*') $installDir -Recurse -Force
+if ($SourceDir.TrimEnd('\') -ne $installDir.TrimEnd('\')) {
+  Copy-Item (Join-Path $SourceDir '*') $installDir -Recurse -Force # pelo instalador Inno os arquivos ja estao no lugar
+}
 
 # 3. DATA_DIR so de SYSTEM e Administradores, sem heranca (o daemon confere de novo no boot, W20).
 New-Item -ItemType Directory -Force $dataDir, (Join-Path $dataDir 'db'), (Join-Path $dataDir 'run'), (Join-Path $dataDir 'logs') | Out-Null

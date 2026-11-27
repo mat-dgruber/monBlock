@@ -5,10 +5,19 @@ Todas as mudanças notáveis deste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o versionamento segue [SemVer 2.0.0](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
+
+## [0.10.0] - 2026-11-27
 ### Adicionado
+- Windows, instalador `monBlock-Setup-<versão>.exe` (Inno Setup 6): instala o serviço SYSTEM e o app, atalhos com AppUserModelID, abre o app no logon e para o serviço antes de um upgrade. Sem entrada em "Aplicativos": a remoção só acontece pelo fluxo autorizado pelo Ajudante (W3, W19).
+- Windows, desinstalação autorizada: o daemon agenda uma tarefa SYSTEM que remove serviço, políticas, atalhos e pastas e restaura o hosts pelo hash; se cair no meio, roda de novo no próximo boot (W12).
+- Windows, atualização: o app baixa o `monBlock-Setup-*.exe` da release com SHA-256 obrigatório (W16).
+- CI: job `windows-package` gera o instalador e roda o E2E como SYSTEM até a máquina ficar limpa (W18).
+- Windows, Camada 3 (vigia de abas) ligada: um helper PowerShell persistente lê o processo e o título da janela em primeiro plano; um título com conteúdo bloqueado abre a página de bloqueio pelo navegador padrão. Em PowerShell restrito (CLM/AppLocker) a camada fica desligada, sem loop (W5–W8, W11a).
+- Windows: Dia, Arc e Chromium entram na lista de navegadores do vigia.
 - CI: job `windows-latest` com typecheck, testes, build e smoke do daemon (Named Pipe `\\.\pipe\monblockd` e hosts gerado em modo dev).
 
 ### Corrigido
+- Atualização: o repositório padrão estava errado (`matheus-diniz/monBlock`, inexistente) e a verificação sempre falhava.
 - Windows: o hosts é gravado mesmo aberto por outro processo (cliente DNS, antivírus): o `rename` com `EPERM` cai para cópia com novas tentativas.
 - Windows: o verificador do servidor do pipe (W21) reconhece o serviço real (o PID era lido como 0).
 - Windows: o `ipconfig /flushdns` só roda quando o hosts muda e em segundo plano; com o hosts grande ele travava o daemon ~25 s por comando.
@@ -26,6 +35,9 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o 
 - `.gitattributes` fixa EOL em LF; com o `core.autocrlf=true` do Git for Windows, o `gen-lists --check` falhava.
 - Os enforcers POSIX ignoram o modo do hosts no `win32`, que não tem modo POSIX; antes acusavam drift em todo tick.
 - A suíte roda no Windows: os testes de IPC usam Named Pipe e os testes de modo POSIX são pulados no `win32`.
+
+### Segurança
+- O download de atualização usa só a URL e o hash que o próprio processo principal verificou; antes vinham do renderer, que poderia mandar baixar e abrir qualquer executável.
 
 ## [0.9.1] - 2026-11-19
 ### Corrigido

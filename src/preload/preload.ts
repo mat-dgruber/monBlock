@@ -45,7 +45,7 @@ export interface MonBlockPreloadApi {
     challengeCode?: string;
   }) => Promise<unknown>;
   checkUpdates: () => Promise<unknown>;
-  downloadUpdate: (payload: { pkgUrl: string; expectedSha256?: string }) => Promise<unknown>;
+  downloadUpdate: (payload: { installerUrl: string; expectedSha256?: string }) => Promise<unknown>;
 }
 
 export interface ContextBridgeLike {

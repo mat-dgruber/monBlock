@@ -348,19 +348,25 @@ export class WindowsPlatformEnforcer implements PlatformEnforcer {
       writeFileAtomically(this.hostsPath, cleaned ? `${cleaned}\n` : '');
     }
 
-    // Melhor esforço: uma chave ausente não impede a limpeza das outras (o W12 completa na F4).
+    // Melhor esforço: uma chave ausente não impede a limpeza das outras. Remove tudo que o monBlock grava
+    // (W12); as chaves raiz dos navegadores ficam, porque podem ter políticas de outra origem.
     const ignore = async (args: string[]) => {
       try {
         await this.commandExecutor('reg', args);
       } catch {
-        // chave já ausente
+        // chave/valor já ausente
       }
     };
     for (const rootKey of WINDOWS_CHROMIUM_REGISTRY_KEYS) {
       await ignore(['delete', `${rootKey}\\URLBlocklist`, '/f']);
       await ignore(['delete', `${rootKey}\\URLAllowlist`, '/f']);
+      for (const value of ['DnsOverHttpsMode', 'IncognitoModeAvailability', 'InPrivateModeAvailability']) {
+        await ignore(['delete', rootKey, '/v', value, '/f']);
+      }
     }
     await ignore(['delete', `${WINDOWS_FIREFOX_REGISTRY_KEY}\\WebsiteFilter`, '/f']);
+    await ignore(['delete', `${WINDOWS_FIREFOX_REGISTRY_KEY}\\DNSOverHTTPS`, '/f']);
+    await ignore(['delete', WINDOWS_FIREFOX_REGISTRY_KEY, '/v', 'DisablePrivateBrowsing', '/f']);
 
     if (fs.existsSync(this.regTarget)) fs.rmSync(this.regTarget, { force: true });
   }
